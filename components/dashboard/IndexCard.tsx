@@ -10,7 +10,7 @@ export function IndexCard({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "glass-card flex items-center gap-3 rounded-lg border border-border p-4",
+        "glass-card flex items-center gap-3 rounded-lg p-4",
         className
       )}
     >

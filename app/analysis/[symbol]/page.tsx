@@ -31,7 +31,7 @@ export default async function AnalysisPage({
 
   if (error || !bundle) {
     return (
-      <div className="glass-card flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border py-24 text-center">
+      <div className="glass-card flex flex-col items-center justify-center gap-3 rounded-2xl !border-dashed py-24 text-center">
         <AlertTriangle className="h-8 w-8 text-muted-foreground" />
         <h1 className="font-mono text-lg font-semibold">{symbol}</h1>
         <p className="max-w-sm text-sm text-muted-foreground">
