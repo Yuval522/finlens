@@ -112,7 +112,14 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           non-shrinking flex item with its own background so the control
           reads cleanly regardless of what else might be drawn nearby.
         */}
-        <div className="hidden border-t border-border p-3 md:block">
+        {/*
+          QA fix: this wrapper was cramped at p-3 with a px-3 py-2.5 button
+          inside it — barely more breathing room than the nav links above,
+          even though it's a standalone footer control. Widened to the full
+          sidebar width with generous padding (w-full px-4 py-3) so the
+          collapse button reads as its own clearly separated section.
+        */}
+        <div className="hidden w-full border-t border-border px-4 py-3 md:block">
           <button
             type="button"
             onClick={() => setCollapsed((v) => !v)}

@@ -37,34 +37,36 @@ export function PriceHeaderBlock({ quote }: PriceHeaderBlockProps) {
   return (
     <div className="glass-card rounded-2xl p-4 sm:p-5">
       {/*
-        QA fix: the big price figure and the change/percent text used to sit
-        directly adjacent with no visual boundary between them (baseline-
-        aligned, no background) — at the reported viewport this crowded
-        together as more of a wall of text than two distinct pieces of
-        information. The change/percent now live in their own tinted,
-        padded chip (background + rounded corners + a direction glyph),
-        giving it a real edge to separate it from the price instead of just
-        a text gap, and items-center (rather than items-baseline) keeps the
-        chip vertically centered against the much taller price digits.
+        QA fix (round 2): the previous single-row flex-wrap layout still let
+        the price and the change/percent chip crowd together at narrower
+        widths flagged in the latest screenshot ($9.10 / -6.47%) — flex-wrap
+        only breaks onto a new line once it runs out of horizontal room, so
+        right up until that point the two sit pressed against each other
+        with just a small gap. Switched to an explicit vertical stack (flex
+        flex-col items-start) so the price and the change/percent chip are
+        ALWAYS on their own separate rows regardless of viewport width or
+        string length, not just when wrapping happens to kick in.
       */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex flex-col items-start gap-1">
         <span className="font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
           {formatPrice(quote.price, quote.currency)}
         </span>
-        <span
-          className={cn(
-            "flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-sm font-semibold sm:text-base",
-            direction === "up" && "bg-success/10 text-success",
-            direction === "down" && "bg-destructive/10 text-destructive",
-            direction === "flat" && "bg-accent text-muted-foreground"
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span
+            className={cn(
+              "flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-sm font-semibold sm:text-base",
+              direction === "up" && "bg-success/10 text-success",
+              direction === "down" && "bg-destructive/10 text-destructive",
+              direction === "flat" && "bg-accent text-muted-foreground"
+            )}
+          >
+            <DirectionIcon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            {formatChange(quote.change, quote.currency)} ({formatPercent(quote.changePercent)})
+          </span>
+          {regularTimestamp && (
+            <span className="text-xs text-muted-foreground">as of {regularTimestamp}</span>
           )}
-        >
-          <DirectionIcon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
-          {formatChange(quote.change, quote.currency)} ({formatPercent(quote.changePercent)})
-        </span>
-        {regularTimestamp && (
-          <span className="text-xs text-muted-foreground">as of {regularTimestamp}</span>
-        )}
+        </div>
       </div>
 
       {showPreMarket && (

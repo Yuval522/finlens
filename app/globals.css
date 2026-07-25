@@ -143,52 +143,26 @@ body {
 
 /* ---------------------------------------------------------------------- */
 /* Ticker analysis page layout — desktop split-view / mobile stack        */
-/* Order on mobile: price -> chart -> profile -> tabs                     */
-/* Desktop: profile spans a fixed-width left column; price/chart/tabs     */
-/* stack in the remaining right column.                                   */
+/* Order on mobile: price -> chart -> tabs, then profile (see the `order` */
+/* utility classes at the call site in analysis/[symbol]/page.tsx).       */
+/* Desktop: two plain grid columns — a fixed-width left column (profile)  */
+/* and a fluid right column (price/chart/tabs stacked). Deliberately NOT  */
+/* named grid-template-areas spanning multiple rows any more: that always */
+/* left the left column's top edge and height dependent on a multi-row   */
+/* span calculation that kept drifting out of sync with the right        */
+/* column. Two ordinary single-row columns with `items-start` guarantee  */
+/* pixel-identical top alignment with nothing more than that.            */
 /* ---------------------------------------------------------------------- */
-.analysis-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-template-areas:
-    "price"
-    "chart"
-    "profile"
-    "tabs";
-  gap: 1.5rem;
-  align-items: start;
-}
 
-@media (min-width: 1024px) {
-  .analysis-grid {
-    grid-template-columns: 22rem 1fr;
-    grid-template-areas:
-      "profile price"
-      "profile chart"
-      "profile tabs";
-  }
-}
-
-/* QA hotfix (Phase 4): CSS Grid items default to min-width:auto, which lets
-   wide non-text content (the lightweight-charts canvas in particular)
-   force the whole grid track wider than the viewport on narrow mobile
-   screens — clipping the chart's right-hand price scale off-screen with
-   no visible scrollbar. Force every grid child to be free to shrink. */
+/* QA hotfix (Phase 4, still applies): CSS Grid items default to
+   min-width:auto, which lets wide non-text content (the lightweight-charts
+   canvas in particular) force the whole grid track wider than the
+   viewport on narrow mobile screens — clipping the chart's right-hand
+   price scale off-screen with no visible scrollbar. Force every grid
+   child to be free to shrink. */
+.analysis-grid,
 .analysis-grid > * {
   min-width: 0;
-}
-
-.analysis-grid > .area-profile {
-  grid-area: profile;
-}
-.analysis-grid > .area-price {
-  grid-area: price;
-}
-.analysis-grid > .area-chart {
-  grid-area: chart;
-}
-.analysis-grid > .area-tabs {
-  grid-area: tabs;
 }
 
 @media (min-width: 1024px) {
@@ -204,11 +178,11 @@ body {
       from the top of <main>'s scrollport (<main>'s own p-4/md:p-6 padding,
       ~24px), sticky positioning yanked the card downward immediately on
       load — even at scroll position zero — visibly misaligning it against
-      area-price's top edge. Matching `top` to that same padding (md:p-6 =
-      1.5rem, the only padding value in effect at this >=1024px breakpoint)
-      means the sticky threshold equals the card's natural position, so
-      there's no initial jump, while scrolling still keeps it pinned
-      sensibly once the user scrolls the tabs section past this point.
+      the right column's top edge. Matching `top` to that same padding
+      (md:p-6 = 1.5rem, the only padding value in effect at this
+      >=1024px breakpoint) means the sticky threshold equals the card's
+      natural position, so there's no initial jump, while scrolling still
+      keeps it pinned sensibly once the user scrolls far enough down.
     */
     top: 1.5rem;
   }

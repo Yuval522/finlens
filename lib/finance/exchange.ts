@@ -97,3 +97,42 @@ export function isIndexQuote(
   if (quoteType?.toUpperCase() === "INDEX") return true;
   return Boolean(symbol?.trim().startsWith("^"));
 }
+
+/** quoteTypes that carry no income statement/balance sheet/cash flow/estimates data. */
+const NON_FUNDAMENTAL_QUOTE_TYPES = new Set([
+  "INDEX",
+  "COMMODITY",
+  "CURRENCY",
+  "CRYPTOCURRENCY",
+  "FUTURE", // Yahoo classifies commodities (GC=F, CL=F, SI=F, ...) as FUTURE, not COMMODITY
+]);
+
+/**
+ * True for ANY asset class that has no fundamentals to show — not just
+ * indices, but commodities, currency/forex pairs, and crypto too. Broadens
+ * isIndexQuote() above (kept as-is for anything still calling it directly)
+ * with the same "authoritative quoteType first, exact provider-independent
+ * symbol shape as a fallback" pattern already proven for isTaseListing/
+ * isIndexQuote:
+ *   - "^..."     index            e.g. ^GSPC, ^TA125.TA, ^IXIC
+ *   - "...=X"    currency/forex   e.g. EURUSD=X, ILS=X
+ *   - "...=F"    futures/commodity e.g. GC=F, CL=F, SI=F
+ *   - "XXX-YYY"  crypto pair      e.g. BTC-USD, ETH-USD (hyphen + 3-letter
+ *                currency code — deliberately narrow so real hyphenated
+ *                equity tickers like BRK-B never false-positive, since "B"
+ *                isn't a 3-letter currency code)
+ */
+export function isNonFundamentalQuote(
+  symbol: string | undefined | null,
+  quoteType: string | undefined | null
+): boolean {
+  const type = quoteType?.trim().toUpperCase();
+  if (type && NON_FUNDAMENTAL_QUOTE_TYPES.has(type)) return true;
+
+  const sym = symbol?.trim().toUpperCase();
+  if (!sym) return false;
+  if (sym.startsWith("^")) return true;
+  if (sym.endsWith("=X") || sym.endsWith("=F")) return true;
+  if (/-[A-Z]{3}$/.test(sym)) return true;
+  return false;
+}
