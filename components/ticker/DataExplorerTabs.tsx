@@ -123,6 +123,7 @@ export function DataExplorerTabs({
             currentNetMargin={metrics.margins.netIncomeMargin}
             currentPE={metrics.financials.peRatio}
             currentPrice={quote.price != null ? toDisplayUnit(quote.price, quote.currency) : null}
+            marketCap={quote.marketCap != null ? toDisplayUnit(quote.marketCap, quote.currency) : null}
             reportingCurrency={reportingCurrency}
             quoteCurrency={quote.currency}
           />

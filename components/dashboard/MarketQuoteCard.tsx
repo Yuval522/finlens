@@ -7,19 +7,17 @@ import {
   formatPrice,
 } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
+import { CompanyLogo } from "./CompanyLogo";
 
 export function MarketQuoteCard({ quote }: { quote: MarketQuote }) {
   const direction = changeDirection(quote.change);
-  const initial = quote.name.trim().charAt(0).toUpperCase() || "?";
 
   return (
     <Link
       href={`/analysis/${encodeURIComponent(quote.symbol)}`}
       className="glass-card flex items-center gap-3 rounded-lg p-4"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-sm font-semibold text-foreground">
-        {initial}
-      </div>
+      <CompanyLogo symbol={quote.symbol} name={quote.name} size={36} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-foreground">
           {quote.name}
