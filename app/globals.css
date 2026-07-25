@@ -146,12 +146,17 @@ body {
 /* Order on mobile: price -> chart -> tabs, then profile (see the `order` */
 /* utility classes at the call site in analysis/[symbol]/page.tsx).       */
 /* Desktop: two plain grid columns — a fixed-width left column (profile)  */
-/* and a fluid right column (price/chart/tabs stacked). Deliberately NOT  */
-/* named grid-template-areas spanning multiple rows any more: that always */
-/* left the left column's top edge and height dependent on a multi-row   */
-/* span calculation that kept drifting out of sync with the right        */
-/* column. Two ordinary single-row columns with `items-start` guarantee  */
-/* pixel-identical top alignment with nothing more than that.            */
+/* and a fluid right column (price/chart/tabs stacked), using the grid's  */
+/* default `stretch` alignment (NOT `items-start`) so both columns' boxes */
+/* span the full row height — that's what gives the inner sticky profile */
+/* wrapper (`.area-profile`, styled via Tailwind's `lg:sticky lg:top-6`   */
+/* at the call site) a tall parent to stick within. An earlier pass used  */
+/* `items-start` for top-edge alignment, but that shrank the column's own */
+/* box to just its content height, leaving `position: sticky` with no     */
+/* room to operate — it stayed "stuck" for zero pixels and then scrolled  */
+/* away with the rest of the page the moment you scrolled past it. Tops   */
+/* still align exactly under `stretch` too, since that's simply where the */
+/* row starts — no `items-start` needed for that part.                    */
 /* ---------------------------------------------------------------------- */
 
 /* QA hotfix (Phase 4, still applies): CSS Grid items default to
@@ -163,29 +168,6 @@ body {
 .analysis-grid,
 .analysis-grid > * {
   min-width: 0;
-}
-
-@media (min-width: 1024px) {
-  .area-profile {
-    position: sticky;
-    /*
-      QA fix: this used to be 5rem, meant to "clear the sticky Topbar" — but
-      Topbar (see components/layout/Topbar.tsx) is a static sibling *above*
-      <main>, not inside it, and <main> is the actual independently
-      scrolling container (DashboardShell: overflow-y-auto). Topbar never
-      overlaps <main>'s scrolled content, so there was nothing to clear.
-      Worse, since 5rem (80px) is larger than this card's natural offset
-      from the top of <main>'s scrollport (<main>'s own p-4/md:p-6 padding,
-      ~24px), sticky positioning yanked the card downward immediately on
-      load — even at scroll position zero — visibly misaligning it against
-      the right column's top edge. Matching `top` to that same padding
-      (md:p-6 = 1.5rem, the only padding value in effect at this
-      >=1024px breakpoint) means the sticky threshold equals the card's
-      natural position, so there's no initial jump, while scrolling still
-      keeps it pinned sensibly once the user scrolls far enough down.
-    */
-    top: 1.5rem;
-  }
 }
 
 /* Horizontal scrollable tab strip — no visible scrollbar, touch-friendly */

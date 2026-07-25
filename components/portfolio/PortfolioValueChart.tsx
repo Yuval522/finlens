@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { TrendingUp } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, compactAxis } from "@/lib/format/chart";
 import { buildPortfolioHistory, PORTFOLIO_RANGES, type PortfolioRange } from "@/lib/portfolio/mock-history";
@@ -32,7 +33,12 @@ export function PortfolioValueChart({ startValue, endValue }: PortfolioValueChar
   return (
     <div className="glass-card min-w-0 rounded-xl p-3 sm:p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-foreground">Portfolio Value</h3>
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-400">
+            <TrendingUp className="h-3.5 w-3.5" />
+          </span>
+          <h3 className="text-sm font-semibold text-foreground">Portfolio Value</h3>
+        </div>
         <select
           value={range}
           onChange={(e) => setRange(e.target.value as PortfolioRange)}

@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { BarChart3, Maximize2, Minimize2 } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { CHART_TOOLTIP_STYLE } from "@/lib/format/chart";
 import type { PortfolioHolding } from "@/lib/portfolio/store";
@@ -35,6 +37,12 @@ interface Slice {
  * Asset Allocation panel.
  */
 export function AssetAllocationChart({ holdings, totalCashUsd }: AssetAllocationChartProps) {
+  // Confirmed via live comparison against the reference terminal: the
+  // Asset Allocation card carries the same icon-badge treatment as Home's
+  // Market Summary/Most Active sections, plus its own maximize toggle
+  // (Portfolio Value doesn't have one there — just the icon badge).
+  const [fullscreen, setFullscreen] = useState(false);
+
   const slices: Slice[] = holdings.map((h, i) => ({
     key: h.symbol,
     label: h.symbol,
@@ -48,15 +56,45 @@ export function AssetAllocationChart({ holdings, totalCashUsd }: AssetAllocation
   const total = slices.reduce((sum, s) => sum + s.value, 0);
 
   return (
-    <div className="glass-card min-w-0 rounded-xl p-3 sm:p-4">
-      <h3 className="mb-2 text-sm font-semibold text-foreground">Asset Allocation</h3>
+    <>
+      {fullscreen && (
+        <div
+          className="fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm"
+          onClick={() => setFullscreen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <div
+        className={
+          fullscreen
+            ? "glass-card fixed inset-4 z-[60] flex flex-col overflow-hidden rounded-xl p-3 shadow-2xl sm:inset-x-[8%] sm:inset-y-[6%] sm:p-4"
+            : "glass-card min-w-0 rounded-xl p-3 sm:p-4"
+        }
+      >
+        <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-400">
+              <BarChart3 className="h-3.5 w-3.5" />
+            </span>
+            <h3 className="text-sm font-semibold text-foreground">Asset Allocation</h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFullscreen((v) => !v)}
+            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            title={fullscreen ? "Collapse" : "Expand"}
+          >
+            {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        <div className={fullscreen ? "min-h-0 flex-1 overflow-auto" : ""}>
       {total === 0 ? (
         <div className="flex h-56 items-center justify-center text-sm text-muted-foreground sm:h-64">
           No holdings to allocate yet.
         </div>
       ) : (
         <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
-          <div className="h-48 w-48 shrink-0">
+          <div className={fullscreen ? "h-64 w-64 shrink-0 sm:h-72 sm:w-72" : "h-48 w-48 shrink-0"}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -105,6 +143,8 @@ export function AssetAllocationChart({ holdings, totalCashUsd }: AssetAllocation
           </ul>
         </div>
       )}
-    </div>
+        </div>
+      </div>
+    </>
   );
 }

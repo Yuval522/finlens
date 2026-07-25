@@ -55,23 +55,27 @@ export default async function AnalysisPage({
   const isNonFundamental = isNonFundamentalQuote(quote.symbol, quote.quoteType);
 
   return (
-    // QA fix: the previous single grid with a "profile" area spanning 3
-    // stacked rows (profile / price / chart / tabs) made the left column's
-    // top edge and overall height dependent on a multi-row span calculation
-    // that kept drifting out of sync with the right column in practice.
-    // Two plain grid columns — each a normal, single-row-spanning item —
-    // guarantee the left column's top edge is pixel-identical to the right
-    // column's top edge with nothing more than `items-start`, and the
-    // left column can still stick while the (much taller) right column
-    // scrolls past it, same as before (see .area-profile in globals.css).
-    // `order` keeps the original mobile stacking (price -> chart -> tabs,
-    // then profile) even though profile is now the first DOM child.
-    <div className="analysis-grid grid grid-cols-1 items-start gap-6 lg:grid-cols-[22rem_1fr]">
-      <div className="area-profile order-2 space-y-4 lg:order-1">
-        <CompanyProfileHeader quote={quote} profile={profile} />
-        {!isNonFundamental && (
-          <CompanyMetricsAccordions metrics={metrics} reportingCurrency={reportingCurrency} />
-        )}
+    // QA fix (regression found via live comparison against the reference
+    // terminal): the previous pass gave both grid columns `items-start` so
+    // their tops would align pixel-for-pixel — but that also meant the left
+    // column's own box no longer stretched to the row's full height, only
+    // to its own (much shorter) content height. `position: sticky` can only
+    // stay pinned while *its own containing block* still intersects the
+    // viewport — once you scrolled past that short box, the whole profile
+    // card scrolled away with it instead of staying pinned, i.e. it just
+    // vanished. Fix: drop `items-start` (grid's default `stretch` makes
+    // both columns' boxes span the full (taller) row height — tops still
+    // align exactly, since that's just where the row starts) and move
+    // `sticky` onto an *inner* wrapper, which now has a tall parent to
+    // stick within for as long as the right column keeps scrolling.
+    <div className="analysis-grid grid grid-cols-1 gap-6 lg:grid-cols-[22rem_1fr]">
+      <div className="order-2 lg:order-1">
+        <div className="area-profile space-y-4 lg:sticky lg:top-6">
+          <CompanyProfileHeader quote={quote} profile={profile} />
+          {!isNonFundamental && (
+            <CompanyMetricsAccordions metrics={metrics} reportingCurrency={reportingCurrency} />
+          )}
+        </div>
       </div>
 
       <div className="order-1 space-y-6 lg:order-2">
