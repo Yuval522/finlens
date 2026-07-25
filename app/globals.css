@@ -3,33 +3,35 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------- */
-/* FinLens design tokens — dark-mode-first financial terminal theme       */
-/* HSL triplets (no hsl() wrapper) so Tailwind can compose hsl(var(--x))  */
+/* FinLens Signature Theme — Midnight Slate / Deep Obsidian Blue           */
+/* A richer, indigo-tinted dark palette (vs. flat obsidian black) inspired */
+/* by Linear/Vercel/modern Bloomberg terminals. HSL triplets (no hsl()     */
+/* wrapper) so Tailwind can compose hsl(var(--x)) and hsl(var(--x)/alpha). */
 /* ---------------------------------------------------------------------- */
 :root {
-  --background: 220 27% 8%; /* ~#0F131A */
-  --foreground: 220 10% 95%;
+  --background: 224 33% 9%; /* Midnight Slate base, indigo-tinted obsidian */
+  --foreground: 210 20% 96%;
 
-  --card: 220 25% 10%;
-  --card-foreground: 220 10% 95%;
+  --card: 222 30% 12%;
+  --card-foreground: 210 20% 96%;
 
-  --primary: 214 84% 56%; /* ~#3B82F6 */
+  --primary: 228 83% 60%; /* indigo-blue, Linear-esque accent */
   --primary-foreground: 0 0% 100%;
 
-  --success: 142 76% 42%; /* ~#1ABC55, gains */
+  --success: 160 84% 39%; /* #10B981 — vivid emerald for gains */
   --success-foreground: 0 0% 100%;
 
-  --destructive: 0 84% 65%; /* ~#F16060, losses */
+  --destructive: 0 84% 60%; /* #EF4444 — sharp red for losses */
   --destructive-foreground: 0 0% 100%;
 
-  --border: 220 20% 18%;
-  --muted: 220 20% 14%;
-  --muted-foreground: 220 10% 65%;
-  --accent: 220 25% 16%;
-  --accent-foreground: 220 10% 95%;
+  --border: 222 24% 20%;
+  --muted: 222 24% 15%;
+  --muted-foreground: 215 16% 68%;
+  --accent: 224 28% 18%;
+  --accent-foreground: 210 20% 96%;
 
-  --ring: 214 84% 56%;
-  --radius: 0.625rem;
+  --ring: 228 83% 60%;
+  --radius: 0.75rem;
 
   /* Dual-font system: UI text in Open Sans, all numeric/price/ticker data
      in JetBrains Mono for tabular alignment (self-hosted via Fontsource). */
@@ -75,15 +77,86 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Premium glass-panel accent — used sparingly (Topbar, brand mark, elevated
-   cards) to give FinLens a distinct, modern feel vs. flat competitor UIs. */
+/* Premium glass accents — used on chrome (Topbar, Sidebar) and elevated
+   cards to give FinLens a distinct, modern feel vs. flat competitor UIs. */
 .glass-panel {
-  background-color: hsl(var(--card) / 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background-color: hsl(var(--card) / 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Lighter glass treatment for individual content cards — subtle gradient
+   fill + a faint top-edge highlight to read as "glass" rather than flat. */
+.glass-card {
+  background: linear-gradient(
+    180deg,
+    hsl(var(--card) / 0.92),
+    hsl(var(--card) / 0.78)
+  );
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: inset 0 1px 0 0 hsl(var(--foreground) / 0.05);
 }
 
 .brand-glow {
   box-shadow: 0 0 0 1px hsl(var(--primary) / 0.4),
     0 0 24px 0 hsl(var(--primary) / 0.35);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Ticker analysis page layout — desktop split-view / mobile stack        */
+/* Order on mobile: price -> chart -> profile -> tabs                     */
+/* Desktop: profile spans a fixed-width left column; price/chart/tabs     */
+/* stack in the remaining right column.                                   */
+/* ---------------------------------------------------------------------- */
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "price"
+    "chart"
+    "profile"
+    "tabs";
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .analysis-grid {
+    grid-template-columns: 22rem 1fr;
+    grid-template-areas:
+      "profile price"
+      "profile chart"
+      "profile tabs";
+  }
+}
+
+.analysis-grid > .area-profile {
+  grid-area: profile;
+}
+.analysis-grid > .area-price {
+  grid-area: price;
+}
+.analysis-grid > .area-chart {
+  grid-area: chart;
+}
+.analysis-grid > .area-tabs {
+  grid-area: tabs;
+}
+
+@media (min-width: 1024px) {
+  .area-profile {
+    position: sticky;
+    top: 5rem; /* clears the sticky Topbar */
+  }
+}
+
+/* Horizontal scrollable tab strip — no visible scrollbar, touch-friendly */
+.tab-scroll {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tab-scroll::-webkit-scrollbar {
+  display: none;
 }

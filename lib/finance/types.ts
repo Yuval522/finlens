@@ -22,6 +22,11 @@ export interface MarketQuote {
   marketState: MarketState | null;
   /** Epoch ms of the quote timestamp, if known */
   asOf: number | null;
+  /** IANA timezone of the exchange, e.g. "America/New_York", "Asia/Jerusalem" */
+  timezone: string | null;
+  preMarketPrice: number | null;
+  preMarketChange: number | null;
+  preMarketChangePercent: number | null;
   postMarketPrice: number | null;
   postMarketChange: number | null;
   postMarketChangePercent: number | null;
@@ -35,6 +40,88 @@ export interface SearchResultItem {
   currency: string;
   /** EQUITY, ETF, INDEX, CRYPTOCURRENCY, MUTUALFUND, CURRENCY, ... */
   type: string;
+}
+
+export interface CompanyProfile {
+  sector: string | null;
+  industry: string | null;
+  website: string | null;
+  ceo: string | null;
+  description: string | null;
+}
+
+export interface FinancialsMetrics {
+  marketCap: number | null;
+  peRatio: number | null;
+  forwardPE: number | null;
+  forwardPeg: number | null;
+  priceToCashFlow: number | null;
+}
+
+export interface YieldsMetrics {
+  /** Percent, e.g. 3.2 means 3.2% */
+  earningsYield: number | null;
+  cashFlowYield: number | null;
+  freeCashFlowYield: number | null;
+  dividendYield: number | null;
+  payoutRatio: number | null;
+}
+
+export interface BalanceMetrics {
+  totalCash: number | null;
+  totalDebt: number | null;
+  netCashPosition: number | null;
+}
+
+export interface MarginMetrics {
+  /** Percent, e.g. 45.2 means 45.2% */
+  grossMargin: number | null;
+  operatingMargin: number | null;
+  netIncomeMargin: number | null;
+}
+
+export interface TickerMetrics {
+  financials: FinancialsMetrics;
+  yields: YieldsMetrics;
+  balances: BalanceMetrics;
+  margins: MarginMetrics;
+}
+
+export interface IncomeStatementYear {
+  fiscalYear: string;
+  totalRevenue: number;
+  grossProfit: number;
+  operatingIncome: number;
+  netIncome: number;
+  eps: number;
+  sharesOutstandingDiluted: number;
+  dividendsPerShare: number;
+}
+
+export interface PricePoint {
+  /** ISO date, e.g. "2024-03-15" */
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+export interface FundamentalsBundle {
+  quote: MarketQuote;
+  profile: CompanyProfile;
+  metrics: TickerMetrics;
+  /** Most recent ~5 fiscal years, oldest first */
+  income: IncomeStatementYear[];
+  /** Daily closes, oldest first — sliced client-side per selected time range */
+  history: PricePoint[];
+  /**
+   * Currency for `metrics`/`income` figures. Usually equals quote.currency,
+   * but diverges for dual-listed names like TEVA.TA, which trades in ILA
+   * on the TASE but reports financial statements in USD.
+   */
+  reportingCurrency: string;
+  source: "live" | "mock";
 }
 
 export class MarketDataError extends Error {

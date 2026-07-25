@@ -39,6 +39,17 @@ function getCurrencyMeta(currency: string | null | undefined): CurrencyMeta {
   return { symbol: currency ? `${currency} ` : "$", divisor: 1 };
 }
 
+/**
+ * Raw numeric conversion (no symbol/formatting) — for feeding chart
+ * libraries plain display-unit numbers, e.g. agorot -> shekels.
+ */
+export function toDisplayUnit(
+  value: number,
+  currency: string | null | undefined
+): number {
+  return value / getCurrencyMeta(currency).divisor;
+}
+
 function formatNumber(value: number, opts?: Intl.NumberFormatOptions): string {
   return value.toLocaleString("en-US", {
     minimumFractionDigits: 2,
