@@ -37,3 +37,4 @@ next-env.d.ts
 build*.log
 strace_build.log
 .next_stale_*
+reference screenshots/

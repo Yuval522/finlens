@@ -1,14 +1,21 @@
 import YahooFinance from "yahoo-finance2";
 import type { QuoteSummaryResult } from "yahoo-finance2/modules/quoteSummary-iface";
 import type { ChartResultArray } from "yahoo-finance2/modules/chart";
-import type { FundamentalsTimeSeriesBalanceSheetResult } from "yahoo-finance2/modules/fundamentalsTimeSeries";
+import type {
+  FundamentalsTimeSeriesBalanceSheetResult,
+  FundamentalsTimeSeriesCashFlowResult,
+} from "yahoo-finance2/modules/fundamentalsTimeSeries";
 import { TtlCache } from "./cache";
 import { guessCurrencyFromExchange, toExchangeBadge } from "./exchange";
 import { getMockFundamentals } from "./mock-data";
+import { fetchFmpCashFlowStatements, isFmpConfigured } from "./providers/fmp";
 import { MARKET_SUMMARY_SYMBOLS, TASE_SEED_SYMBOLS, US_FALLBACK_SYMBOLS } from "./symbols";
 import {
   MarketDataError,
   type BalanceSheetYear,
+  type CashFlowYear,
+  type EstimateRow,
+  type EstimatesBundle,
   type FundamentalsBundle,
   type IncomeStatementYear,
   type MarketQuote,
@@ -210,6 +217,8 @@ function toMetrics(summary: QuoteSummaryResult) {
         marketCap && operatingCashflow
           ? Number((marketCap / operatingCashflow).toFixed(2))
           : null,
+      priceToFreeCashFlow:
+        marketCap && freeCashflow ? Number((marketCap / freeCashflow).toFixed(2)) : null,
     },
     yields: {
       earningsYield: trailingPE ? Number((100 / trailingPE).toFixed(2)) : null,
@@ -318,6 +327,7 @@ function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[]): Balan
       fiscalYear: String(row.date.getFullYear()),
       cashAndShortTermInvestments:
         row.cashCashEquivalentsAndShortTermInvestments ?? row.cashAndCashEquivalents ?? 0,
+      totalCurrentAssets: row.currentAssets ?? 0,
       totalCurrentLiabilities: row.currentLiabilities ?? 0,
       totalAssets: row.totalAssets ?? 0,
       totalLiabilities: row.totalLiabilitiesNetMinorityInterest ?? 0,
@@ -325,6 +335,128 @@ function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[]): Balan
       totalCash: row.cashAndCashEquivalents ?? 0,
       totalDebt: row.totalDebt ?? 0,
     }));
+}
+
+/**
+ * Maps annual cash-flow rows from `fundamentalsTimeSeries({module: 'cash-flow'})`.
+ * Same rationale as toBalanceYears() — the legacy quoteSummary
+ * cashflowStatementHistory module is on Yahoo's own "gutted since Nov
+ * 2024" list, so this uses the recommended replacement instead. Field
+ * names verified directly against fundamentalsTimeSeries.d.ts (all typed
+ * `?: number`, none hardcoded-null): operatingCashFlow, freeCashFlow,
+ * stockBasedCompensation, capitalExpenditure. Sign convention preserved
+ * as-is from the provider rather than normalized: SBC comes back positive
+ * (a non-cash addback to net income), capex comes back negative (an
+ * investing outflow) — the UI renders each with its natural sign.
+ *
+ * Note: the cash-flow module has no plain `netIncome` field (unlike the
+ * balance-sheet/financials modules) — its closest equivalent is
+ * `netIncomeFromContinuingOperations`, confirmed against the same .d.ts.
+ */
+function toCashFlowYears(rows: FundamentalsTimeSeriesCashFlowResult[]): CashFlowYear[] {
+  return [...rows]
+    .filter((row) => row.date instanceof Date)
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
+    .map((row) => ({
+      fiscalYear: String(row.date.getFullYear()),
+      operatingCashFlow: row.operatingCashFlow ?? 0,
+      freeCashFlow: row.freeCashFlow ?? 0,
+      stockBasedCompensation: row.stockBasedCompensation ?? 0,
+      capitalExpenditures: row.capitalExpenditure ?? 0,
+      netIncome: row.netIncomeFromContinuingOperations ?? 0,
+    }));
+}
+
+/**
+ * Backfills any fiscal year where Yahoo's cash-flow rows came back missing
+ * stock-based comp or capex (0, since toCashFlowYears defaults to 0), using
+ * FMP's annual cash-flow-statement endpoint keyed by fiscal year. No-op
+ * (returns the input unchanged) when FMP isn't configured — see
+ * lib/finance/providers/fmp.ts for why this can't be verified live here.
+ */
+async function enrichCashFlowWithFmp(symbol: string, years: CashFlowYear[]): Promise<CashFlowYear[]> {
+  if (!isFmpConfigured()) return years;
+  const needsEnrichment = years.some(
+    (y) => y.stockBasedCompensation === 0 || y.capitalExpenditures === 0
+  );
+  if (!needsEnrichment) return years;
+
+  const fmpRows = await fetchFmpCashFlowStatements(symbol, years.length + 2).catch(() => null);
+  if (!fmpRows || fmpRows.length === 0) return years;
+
+  const fmpByYear = new Map(fmpRows.map((r) => [r.calendarYear, r]));
+  return years.map((y) => {
+    const fmp = fmpByYear.get(y.fiscalYear);
+    if (!fmp) return y;
+    return {
+      ...y,
+      stockBasedCompensation: y.stockBasedCompensation || fmp.stockBasedCompensation || 0,
+      capitalExpenditures: y.capitalExpenditures || fmp.capitalExpenditure || 0,
+    };
+  });
+}
+
+/**
+ * Maps Yahoo's `earningsTrend` module (forward analyst consensus) into our
+ * EstimateRow shape, split into quarterly vs. annual buckets by the
+ * `period` label's suffix ("0q"/"+1q" vs "0y"/"+1y"/"+5y"/"-5y").
+ *
+ * Data availability caveat worth flagging clearly: Yahoo's free
+ * earningsTrend module typically only carries a handful of near-term
+ * periods (current + next quarter, current + next year, a 5y growth
+ * estimate) — not the rich multi-year historical-plus-forward table shown
+ * in polished reference dashboards. The UI is built to render gracefully
+ * with however many rows actually come back live; the mock data path
+ * (AAPL/NVDA/TEVA.TA) provides the fuller illustrative table.
+ *
+ * "Beat" flagging for historical periods compares actual reported revenue
+ * (from `income`) against whatever consensus Yahoo still has on file for
+ * that period today — Yahoo doesn't expose point-in-time historical
+ * consensus, so this is "actual vs. today's settled estimate," a
+ * reasonable proxy rather than a precise at-the-time surprise calculation.
+ */
+function toEstimates(summary: QuoteSummaryResult, income: IncomeStatementYear[]): EstimatesBundle {
+  const trend = summary.earningsTrend?.trend ?? [];
+  const today = new Date();
+  const actualRevenueByYear = new Map(income.map((y) => [y.fiscalYear, y.totalRevenue]));
+
+  const quarterly: EstimateRow[] = [];
+  const annual: EstimateRow[] = [];
+
+  for (const t of trend) {
+    if (!t.endDate) continue;
+    const isQuarterly = t.period.endsWith("q");
+    const isHistorical = t.endDate.getTime() < today.getTime();
+    const fiscalYearKey = String(t.endDate.getFullYear());
+    const actualRevenue = isHistorical ? (actualRevenueByYear.get(fiscalYearKey) ?? null) : null;
+    const revenueEstimate = t.revenueEstimate?.avg ?? null;
+    const beat =
+      isHistorical && actualRevenue != null && revenueEstimate != null
+        ? actualRevenue >= revenueEstimate
+        : null;
+
+    const row: EstimateRow = {
+      fiscalPeriodLabel: isQuarterly
+        ? t.endDate.toLocaleDateString("en-US", { year: "numeric", month: "short" })
+        : String(t.endDate.getFullYear()),
+      periodEndDate: t.endDate.toISOString().slice(0, 10),
+      revenueEstimate,
+      revenueYoyGrowthPct:
+        t.revenueEstimate?.growth != null ? Number((t.revenueEstimate.growth * 100).toFixed(2)) : null,
+      revenueAvg: t.revenueEstimate?.avg ?? null,
+      revenueLow: t.revenueEstimate?.low ?? null,
+      revenueHigh: t.revenueEstimate?.high ?? null,
+      numberOfAnalysts: t.revenueEstimate?.numberOfAnalysts ?? null,
+      isHistorical,
+      beat,
+      actualRevenue,
+    };
+
+    (isQuarterly ? quarterly : annual).push(row);
+  }
+
+  const byDate = (a: EstimateRow, b: EstimateRow) => a.periodEndDate.localeCompare(b.periodEndDate);
+  return { quarterly: quarterly.sort(byDate), annual: annual.sort(byDate) };
 }
 
 function toPricePoints(chart: ChartResultArray): PricePoint[] {
@@ -360,7 +492,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       const balancePeriod1 = new Date();
       balancePeriod1.setFullYear(balancePeriod1.getFullYear() - 6);
 
-      const [quotes, summary, chartResult, balanceRows] = await Promise.all([
+      const [quotes, summary, chartResult, balanceRows, cashFlowRows] = await Promise.all([
         getQuotes([symbol]),
         yahooFinance.quoteSummary(symbol, {
           modules: [
@@ -369,6 +501,11 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             "defaultKeyStatistics",
             "financialData",
             "incomeStatementHistory",
+            // Analyst consensus (Phase 5: Estimates tab). Not on Yahoo's
+            // deprecated-module list and has no hardcoded-null fields —
+            // see toEstimates() doc comment for the real-world caveat that
+            // this typically only returns a handful of near-term periods.
+            "earningsTrend",
           ],
         }),
         yahooFinance.chart(symbol, { period1, interval: "1d" }),
@@ -383,6 +520,14 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             module: "balance-sheet",
           })
           .catch(() => [] as FundamentalsTimeSeriesBalanceSheetResult[]),
+        // Same rationale as balanceRows — see toCashFlowYears() doc comment.
+        yahooFinance
+          .fundamentalsTimeSeries(symbol, {
+            period1: balancePeriod1,
+            type: "annual",
+            module: "cash-flow",
+          })
+          .catch(() => [] as FundamentalsTimeSeriesCashFlowResult[]),
       ]);
 
       const quote = quotes[0];
@@ -391,6 +536,11 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       }
 
       const assetProfile = summary.assetProfile;
+      const income = toIncomeYears(summary);
+      const cashFlowYears = toCashFlowYears(cashFlowRows as FundamentalsTimeSeriesCashFlowResult[]);
+      // Best-effort enrichment — no-op unless FMP_API_KEY is set (see
+      // enrichCashFlowWithFmp doc comment and providers/fmp.ts).
+      const cashFlow = await enrichCashFlowWithFmp(symbol, cashFlowYears);
 
       const bundle: FundamentalsBundle = {
         source: "live",
@@ -404,8 +554,10 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
           description: assetProfile?.longBusinessSummary ?? null,
         },
         metrics: toMetrics(summary),
-        income: toIncomeYears(summary),
+        income,
         balance: toBalanceYears(balanceRows as FundamentalsTimeSeriesBalanceSheetResult[]),
+        cashFlow,
+        estimates: toEstimates(summary, income),
         history: toPricePoints(chartResult),
       };
       return bundle;

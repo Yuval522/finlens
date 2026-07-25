@@ -1,0 +1,95 @@
+/**
+ * Financial Modeling Prep (FMP) — secondary data provider.
+ *
+ * FinLens' primary source is Yahoo Finance (lib/finance/yahoo.ts). This file
+ * is a fault-tolerant *enrichment* layer used only to backfill fields Yahoo's
+ * free tier tends to omit or gut — this codebase has already hit that twice
+ * (see the doc comments on toIncomeYears / toBalanceYears in yahoo.ts, both
+ * of which had to route around dead/null fields on Yahoo's legacy
+ * quoteSummary sub-modules). It is entirely opt-in: set `FMP_API_KEY` in
+ * `.env.local` and these functions activate; leave it unset and every
+ * export here is a no-op that resolves to `null`, so the app behaves
+ * identically to a Yahoo-only build without a key.
+ *
+ * IMPORTANT — unverified live in this environment: outbound network access
+ * to financialmodelingprep.com is blocked by this sandbox's egress proxy
+ * (the same restriction documented for Yahoo Finance in the project's build
+ * notes — confirmed via curl during earlier phases), so these calls could
+ * not be exercised end-to-end here. The request shapes below follow FMP's
+ * publicly documented stable v3 REST API. Spot-check against a live key on
+ * your own machine before relying on it, the same way you would for any
+ * third-party integration built without the ability to hit the real
+ * endpoint during development.
+ */
+
+const FMP_BASE_URL = "https://financialmodelingprep.com/api/v3";
+
+function getApiKey(): string | null {
+  return process.env.FMP_API_KEY?.trim() || null;
+}
+
+/** Whether an FMP key is configured — callers should skip enrichment entirely when false. */
+export function isFmpConfigured(): boolean {
+  return getApiKey() !== null;
+}
+
+async function fmpGet<T>(path: string, params: Record<string, string> = {}): Promise<T | null> {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  const url = new URL(`${FMP_BASE_URL}${path}`);
+  url.searchParams.set("apikey", apiKey);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+
+  try {
+    // Revalidate hourly — fundamentals move slowly, no need to hit FMP's
+    // rate-limited free tier on every request.
+    const res = await fetch(url.toString(), { next: { revalidate: 3600 } });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    // Network failure, rate limit, malformed response, etc. — enrichment is
+    // best-effort by design, so any failure here degrades to "no extra
+    // data" rather than breaking the primary Yahoo-sourced bundle.
+    return null;
+  }
+}
+
+export interface FmpCashFlowStatement {
+  date: string;
+  calendarYear: string;
+  operatingCashFlow: number;
+  freeCashFlow: number;
+  stockBasedCompensation: number;
+  capitalExpenditure: number;
+  netIncome: number;
+}
+
+/**
+ * Annual cash flow statements — used to backfill stock-based compensation
+ * and capex for fiscal years where Yahoo's fundamentalsTimeSeries module
+ * comes back thin or missing those specific fields.
+ */
+export async function fetchFmpCashFlowStatements(
+  symbol: string,
+  limit = 6
+): Promise<FmpCashFlowStatement[] | null> {
+  return fmpGet<FmpCashFlowStatement[]>(`/cash-flow-statement/${encodeURIComponent(symbol)}`, {
+    period: "annual",
+    limit: String(limit),
+  });
+}
+
+export interface FmpKeyMetricsTTM {
+  stockBasedCompensationToRevenueTTM?: number;
+  freeCashFlowYieldTTM?: number;
+  netDebtToEBITDATTM?: number;
+}
+
+/** TTM ratio snapshot — used as a last-resort fallback for valuation ratios Yahoo omits. */
+export async function fetchFmpKeyMetricsTTM(symbol: string): Promise<FmpKeyMetricsTTM | null> {
+  const rows = await fmpGet<FmpKeyMetricsTTM[]>(`/key-metrics-ttm/${encodeURIComponent(symbol)}`);
+  return rows?.[0] ?? null;
+}

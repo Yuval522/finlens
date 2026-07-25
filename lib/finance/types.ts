@@ -56,6 +56,7 @@ export interface FinancialsMetrics {
   forwardPE: number | null;
   forwardPeg: number | null;
   priceToCashFlow: number | null;
+  priceToFreeCashFlow: number | null;
 }
 
 export interface YieldsMetrics {
@@ -102,6 +103,7 @@ export interface BalanceSheetYear {
   fiscalYear: string;
   /** Cash & cash equivalents plus short-term marketable securities. */
   cashAndShortTermInvestments: number;
+  totalCurrentAssets: number;
   totalCurrentLiabilities: number;
   totalAssets: number;
   totalLiabilities: number;
@@ -109,6 +111,45 @@ export interface BalanceSheetYear {
   /** Cash & cash equivalents only (subset of cashAndShortTermInvestments). */
   totalCash: number;
   totalDebt: number;
+}
+
+export interface CashFlowYear {
+  fiscalYear: string;
+  operatingCashFlow: number;
+  freeCashFlow: number;
+  /** Non-cash addback, reported as a positive figure (provider convention). */
+  stockBasedCompensation: number;
+  /** Investing outflow, reported as a negative figure (provider convention). */
+  capitalExpenditures: number;
+  /** Snapshot of net income for this fiscal year, for the OCF-vs-Net-Income
+   *  earnings-quality comparison — duplicated here rather than joined
+   *  against `income[]` at render time since the two arrays aren't
+   *  guaranteed to cover identical fiscal years. */
+  netIncome: number;
+}
+
+export interface EstimateRow {
+  /** Display label, e.g. "Sep 2025" (annual) or "2025 Q2" (quarterly). */
+  fiscalPeriodLabel: string;
+  /** ISO date of the fiscal period end, for sorting. */
+  periodEndDate: string;
+  revenueEstimate: number | null;
+  revenueYoyGrowthPct: number | null;
+  revenueAvg: number | null;
+  revenueLow: number | null;
+  revenueHigh: number | null;
+  numberOfAnalysts: number | null;
+  /** True once the fiscal period has actually closed. */
+  isHistorical: boolean;
+  /** Only meaningful when isHistorical — actual reported revenue met/beat consensus. */
+  beat: boolean | null;
+  /** Only populated when isHistorical and known. */
+  actualRevenue: number | null;
+}
+
+export interface EstimatesBundle {
+  quarterly: EstimateRow[];
+  annual: EstimateRow[];
 }
 
 export interface PricePoint {
@@ -128,6 +169,9 @@ export interface FundamentalsBundle {
   income: IncomeStatementYear[];
   /** Most recent ~5 fiscal years, oldest first */
   balance: BalanceSheetYear[];
+  /** Most recent ~5 fiscal years, oldest first */
+  cashFlow: CashFlowYear[];
+  estimates: EstimatesBundle;
   /** Daily closes, oldest first — sliced client-side per selected time range */
   history: PricePoint[];
   /**

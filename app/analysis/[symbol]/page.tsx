@@ -41,7 +41,7 @@ export default async function AnalysisPage({
     );
   }
 
-  const { quote, profile, metrics, income, balance, history, reportingCurrency } = bundle;
+  const { quote, profile, metrics, income, balance, cashFlow, estimates, history, reportingCurrency } = bundle;
 
   return (
     <div className="analysis-grid">
@@ -67,6 +67,8 @@ export default async function AnalysisPage({
         <DataExplorerTabs
           income={income}
           balance={balance}
+          cashFlow={cashFlow}
+          estimates={estimates}
           reportingCurrency={reportingCurrency}
           quote={quote}
           metrics={metrics}

@@ -25,6 +25,7 @@ export function CompanyMetricsAccordions({
     { label: "Fwd P/E", value: ratio(metrics.financials.forwardPE) },
     { label: "Fwd PEG", value: ratio(metrics.financials.forwardPeg) },
     { label: "P/CF", value: ratio(metrics.financials.priceToCashFlow) },
+    { label: "P/FCF", value: ratio(metrics.financials.priceToFreeCashFlow) },
   ];
 
   const yields: MetricRow[] = [

@@ -1,20 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Maximize2, Minimize2 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { BalanceSheetYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, compactAxis } from "@/lib/format/chart";
+import { ChartCard } from "./ChartCard";
 
 interface BalanceSheetPanelProps {
   balance: BalanceSheetYear[];
@@ -23,54 +13,19 @@ interface BalanceSheetPanelProps {
 
 const { success: SUCCESS, primary: PRIMARY, destructive: DESTRUCTIVE, sky: SKY } = CHART_COLORS;
 
-function ChartCard({
-  title,
-  children,
-  fullscreen,
-  onToggleFullscreen,
-  className = "",
-}: {
-  title: string;
-  children: React.ReactNode;
-  fullscreen: boolean;
-  onToggleFullscreen: () => void;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`glass-card min-w-0 rounded-xl p-3 sm:p-4 ${
-        fullscreen ? "fixed inset-4 z-50 overflow-auto" : className
-      }`}
-    >
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        <button
-          type="button"
-          onClick={onToggleFullscreen}
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          title={fullscreen ? "Collapse" : "Expand"}
-        >
-          {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-        </button>
-      </div>
-      <div className={fullscreen ? "h-[70vh] w-full" : "h-64 w-full"}>{children}</div>
-    </div>
-  );
-}
-
 export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const toggle = (key: string) => setExpanded((cur) => (cur === key ? null : key));
 
-  const netCashData = balance.map((row) => ({
-    fiscalYear: row.fiscalYear,
-    netCashPosition: row.totalCash - row.totalDebt,
-  }));
+  const moneyTooltip = (value: unknown) => `${compactAxis(Number(value))} ${currency}`;
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
+    // Phase 5: 3-column breakdown (Short-Term Position / Total Structure /
+    // Debt vs Liquidity), replacing the earlier 2-chart layout.
+    <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
       <ChartCard
         title="Short-Term Position"
+        subtitle="Cash & ST Investments vs Current Assets vs Current Liabilities"
         fullscreen={expanded === "short-term"}
         onToggleFullscreen={() => toggle("short-term")}
       >
@@ -78,22 +33,20 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
           <BarChart data={balance} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-            <YAxis
-              stroke="#64748b"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={compactAxis}
-            />
-            <Tooltip
-              contentStyle={CHART_TOOLTIP_STYLE}
-              formatter={(value) => `${compactAxis(Number(value))} ${currency}`}
-            />
+            <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
+            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={moneyTooltip} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar
               dataKey="cashAndShortTermInvestments"
               name="Cash & ST Investments"
               fill={SUCCESS}
+              radius={[4, 4, 0, 0]}
+              animationDuration={600}
+            />
+            <Bar
+              dataKey="totalCurrentAssets"
+              name="Total Current Assets"
+              fill={SKY}
               radius={[4, 4, 0, 0]}
               animationDuration={600}
             />
@@ -110,6 +63,7 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
 
       <ChartCard
         title="Total Structure"
+        subtitle="Assets vs Liabilities vs Equity"
         fullscreen={expanded === "structure"}
         onToggleFullscreen={() => toggle("structure")}
       >
@@ -117,17 +71,8 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
           <BarChart data={balance} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-            <YAxis
-              stroke="#64748b"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={compactAxis}
-            />
-            <Tooltip
-              contentStyle={CHART_TOOLTIP_STYLE}
-              formatter={(value) => `${compactAxis(Number(value))} ${currency}`}
-            />
+            <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
+            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={moneyTooltip} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="totalAssets" name="Total Assets" fill={SKY} radius={[4, 4, 0, 0]} animationDuration={600} />
             <Bar
@@ -149,31 +94,26 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
       </ChartCard>
 
       <ChartCard
-        title="Net Cash Position (Total Cash − Total Debt)"
-        fullscreen={expanded === "netcash"}
-        onToggleFullscreen={() => toggle("netcash")}
-        className="sm:col-span-2"
+        title="Debt vs Liquidity"
+        subtitle="Total Debt vs Cash & ST Investments"
+        fullscreen={expanded === "debt-liquidity"}
+        onToggleFullscreen={() => toggle("debt-liquidity")}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={netCashData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <BarChart data={balance} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-            <YAxis
-              stroke="#64748b"
-              fontSize={11}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={compactAxis}
+            <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
+            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={moneyTooltip} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="totalDebt" name="Total Debt" fill={DESTRUCTIVE} radius={[4, 4, 0, 0]} animationDuration={600} />
+            <Bar
+              dataKey="cashAndShortTermInvestments"
+              name="Cash & ST Investments"
+              fill={SUCCESS}
+              radius={[4, 4, 0, 0]}
+              animationDuration={600}
             />
-            <Tooltip
-              contentStyle={CHART_TOOLTIP_STYLE}
-              formatter={(value) => [`${compactAxis(Number(value))} ${currency}`, "Net Cash Position"]}
-            />
-            <Bar dataKey="netCashPosition" name="Net Cash Position" radius={[4, 4, 0, 0]} animationDuration={600}>
-              {netCashData.map((entry) => (
-                <Cell key={entry.fiscalYear} fill={entry.netCashPosition >= 0 ? SUCCESS : DESTRUCTIVE} />
-              ))}
-            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>

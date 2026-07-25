@@ -4,10 +4,20 @@ import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { IncomeStatementPanel } from "./IncomeStatementPanel";
 import { BalanceSheetPanel } from "./BalanceSheetPanel";
+import { CashFlowPanel } from "./CashFlowPanel";
+import { EstimatesPanel } from "./EstimatesPanel";
+import { ComparePanel } from "./ComparePanel";
 import { ValuationCalculator } from "./ValuationCalculator";
 import { ComingSoon } from "@/components/shared/ComingSoon";
 import { toDisplayUnit } from "@/lib/format/currency";
-import type { BalanceSheetYear, IncomeStatementYear, MarketQuote, TickerMetrics } from "@/lib/finance/types";
+import type {
+  BalanceSheetYear,
+  CashFlowYear,
+  EstimatesBundle,
+  IncomeStatementYear,
+  MarketQuote,
+  TickerMetrics,
+} from "@/lib/finance/types";
 
 const TABS = [
   "Income",
@@ -26,6 +36,8 @@ type Tab = (typeof TABS)[number];
 interface DataExplorerTabsProps {
   income: IncomeStatementYear[];
   balance: BalanceSheetYear[];
+  cashFlow: CashFlowYear[];
+  estimates: EstimatesBundle;
   reportingCurrency: string;
   quote: MarketQuote;
   metrics: TickerMetrics;
@@ -34,6 +46,8 @@ interface DataExplorerTabsProps {
 export function DataExplorerTabs({
   income,
   balance,
+  cashFlow,
+  estimates,
   reportingCurrency,
   quote,
   metrics,
@@ -67,11 +81,18 @@ export function DataExplorerTabs({
 
       <div className="mt-4">
         {tab === "Income" && (
-          <IncomeStatementPanel income={income} currency={reportingCurrency} />
+          <IncomeStatementPanel income={income} cashFlow={cashFlow} currency={reportingCurrency} />
         )}
         {tab === "Balance" && (
           <BalanceSheetPanel balance={balance} currency={reportingCurrency} />
         )}
+        {tab === "Cash Flow" && (
+          <CashFlowPanel cashFlow={cashFlow} currency={reportingCurrency} />
+        )}
+        {tab === "Estimates" && (
+          <EstimatesPanel estimates={estimates} currency={reportingCurrency} />
+        )}
+        {tab === "Compare" && <ComparePanel initialSymbol={quote.symbol} />}
         {tab === "Valuation" && latestIncome && (
           <ValuationCalculator
             baseRevenue={latestIncome.totalRevenue}
@@ -84,10 +105,7 @@ export function DataExplorerTabs({
           />
         )}
         {tab === "AI Insights" && <ComingSoon title="AI Insights" icon={Sparkles} />}
-        {tab !== "Income" &&
-          tab !== "Balance" &&
-          tab !== "Valuation" &&
-          tab !== "AI Insights" && <ComingSoon title={tab} />}
+        {(tab === "Reports" || tab === "Ratios") && <ComingSoon title={tab} />}
       </div>
     </div>
   );
