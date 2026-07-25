@@ -8,12 +8,22 @@ export function compactAxis(value: number): string {
   return `${value}`;
 }
 
+// QA hotfix (Final Polish pass): values like "Cash & ST Investments: 55B
+// USD" were getting clipped at the tooltip's right edge — Recharts' default
+// tooltip box sizes to its content but without an explicit minimum width,
+// a long label + value + currency suffix combination can render tighter
+// than expected on some viewport/zoom combinations. minWidth + nowrap (so
+// the box grows instead of wrapping awkwardly) plus generous padding fixes
+// this without needing to drop the currency suffix.
 export const CHART_TOOLTIP_STYLE = {
   backgroundColor: "#0f1420",
   border: "1px solid rgba(148, 163, 184, 0.2)",
   borderRadius: "0.5rem",
   fontSize: "12px",
   fontFamily: "var(--font-mono)",
+  minWidth: "200px",
+  padding: "8px 12px",
+  whiteSpace: "nowrap" as const,
 };
 
 export const CHART_COLORS = {

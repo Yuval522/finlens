@@ -25,6 +25,26 @@ export function guessCurrencyFromExchange(exchange: string | undefined | null): 
   return EXCHANGE_CURRENCY[exchange.toUpperCase()] ?? "USD";
 }
 
+/**
+ * QA hotfix (Final Polish pass): TASE search results were still badging as
+ * USD live, even though the exchange badge itself correctly showed "TLV".
+ * Root cause: currency was guessed purely from Yahoo's raw exchange code
+ * on the search result, which is unverified live in this sandbox (network
+ * blocked) and evidently doesn't reliably equal "TLV"/"TASE" for every
+ * TASE search hit. The symbol suffix (".TA") is a far more reliable
+ * signal — it's exact, provider-independent, and already proven correct
+ * elsewhere (ChartPanel's locale detection uses the same check). Guess
+ * currency from the symbol suffix first, falling back to the exchange-code
+ * map only when the symbol itself doesn't disambiguate.
+ */
+export function guessCurrencyForSearchResult(
+  symbol: string | undefined | null,
+  exchange: string | undefined | null
+): string {
+  if (isTaseListing(symbol, exchange)) return "ILA";
+  return guessCurrencyFromExchange(exchange);
+}
+
 /** Short, badge-friendly exchange label (Yahoo's raw codes are inconsistent — NMS, NYQ, etc). */
 const EXCHANGE_LABELS: Record<string, string> = {
   NMS: "NASDAQ",

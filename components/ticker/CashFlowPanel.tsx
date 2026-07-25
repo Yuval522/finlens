@@ -75,7 +75,11 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
-            <Tooltip content={<CashFlowTooltip currency={currency} />} cursor={{ fill: "rgba(148,163,184,0.06)" }} />
+            <Tooltip
+              content={<CashFlowTooltip currency={currency} />}
+              cursor={{ fill: "rgba(148,163,184,0.06)" }}
+              allowEscapeViewBox={{ x: true, y: true }}
+            />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="operatingCashFlow" name="Operating Cash Flow" fill={PRIMARY} radius={[4, 4, 0, 0]} animationDuration={600} />
             <Bar dataKey="freeCashFlow" name="Free Cash Flow" fill={SUCCESS} radius={[4, 4, 0, 0]} animationDuration={600} />
@@ -96,7 +100,11 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
-            <Tooltip content={<CashFlowTooltip currency={currency} />} cursor={{ fill: "rgba(148,163,184,0.06)" }} />
+            <Tooltip
+              content={<CashFlowTooltip currency={currency} />}
+              cursor={{ fill: "rgba(148,163,184,0.06)" }}
+              allowEscapeViewBox={{ x: true, y: true }}
+            />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="operatingCashFlow" name="Operating Cash Flow" fill={SKY} radius={[4, 4, 0, 0]} animationDuration={600} />
             <Bar dataKey="netIncome" name="Net Income" fill={PRIMARY} radius={[4, 4, 0, 0]} animationDuration={600} />

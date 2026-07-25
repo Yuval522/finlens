@@ -8,7 +8,8 @@ import { EstimatesPanel } from "./EstimatesPanel";
 import { ComparePanel } from "./ComparePanel";
 import { ValuationCalculator } from "./ValuationCalculator";
 import { AIInsightsPanel } from "./AIInsightsPanel";
-import { ComingSoon } from "@/components/shared/ComingSoon";
+import { ReportsPanel } from "./ReportsPanel";
+import { RatiosPanel } from "./RatiosPanel";
 import { toDisplayUnit } from "@/lib/format/currency";
 import type {
   BalanceSheetYear,
@@ -57,7 +58,26 @@ export function DataExplorerTabs({
 
   return (
     <div className="glass-card rounded-2xl p-4 sm:p-5">
-      <div className="tab-scroll flex gap-1 border-b border-slate-800/80 pb-2" role="tablist">
+      {/*
+        QA hotfix (Final Polish pass): the tab strip overflowed off-screen
+        on narrow viewports with no visible affordance, hiding Valuation/AI
+        Insights/Reports/Ratios until a user discovered they could swipe.
+        Two fixes, both edge cases that don't need JS scroll-position
+        tracking: (1) a permanent edge fade via mask-image hints there's
+        more to scroll regardless of current scroll position, and (2) each
+        tab button scrolls itself into view on click, so selecting a
+        currently-hidden tab (e.g. via keyboard) always brings it fully
+        into frame instead of leaving it clipped at an edge.
+      */}
+      <div
+        className="tab-scroll flex gap-1 border-b border-slate-800/80 pb-2"
+        style={{
+          maskImage: "linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent)",
+          WebkitMaskImage:
+            "linear-gradient(to right, transparent, black 20px, black calc(100% - 20px), transparent)",
+        }}
+        role="tablist"
+      >
         {TABS.map((t) => {
           const active = t === tab;
           return (
@@ -66,7 +86,10 @@ export function DataExplorerTabs({
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => setTab(t)}
+              onClick={(e) => {
+                setTab(t);
+                e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+              }}
               className={`shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                 active
                   ? "bg-primary text-primary-foreground"
@@ -114,7 +137,8 @@ export function DataExplorerTabs({
             currency={reportingCurrency}
           />
         )}
-        {(tab === "Reports" || tab === "Ratios") && <ComingSoon title={tab} />}
+        {tab === "Reports" && <ReportsPanel symbol={quote.symbol} />}
+        {tab === "Ratios" && <RatiosPanel income={income} balance={balance} metrics={metrics} />}
       </div>
     </div>
   );

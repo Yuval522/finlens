@@ -3,10 +3,11 @@ import { getMarketSummary } from "@/lib/finance/yahoo";
 import { MarketDataError } from "@/lib/finance/types";
 
 const SLOTS = 5;
-// QA hotfix (Phase 4): auto-fit/minmax instead of a fixed 5-column track —
-// guarantees enough width per card for longer names ("NASDAQ Composite")
-// before truncating, at any viewport.
-const COLUMNS = "grid-cols-[repeat(auto-fit,minmax(220px,1fr))]";
+// QA hotfix (Phase 4, widened in Final Polish pass — see QuoteCardGrid.tsx
+// for the full sizing rationale): auto-fit/minmax instead of a fixed
+// 5-column track, with a 300px floor so "NASDAQ Composite" and similar
+// index names get enough room before truncating, at any viewport.
+const COLUMNS = "grid-cols-[repeat(auto-fit,minmax(300px,1fr))]";
 
 /** Async Server Component — fetched inside a <Suspense> boundary on the home page. */
 export async function MarketSummarySection() {

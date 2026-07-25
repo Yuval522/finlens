@@ -7,9 +7,11 @@ import {
   ColorType,
   CrosshairMode,
   LineSeries,
+  TickMarkType,
   createChart,
   type IChartApi,
   type ISeriesApi,
+  type Time,
 } from "lightweight-charts";
 import type { PricePoint } from "@/lib/finance/types";
 
@@ -36,6 +38,41 @@ interface PriceChartProps {
 const SUCCESS = "#10B981";
 const DESTRUCTIVE = "#EF4444";
 const SMA_COLOR = "#F59E0B";
+
+function timeToDate(time: Time): Date {
+  if (typeof time === "string") return new Date(time);
+  if (typeof time === "number") return new Date(time * 1000);
+  return new Date(Date.UTC(time.year, time.month - 1, time.day));
+}
+
+/**
+ * QA hotfix (Final Polish pass): AAPL's date axis was still rendering
+ * Hebrew month labels live, despite `localization.locale` already being
+ * set correctly to "en-US" for non-TASE symbols (that logic — isTaseListing
+ * gating "he-IL" — is correct; see ChartPanel.tsx). lightweight-charts'
+ * *default* tick-mark formatter is documented to take the chart's
+ * `localization.locale`, but that resolution is unverified live in this
+ * sandbox and evidently isn't reliable in practice. Supplying an explicit
+ * `tickMarkFormatter` removes the ambiguity entirely: we format the label
+ * ourselves with `Intl.DateTimeFormat(locale, ...)` using the exact same
+ * `locale` value already computed by isTaseListing(), so correctness no
+ * longer depends on any library-internal default.
+ */
+function makeTickMarkFormatter(locale: string) {
+  return (time: Time, tickMarkType: TickMarkType): string => {
+    const date = timeToDate(time);
+    switch (tickMarkType) {
+      case TickMarkType.Year:
+        return date.toLocaleDateString(locale, { year: "numeric" });
+      case TickMarkType.Month:
+        return date.toLocaleDateString(locale, { month: "short" });
+      case TickMarkType.DayOfMonth:
+        return date.toLocaleDateString(locale, { day: "numeric" });
+      default:
+        return date.toLocaleDateString(locale, { hour: "2-digit", minute: "2-digit" });
+    }
+  };
+}
 
 function computeSma(data: PricePoint[], period: number) {
   const result: { time: string; value: number }[] = [];
@@ -80,7 +117,10 @@ export function PriceChart({
         horzLines: { color: "rgba(148, 163, 184, 0.08)" },
       },
       rightPriceScale: { borderColor: "rgba(148, 163, 184, 0.15)" },
-      timeScale: { borderColor: "rgba(148, 163, 184, 0.15)" },
+      timeScale: {
+        borderColor: "rgba(148, 163, 184, 0.15)",
+        tickMarkFormatter: makeTickMarkFormatter(locale),
+      },
       crosshair: { mode: CrosshairMode.Normal },
       localization: { locale },
       width: container.clientWidth,

@@ -77,18 +77,22 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
                   <td className="px-2 py-2.5 font-medium text-foreground">
                     <div className="flex items-center gap-2">
                       {row.fiscalPeriodLabel}
-                      {/* Glowing beat badge inline with the period, only for
-                          historical periods where reported revenue cleared
-                          consensus. */}
+                      {/* Glowing beat badge inline with the period. Live
+                          historical quarters are usually basis "eps" (real
+                          trailing EPS actual/estimate from Yahoo's
+                          earningsHistory — see toEstimates() doc comment,
+                          Yahoo doesn't expose historical revenue consensus);
+                          mock/demo data is basis "revenue". Labeled
+                          distinctly so it's never ambiguous what beat what. */}
                       {row.isHistorical && row.beat && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.35)]">
                           <CheckCircle2 className="h-3 w-3" />
-                          Beat
+                          Beat{row.beatBasis === "eps" ? " (EPS)" : ""}
                         </span>
                       )}
                       {row.isHistorical && row.beat === false && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-rose-400">
-                          Miss
+                          Miss{row.beatBasis === "eps" ? " (EPS)" : ""}
                         </span>
                       )}
                       {!row.isHistorical && (
@@ -99,7 +103,13 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
                     </div>
                     {row.isHistorical && row.actualRevenue != null && (
                       <p className="mt-0.5 text-[10px] text-muted-foreground">
-                        Actual: {money(row.actualRevenue, currency)}
+                        Actual revenue: {money(row.actualRevenue, currency)}
+                      </p>
+                    )}
+                    {row.isHistorical && row.epsActual != null && (
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">
+                        EPS: {row.epsActual.toFixed(2)}
+                        {row.epsEstimate != null ? ` vs est. ${row.epsEstimate.toFixed(2)}` : ""}
                       </p>
                     )}
                   </td>

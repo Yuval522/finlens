@@ -44,6 +44,7 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
         <Tooltip
           contentStyle={CHART_TOOLTIP_STYLE}
           formatter={(value) => [formatValue(Number(value)), valueLabel]}
+          allowEscapeViewBox={{ x: true, y: true }}
         />
         {/* Recharts' TypedDataKey inference can't resolve a plain `keyof T`
             string against an abstract, unconstrained generic T inside this
@@ -149,6 +150,7 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
                   `${Number(value).toFixed(1)}%${item?.payload?.usedFcf ? "" : " (op. margin proxy)"}`,
                   "Rule of 40",
                 ]}
+                allowEscapeViewBox={{ x: true, y: true }}
               />
               <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600}>
                 {ruleOf40Data.map((row) => (

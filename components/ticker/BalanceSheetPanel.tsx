@@ -34,7 +34,11 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
-            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={moneyTooltip} />
+            <Tooltip
+              contentStyle={CHART_TOOLTIP_STYLE}
+              formatter={moneyTooltip}
+              allowEscapeViewBox={{ x: true, y: true }}
+            />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar
               dataKey="cashAndShortTermInvestments"
@@ -72,7 +76,11 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
-            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={moneyTooltip} />
+            <Tooltip
+              contentStyle={CHART_TOOLTIP_STYLE}
+              formatter={moneyTooltip}
+              allowEscapeViewBox={{ x: true, y: true }}
+            />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="totalAssets" name="Total Assets" fill={SKY} radius={[4, 4, 0, 0]} animationDuration={600} />
             <Bar
@@ -104,7 +112,11 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
-            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={moneyTooltip} />
+            <Tooltip
+              contentStyle={CHART_TOOLTIP_STYLE}
+              formatter={moneyTooltip}
+              allowEscapeViewBox={{ x: true, y: true }}
+            />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Bar dataKey="totalDebt" name="Total Debt" fill={DESTRUCTIVE} radius={[4, 4, 0, 0]} animationDuration={600} />
             <Bar

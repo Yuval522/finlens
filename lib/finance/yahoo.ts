@@ -4,9 +4,10 @@ import type { ChartResultArray } from "yahoo-finance2/modules/chart";
 import type {
   FundamentalsTimeSeriesBalanceSheetResult,
   FundamentalsTimeSeriesCashFlowResult,
+  FundamentalsTimeSeriesFinancialsResult,
 } from "yahoo-finance2/modules/fundamentalsTimeSeries";
 import { TtlCache } from "./cache";
-import { guessCurrencyFromExchange, toExchangeBadge } from "./exchange";
+import { guessCurrencyForSearchResult, toExchangeBadge } from "./exchange";
 import { getMockFundamentals } from "./mock-data";
 import { fetchFmpCashFlowStatements, isFmpConfigured } from "./providers/fmp";
 import { MARKET_SUMMARY_SYMBOLS, TASE_SEED_SYMBOLS, US_FALLBACK_SYMBOLS } from "./symbols";
@@ -122,21 +123,27 @@ export async function searchSymbols(query: string): Promise<SearchResultItem[]> 
       return (result.quotes as unknown as Record<string, unknown>[])
         .filter((q) => q.isYahooFinance === true && typeof q.symbol === "string")
         .map((q): SearchResultItem => {
-          // Bug fix (QA Phase 4): currency was being guessed from the
-          // human-readable display badge (e.g. "Tel Aviv"), which never
-          // matches EXCHANGE_CURRENCY's short-code keys and silently fell
-          // back to USD for every TASE result. Guess from the raw short
-          // exchange code (`q.exchange`, e.g. "TLV") instead, and only use
-          // the display name as a last resort for the *label*, not currency.
+          // Bug fix (QA Phase 4, re-confirmed still broken live in the
+          // Final Polish pass): currency was guessed purely from Yahoo's
+          // raw exchange code on the search result. That code is unverified
+          // live in this sandbox (network blocked) and evidently isn't a
+          // reliable "TLV"/"TASE" match for every TASE hit even when the
+          // exchange *badge* renders correctly. guessCurrencyForSearchResult
+          // checks the ".TA" symbol suffix first — exact and
+          // provider-independent — before falling back to the exchange-code
+          // guess, so this can't silently regress to USD again for TASE
+          // symbols regardless of exactly what Yahoo's raw code turns out
+          // to be.
+          const symbol = String(q.symbol);
           const rawExchangeCode = String(q.exchange || q.exchDisp || "");
           const exchange = toExchangeBadge(String(q.exchDisp || q.exchange || ""));
           return {
-            symbol: String(q.symbol),
+            symbol,
             name: String(q.longname || q.shortname || q.symbol),
             exchange,
             // Search doesn't return currency (only `quote` does) — best-effort
-            // badge from exchange, confirmed/corrected once a quote loads.
-            currency: guessCurrencyFromExchange(rawExchangeCode),
+            // badge from exchange/symbol, confirmed/corrected once a quote loads.
+            currency: guessCurrencyForSearchResult(symbol, rawExchangeCode),
             type: String(q.quoteType || "EQUITY"),
           };
         });
@@ -397,25 +404,54 @@ async function enrichCashFlowWithFmp(symbol: string, years: CashFlowYear[]): Pro
 }
 
 /**
+ * Finds the actual revenue for the quarter nearest a given end date, from
+ * quarterly `fundamentalsTimeSeries({module:'financials', type:'quarterly'})`
+ * rows. Yahoo's fiscal quarter-end dates don't always land on the exact
+ * same day across modules (earningsHistory vs. fundamentalsTimeSeries), so
+ * this matches within a 10-day tolerance rather than requiring an exact
+ * date match.
+ */
+function findNearestQuarterlyRevenue(
+  rows: FundamentalsTimeSeriesFinancialsResult[],
+  targetDate: Date
+): number | null {
+  const TOLERANCE_MS = 10 * 24 * 60 * 60 * 1000;
+  let best: { revenue: number; diff: number } | null = null;
+  for (const row of rows) {
+    if (!(row.date instanceof Date) || row.totalRevenue == null) continue;
+    const diff = Math.abs(row.date.getTime() - targetDate.getTime());
+    if (diff > TOLERANCE_MS) continue;
+    if (!best || diff < best.diff) best = { revenue: row.totalRevenue, diff };
+  }
+  return best?.revenue ?? null;
+}
+
+/**
  * Maps Yahoo's `earningsTrend` module (forward analyst consensus) into our
  * EstimateRow shape, split into quarterly vs. annual buckets by the
- * `period` label's suffix ("0q"/"+1q" vs "0y"/"+1y"/"+5y"/"-5y").
+ * `period` label's suffix ("0q"/"+1q" vs "0y"/"+1y"/"+5y"/"-5y"), then
+ * enriches the quarterly bucket with genuinely real historical data from
+ * `earningsHistory` (trailing ~4 quarters of EPS actual/estimate).
  *
  * Data availability caveat worth flagging clearly: Yahoo's free
  * earningsTrend module typically only carries a handful of near-term
  * periods (current + next quarter, current + next year, a 5y growth
- * estimate) — not the rich multi-year historical-plus-forward table shown
- * in polished reference dashboards. The UI is built to render gracefully
- * with however many rows actually come back live; the mock data path
- * (AAPL/NVDA/TEVA.TA) provides the fuller illustrative table.
- *
- * "Beat" flagging for historical periods compares actual reported revenue
- * (from `income`) against whatever consensus Yahoo still has on file for
- * that period today — Yahoo doesn't expose point-in-time historical
- * consensus, so this is "actual vs. today's settled estimate," a
- * reasonable proxy rather than a precise at-the-time surprise calculation.
+ * estimate) — no historical rows. It does NOT expose point-in-time
+ * historical *revenue* consensus at all, at any tier we have access to.
+ * Rather than fabricate a revenue-based historical comparison, historical
+ * quarterly rows are built from `earningsHistory` (real trailing EPS
+ * actual/estimate/surprise — confirmed non-deprecated, no hardcoded-null
+ * fields) cross-referenced with real actual quarterly revenue from
+ * `fundamentalsTimeSeries`, and honestly labeled `beatBasis: "eps"` since
+ * that's what they actually compare. The mock data path (AAPL/NVDA/
+ * TEVA.TA) still shows the fuller illustrative revenue-based table for
+ * demo purposes, labeled `beatBasis: "revenue"`.
  */
-function toEstimates(summary: QuoteSummaryResult, income: IncomeStatementYear[]): EstimatesBundle {
+function toEstimates(
+  summary: QuoteSummaryResult,
+  income: IncomeStatementYear[],
+  quarterlyRevenueRows: FundamentalsTimeSeriesFinancialsResult[]
+): EstimatesBundle {
   const trend = summary.earningsTrend?.trend ?? [];
   const today = new Date();
   const actualRevenueByYear = new Map(income.map((y) => [y.fiscalYear, y.totalRevenue]));
@@ -452,9 +488,40 @@ function toEstimates(summary: QuoteSummaryResult, income: IncomeStatementYear[])
       isHistorical,
       beat,
       actualRevenue,
+      epsActual: null,
+      epsEstimate: null,
+      beatBasis: beat != null ? "revenue" : null,
     };
 
     (isQuarterly ? quarterly : annual).push(row);
+  }
+
+  // Enrich with real trailing EPS actual/estimate history — the one
+  // genuinely historical, non-fabricated data source Yahoo's free tier
+  // exposes for "did the company beat" style questions.
+  const existingQuarterlyDates = new Set(quarterly.map((r) => r.periodEndDate));
+  for (const h of summary.earningsHistory?.history ?? []) {
+    if (!h.quarter) continue;
+    const periodEndDate = h.quarter.toISOString().slice(0, 10);
+    if (existingQuarterlyDates.has(periodEndDate)) continue; // don't duplicate an earningsTrend row
+
+    const beat = h.epsActual != null && h.epsEstimate != null ? h.epsActual >= h.epsEstimate : null;
+    quarterly.push({
+      fiscalPeriodLabel: h.quarter.toLocaleDateString("en-US", { year: "numeric", month: "short" }),
+      periodEndDate,
+      revenueEstimate: null,
+      revenueYoyGrowthPct: null,
+      revenueAvg: null,
+      revenueLow: null,
+      revenueHigh: null,
+      numberOfAnalysts: null,
+      isHistorical: true,
+      beat,
+      actualRevenue: findNearestQuarterlyRevenue(quarterlyRevenueRows, h.quarter),
+      epsActual: h.epsActual,
+      epsEstimate: h.epsEstimate,
+      beatBasis: beat != null ? "eps" : null,
+    });
   }
 
   const byDate = (a: EstimateRow, b: EstimateRow) => a.periodEndDate.localeCompare(b.periodEndDate);
@@ -494,7 +561,13 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       const balancePeriod1 = new Date();
       balancePeriod1.setFullYear(balancePeriod1.getFullYear() - 6);
 
-      const [quotes, summary, chartResult, balanceRows, cashFlowRows] = await Promise.all([
+      // Trailing ~2 years is enough to cover earningsHistory's ~4 quarters
+      // with room to spare for the nearest-date matching in
+      // findNearestQuarterlyRevenue().
+      const quarterlyPeriod1 = new Date();
+      quarterlyPeriod1.setFullYear(quarterlyPeriod1.getFullYear() - 2);
+
+      const [quotes, summary, chartResult, balanceRows, cashFlowRows, quarterlyRevenueRows] = await Promise.all([
         getQuotes([symbol]),
         yahooFinance.quoteSummary(symbol, {
           modules: [
@@ -508,6 +581,10 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             // see toEstimates() doc comment for the real-world caveat that
             // this typically only returns a handful of near-term periods.
             "earningsTrend",
+            // Real trailing EPS actual/estimate/surprise (~4 quarters) —
+            // used to give the Estimates tab genuine historical beat/miss
+            // rows on the live path. See toEstimates() doc comment.
+            "earningsHistory",
           ],
         }),
         yahooFinance.chart(symbol, { period1, interval: "1d" }),
@@ -530,6 +607,16 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             module: "cash-flow",
           })
           .catch(() => [] as FundamentalsTimeSeriesCashFlowResult[]),
+        // Real quarterly actual revenue, used only to backfill the
+        // "Actual" figure next to earningsHistory's historical EPS rows —
+        // see findNearestQuarterlyRevenue().
+        yahooFinance
+          .fundamentalsTimeSeries(symbol, {
+            period1: quarterlyPeriod1,
+            type: "quarterly",
+            module: "financials",
+          })
+          .catch(() => [] as FundamentalsTimeSeriesFinancialsResult[]),
       ]);
 
       const quote = quotes[0];
@@ -559,7 +646,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         income,
         balance: toBalanceYears(balanceRows as FundamentalsTimeSeriesBalanceSheetResult[]),
         cashFlow,
-        estimates: toEstimates(summary, income),
+        estimates: toEstimates(summary, income, quarterlyRevenueRows as FundamentalsTimeSeriesFinancialsResult[]),
         history: toPricePoints(chartResult),
       };
       return bundle;

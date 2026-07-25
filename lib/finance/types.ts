@@ -145,6 +145,22 @@ export interface EstimateRow {
   beat: boolean | null;
   /** Only populated when isHistorical and known. */
   actualRevenue: number | null;
+  /**
+   * Trailing EPS actual/estimate (Yahoo's `earningsHistory` module, up to
+   * ~4 quarters back) — populated for historical quarterly rows that don't
+   * have a revenue consensus to compare against (see beatBasis).
+   */
+  epsActual: number | null;
+  epsEstimate: number | null;
+  /**
+   * Which figure `beat` is based on. Yahoo's free tier doesn't expose
+   * point-in-time historical *revenue* consensus (only forward-looking
+   * earningsTrend and trailing EPS-only earningsHistory), so live
+   * historical rows are honestly labeled "eps" rather than fabricating a
+   * revenue comparison. Mock/demo data uses "revenue" throughout. Null
+   * when there's nothing to compare (forward-looking rows).
+   */
+  beatBasis: "revenue" | "eps" | null;
 }
 
 export interface EstimatesBundle {

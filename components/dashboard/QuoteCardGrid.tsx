@@ -12,12 +12,18 @@ interface QuoteCardGridProps {
   columnsClassName?: string;
 }
 
-// QA hotfix (Phase 4): fixed column counts (e.g. xl:grid-cols-5) squeezed
-// each card too narrow for longer names like "NASDAQ Composite" or "ELBIT
-// SYSTEMS" to render before truncating awkwardly. auto-fit/minmax gives
-// every card a guaranteed minimum width and lets the grid add columns only
-// when there's actually room, at any viewport, without extra breakpoints.
-const DEFAULT_COLUMNS = "grid-cols-[repeat(auto-fit,minmax(240px,1fr))]";
+// QA hotfix (Phase 4, re-tuned in Final Polish pass): fixed column counts
+// (e.g. xl:grid-cols-5) squeezed each card too narrow for longer names like
+// "NASDAQ Composite" or "ELBIT SYSTEMS" to render before truncating
+// awkwardly. auto-fit/minmax gives every card a guaranteed minimum width —
+// but the first pass's 240px floor was still too small: `auto-fit` packs in
+// as many columns as fit at the *minimum* size, so on a wide desktop
+// viewport it actually produced MORE narrow columns rather than fewer wide
+// ones. A card needs roughly avatar(36px) + name text(~140px for a name
+// like "NASDAQ Composite") + price/change column(~85px) + padding/gaps
+// (~50px) ≈ 310px to avoid truncating; 280px keeps that comfortable for
+// all but the longest company names, which still legitimately ellipsize.
+const DEFAULT_COLUMNS = "grid-cols-[repeat(auto-fit,minmax(280px,1fr))]";
 
 /** Presentational grid shared by the live Market Summary and Most Active sections. */
 export function QuoteCardGrid({
