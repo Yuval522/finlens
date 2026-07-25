@@ -39,6 +39,11 @@ function getCurrencyMeta(currency: string | null | undefined): CurrencyMeta {
   return { symbol: currency ? `${currency} ` : "$", divisor: 1 };
 }
 
+/** Display symbol for a currency code, e.g. "ILA" -> "₪", "USD" -> "$". */
+export function currencySymbol(currency: string | null | undefined): string {
+  return getCurrencyMeta(currency).symbol;
+}
+
 /**
  * Raw numeric conversion (no symbol/formatting) — for feeding chart
  * libraries plain display-unit numbers, e.g. agorot -> shekels.

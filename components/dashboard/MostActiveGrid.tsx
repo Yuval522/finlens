@@ -11,7 +11,7 @@ export function MostActiveGrid() {
       <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
         Most Active
       </h2>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3">
         {Array.from({ length: MOST_ACTIVE_SLOTS }).map((_, i) => (
           <IndexCard key={i} />
         ))}

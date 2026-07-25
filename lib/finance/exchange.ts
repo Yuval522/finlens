@@ -50,3 +50,13 @@ export function toExchangeBadge(exchange: string | undefined | null): string {
   const upper = exchange.toUpperCase();
   return EXCHANGE_LABELS[upper] ?? exchange;
 }
+
+/** True for TASE (Tel Aviv Stock Exchange) listings — symbol suffix (.TA) or exchange code (TLV/TASE). */
+export function isTaseListing(
+  symbol: string | undefined | null,
+  exchange: string | undefined | null
+): boolean {
+  if (symbol?.toUpperCase().endsWith(".TA")) return true;
+  const upper = exchange?.toUpperCase();
+  return upper === "TLV" || upper === "TASE";
+}

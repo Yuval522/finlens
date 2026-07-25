@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Menu } from "lucide-react";
+import { FinLensLogo } from "@/components/branding/FinLensLogo";
 import { SymbolSearchInput } from "@/components/search/SymbolSearchInput";
 
 const USER_INITIALS = "YR";
@@ -35,6 +36,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       >
         <Menu className="h-5 w-5" />
       </button>
+      <FinLensLogo size={24} showWordmark className="shrink-0 md:hidden" />
       <SymbolSearchInput />
 
       <div ref={menuRef} className="relative ml-auto">

@@ -1,4 +1,4 @@
-import type { FundamentalsBundle, PricePoint } from "./types";
+import type { BalanceSheetYear, FundamentalsBundle, PricePoint } from "./types";
 
 /**
  * Illustrative fallback data for AAPL, NVDA, and TEVA.TA.
@@ -158,6 +158,13 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       { fiscalYear: "2025", totalRevenue: 408_000_000_000, grossProfit: 189_000_000_000, operatingIncome: 129_000_000_000, netIncome: 101_000_000_000, eps: 6.72, sharesOutstandingDiluted: 15_030_000_000, dividendsPerShare: 1.0 },
       { fiscalYear: "TTM", totalRevenue: 416_500_000_000, grossProfit: 193_000_000_000, operatingIncome: 132_500_000_000, netIncome: 104_800_000_000, eps: 7.05, sharesOutstandingDiluted: 14_870_000_000, dividendsPerShare: 1.02 },
     ],
+    balance: [
+      { fiscalYear: "2022", totalAssets: 352_755_000_000, totalLiabilities: 302_083_000_000, totalStockholdersEquity: 50_672_000_000, cashAndShortTermInvestments: 48_304_000_000, totalCurrentLiabilities: 153_982_000_000, totalCash: 23_646_000_000, totalDebt: 120_069_000_000 },
+      { fiscalYear: "2023", totalAssets: 352_583_000_000, totalLiabilities: 290_437_000_000, totalStockholdersEquity: 62_146_000_000, cashAndShortTermInvestments: 61_555_000_000, totalCurrentLiabilities: 145_308_000_000, totalCash: 29_965_000_000, totalDebt: 111_088_000_000 },
+      { fiscalYear: "2024", totalAssets: 364_980_000_000, totalLiabilities: 308_030_000_000, totalStockholdersEquity: 56_950_000_000, cashAndShortTermInvestments: 65_171_000_000, totalCurrentLiabilities: 176_392_000_000, totalCash: 29_943_000_000, totalDebt: 106_629_000_000 },
+      { fiscalYear: "2025", totalAssets: 378_000_000_000, totalLiabilities: 315_000_000_000, totalStockholdersEquity: 63_000_000_000, cashAndShortTermInvestments: 68_000_000_000, totalCurrentLiabilities: 180_000_000_000, totalCash: 32_000_000_000, totalDebt: 108_000_000_000 },
+      { fiscalYear: "TTM", totalAssets: 382_000_000_000, totalLiabilities: 317_000_000_000, totalStockholdersEquity: 65_000_000_000, cashAndShortTermInvestments: 70_000_000_000, totalCurrentLiabilities: 182_000_000_000, totalCash: 65_000_000_000, totalDebt: 105_000_000_000 },
+    ],
     history: generateSyntheticHistory({ seed: "AAPL", endPrice: 196.42, annualDriftPct: 18, annualVolPct: 28 }),
   },
 
@@ -223,6 +230,13 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       { fiscalYear: "2024", totalRevenue: 60_922_000_000, grossProfit: 44_301_000_000, operatingIncome: 32_972_000_000, netIncome: 29_760_000_000, eps: 1.19, sharesOutstandingDiluted: 24_940_000_000, dividendsPerShare: 0.04 },
       { fiscalYear: "2025", totalRevenue: 130_500_000_000, grossProfit: 97_800_000_000, operatingIncome: 81_500_000_000, netIncome: 72_900_000_000, eps: 2.94, sharesOutstandingDiluted: 24_800_000_000, dividendsPerShare: 0.04 },
       { fiscalYear: "TTM", totalRevenue: 165_000_000_000, grossProfit: 123_400_000_000, operatingIncome: 101_500_000_000, netIncome: 90_600_000_000, eps: 3.69, sharesOutstandingDiluted: 24_600_000_000, dividendsPerShare: 0.04 },
+    ],
+    balance: [
+      { fiscalYear: "2022", totalAssets: 44_187_000_000, totalLiabilities: 17_575_000_000, totalStockholdersEquity: 26_612_000_000, cashAndShortTermInvestments: 21_209_000_000, totalCurrentLiabilities: 4_335_000_000, totalCash: 3_389_000_000, totalDebt: 10_946_000_000 },
+      { fiscalYear: "2023", totalAssets: 41_182_000_000, totalLiabilities: 19_081_000_000, totalStockholdersEquity: 22_101_000_000, cashAndShortTermInvestments: 13_296_000_000, totalCurrentLiabilities: 6_563_000_000, totalCash: 3_389_000_000, totalDebt: 9_703_000_000 },
+      { fiscalYear: "2024", totalAssets: 65_728_000_000, totalLiabilities: 22_750_000_000, totalStockholdersEquity: 42_978_000_000, cashAndShortTermInvestments: 25_984_000_000, totalCurrentLiabilities: 10_631_000_000, totalCash: 7_280_000_000, totalDebt: 9_500_000_000 },
+      { fiscalYear: "2025", totalAssets: 110_000_000_000, totalLiabilities: 32_000_000_000, totalStockholdersEquity: 78_000_000_000, cashAndShortTermInvestments: 38_000_000_000, totalCurrentLiabilities: 18_000_000_000, totalCash: 10_000_000_000, totalDebt: 10_000_000_000 },
+      { fiscalYear: "TTM", totalAssets: 125_000_000_000, totalLiabilities: 35_000_000_000, totalStockholdersEquity: 90_000_000_000, cashAndShortTermInvestments: 43_000_000_000, totalCurrentLiabilities: 20_000_000_000, totalCash: 43_000_000_000, totalDebt: 10_500_000_000 },
     ],
     history: generateSyntheticHistory({ seed: "NVDA", endPrice: 138.72, annualDriftPct: 45, annualVolPct: 52 }),
   },
@@ -290,6 +304,13 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       { fiscalYear: "2023", totalRevenue: 15_838_000_000, grossProfit: 8_290_000_000, operatingIncome: 2_640_000_000, netIncome: 320_000_000, eps: 0.29, sharesOutstandingDiluted: 1_128_000_000, dividendsPerShare: 0 },
       { fiscalYear: "2024", totalRevenue: 16_500_000_000, grossProfit: 8_770_000_000, operatingIncome: 3_150_000_000, netIncome: 890_000_000, eps: 0.79, sharesOutstandingDiluted: 1_131_000_000, dividendsPerShare: 0 },
       { fiscalYear: "TTM", totalRevenue: 16_950_000_000, grossProfit: 9_050_000_000, operatingIncome: 3_360_000_000, netIncome: 955_000_000, eps: 0.85, sharesOutstandingDiluted: 1_132_000_000, dividendsPerShare: 0 },
+    ],
+    balance: [
+      { fiscalYear: "2021", totalAssets: 46_711_000_000, totalLiabilities: 30_609_000_000, totalStockholdersEquity: 16_102_000_000, cashAndShortTermInvestments: 1_589_000_000, totalCurrentLiabilities: 8_662_000_000, totalCash: 1_589_000_000, totalDebt: 19_814_000_000 },
+      { fiscalYear: "2022", totalAssets: 42_053_000_000, totalLiabilities: 28_942_000_000, totalStockholdersEquity: 13_111_000_000, cashAndShortTermInvestments: 1_650_000_000, totalCurrentLiabilities: 8_200_000_000, totalCash: 1_650_000_000, totalDebt: 18_600_000_000 },
+      { fiscalYear: "2023", totalAssets: 40_500_000_000, totalLiabilities: 27_800_000_000, totalStockholdersEquity: 12_700_000_000, cashAndShortTermInvestments: 1_950_000_000, totalCurrentLiabilities: 7_900_000_000, totalCash: 1_950_000_000, totalDebt: 17_500_000_000 },
+      { fiscalYear: "2024", totalAssets: 39_800_000_000, totalLiabilities: 27_100_000_000, totalStockholdersEquity: 12_700_000_000, cashAndShortTermInvestments: 2_200_000_000, totalCurrentLiabilities: 7_600_000_000, totalCash: 2_200_000_000, totalDebt: 16_800_000_000 },
+      { fiscalYear: "TTM", totalAssets: 39_200_000_000, totalLiabilities: 26_500_000_000, totalStockholdersEquity: 12_700_000_000, cashAndShortTermInvestments: 2_400_000_000, totalCurrentLiabilities: 7_400_000_000, totalCash: 2_400_000_000, totalDebt: 16_100_000_000 },
     ],
     history: generateSyntheticHistory({ seed: "TEVA.TA", endPrice: 68.2, annualDriftPct: 6, annualVolPct: 38 }).map(
       (p) => ({

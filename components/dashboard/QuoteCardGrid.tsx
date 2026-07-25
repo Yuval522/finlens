@@ -12,13 +12,20 @@ interface QuoteCardGridProps {
   columnsClassName?: string;
 }
 
+// QA hotfix (Phase 4): fixed column counts (e.g. xl:grid-cols-5) squeezed
+// each card too narrow for longer names like "NASDAQ Composite" or "ELBIT
+// SYSTEMS" to render before truncating awkwardly. auto-fit/minmax gives
+// every card a guaranteed minimum width and lets the grid add columns only
+// when there's actually room, at any viewport, without extra breakpoints.
+const DEFAULT_COLUMNS = "grid-cols-[repeat(auto-fit,minmax(240px,1fr))]";
+
 /** Presentational grid shared by the live Market Summary and Most Active sections. */
 export function QuoteCardGrid({
   title,
   quotes,
   slots,
   error,
-  columnsClassName = "sm:grid-cols-2 lg:grid-cols-3",
+  columnsClassName = DEFAULT_COLUMNS,
 }: QuoteCardGridProps) {
   return (
     <section>
@@ -32,7 +39,7 @@ export function QuoteCardGrid({
         </p>
       )}
 
-      <div className={cn("grid grid-cols-1 gap-3", columnsClassName)}>
+      <div className={cn("grid gap-3", columnsClassName)}>
         {quotes === null
           ? Array.from({ length: slots }).map((_, i) => <IndexCard key={i} />)
           : quotes.map((q) => <MarketQuoteCard key={q.symbol} quote={q} />)}

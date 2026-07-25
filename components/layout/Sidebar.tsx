@@ -12,9 +12,9 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  LineChart,
   X,
 } from "lucide-react";
+import { FinLensLogo } from "@/components/branding/FinLensLogo";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -56,14 +56,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
       >
         {/* Wordmark */}
         <div className="flex h-16 items-center gap-2 border-b border-border px-4">
-          <div className="brand-glow flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
-            <LineChart className="h-5 w-5" />
-          </div>
-          {!collapsed && (
-            <span className="truncate text-[15px] font-semibold tracking-tight">
-              FinLens
-            </span>
-          )}
+          <FinLensLogo size={28} showWordmark={!collapsed} className="min-w-0" />
           <button
             type="button"
             onClick={onClose}

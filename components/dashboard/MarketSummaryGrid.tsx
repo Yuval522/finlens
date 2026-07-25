@@ -12,7 +12,7 @@ export function MarketSummaryGrid() {
       <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
         Market Summary
       </h2>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
         {Array.from({ length: MARKET_SUMMARY_SLOTS }).map((_, i) => (
           <IndexCard key={i} />
         ))}

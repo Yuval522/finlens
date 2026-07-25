@@ -41,7 +41,7 @@ export default async function AnalysisPage({
     );
   }
 
-  const { quote, profile, metrics, income, history, reportingCurrency } = bundle;
+  const { quote, profile, metrics, income, balance, history, reportingCurrency } = bundle;
 
   return (
     <div className="analysis-grid">
@@ -55,11 +55,22 @@ export default async function AnalysisPage({
       </div>
 
       <div className="area-chart">
-        <ChartPanel history={history} currency={quote.currency} />
+        <ChartPanel
+          history={history}
+          currency={quote.currency}
+          symbol={quote.symbol}
+          exchange={quote.exchange}
+        />
       </div>
 
       <div className="area-tabs">
-        <DataExplorerTabs income={income} reportingCurrency={reportingCurrency} />
+        <DataExplorerTabs
+          income={income}
+          balance={balance}
+          reportingCurrency={reportingCurrency}
+          quote={quote}
+          metrics={metrics}
+        />
       </div>
     </div>
   );

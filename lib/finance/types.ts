@@ -98,6 +98,19 @@ export interface IncomeStatementYear {
   dividendsPerShare: number;
 }
 
+export interface BalanceSheetYear {
+  fiscalYear: string;
+  /** Cash & cash equivalents plus short-term marketable securities. */
+  cashAndShortTermInvestments: number;
+  totalCurrentLiabilities: number;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalStockholdersEquity: number;
+  /** Cash & cash equivalents only (subset of cashAndShortTermInvestments). */
+  totalCash: number;
+  totalDebt: number;
+}
+
 export interface PricePoint {
   /** ISO date, e.g. "2024-03-15" */
   date: string;
@@ -113,6 +126,8 @@ export interface FundamentalsBundle {
   metrics: TickerMetrics;
   /** Most recent ~5 fiscal years, oldest first */
   income: IncomeStatementYear[];
+  /** Most recent ~5 fiscal years, oldest first */
+  balance: BalanceSheetYear[];
   /** Daily closes, oldest first — sliced client-side per selected time range */
   history: PricePoint[];
   /**

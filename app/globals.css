@@ -3,19 +3,28 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------- */
-/* FinLens Signature Theme — Midnight Slate / Deep Obsidian Blue           */
-/* A richer, indigo-tinted dark palette (vs. flat obsidian black) inspired */
-/* by Linear/Vercel/modern Bloomberg terminals. HSL triplets (no hsl()     */
-/* wrapper) so Tailwind can compose hsl(var(--x)) and hsl(var(--x)/alpha). */
+/* FinLens Signature Theme v2 — Bright Deep Slate                          */
+/* Phase 4 repaint: the v1 palette (Midnight Slate/Obsidian) read as too   */
+/* dark/gloomy and too close to older copycat terminals. This version     */
+/* keeps the same hue family (indigo-blue, ~217-221deg) but lifts card    */
+/* lightness well above the page background for real depth, brightens    */
+/* borders so panels read as crisp/defined rather than flat, and swaps    */
+/* the accent for a more luminous, energetic blue (Tailwind blue-500      */
+/* territory) so buttons/active states/gradients feel alive. HSL triplets */
+/* (no hsl() wrapper) so Tailwind can compose hsl(var(--x)) / hsl(var(--x)/alpha). */
+/* Luminous cyan/emerald gradient accents (from-blue-500 to-cyan-400, and */
+/* from-blue-400 to-emerald-400 for the wordmark) are applied directly as */
+/* Tailwind utility classes in components — no extra tokens needed since  */
+/* Tailwind ships the full default color palette already. */
 /* ---------------------------------------------------------------------- */
 :root {
-  --background: 224 33% 9%; /* Midnight Slate base, indigo-tinted obsidian */
-  --foreground: 210 20% 96%;
+  --background: 221 27% 12%; /* Bright Deep Slate base — softer than obsidian black */
+  --foreground: 0 0% 100%; /* pure white for headings/primary text */
 
-  --card: 222 30% 12%;
-  --card-foreground: 210 20% 96%;
+  --card: 221 27% 18%; /* visibly lighter than background for real card contrast */
+  --card-foreground: 0 0% 100%;
 
-  --primary: 228 83% 60%; /* indigo-blue, Linear-esque accent */
+  --primary: 217 91% 60%; /* luminous sky-blue, Tailwind blue-500 territory */
   --primary-foreground: 0 0% 100%;
 
   --success: 160 84% 39%; /* #10B981 — vivid emerald for gains */
@@ -24,13 +33,13 @@
   --destructive: 0 84% 60%; /* #EF4444 — sharp red for losses */
   --destructive-foreground: 0 0% 100%;
 
-  --border: 222 24% 20%;
-  --muted: 222 24% 15%;
-  --muted-foreground: 215 16% 68%;
-  --accent: 224 28% 18%;
-  --accent-foreground: 210 20% 96%;
+  --border: 217 24% 28%; /* sharp, visible border vs. the old near-invisible line */
+  --muted: 217 24% 20%;
+  --muted-foreground: 215 20% 66%; /* bright slate for labels, Tailwind slate-400 territory */
+  --accent: 217 26% 24%;
+  --accent-foreground: 0 0% 100%;
 
-  --ring: 228 83% 60%;
+  --ring: 217 91% 60%;
   --radius: 0.75rem;
 
   /* Dual-font system: UI text in Open Sans, all numeric/price/ticker data
@@ -80,27 +89,39 @@ body {
 /* Premium glass accents — used on chrome (Topbar, Sidebar) and elevated
    cards to give FinLens a distinct, modern feel vs. flat competitor UIs. */
 .glass-panel {
-  background-color: hsl(var(--card) / 0.7);
+  background-color: hsl(var(--card) / 0.82);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
 
 /* Lighter glass treatment for individual content cards — subtle gradient
-   fill + a faint top-edge highlight to read as "glass" rather than flat. */
+   fill + a brighter top-edge highlight so cards read as distinctly raised
+   above the page background rather than blending into it. */
 .glass-card {
   background: linear-gradient(
     180deg,
-    hsl(var(--card) / 0.92),
-    hsl(var(--card) / 0.78)
+    hsl(var(--card) / 0.96),
+    hsl(var(--card) / 0.86)
   );
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  box-shadow: inset 0 1px 0 0 hsl(var(--foreground) / 0.05);
+  box-shadow: inset 0 1px 0 0 hsl(0 0% 100% / 0.08);
 }
 
 .brand-glow {
-  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.4),
-    0 0 24px 0 hsl(var(--primary) / 0.35);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.45),
+    0 0 24px 0 hsl(var(--primary) / 0.4);
+}
+
+/* Luminous blue -> cyan gradient for active nav items, primary buttons,
+   and section accents — the "energetic" counterpart to the flat --primary
+   token, applied inline as Tailwind utilities (from-blue-500 to-cyan-400)
+   wherever a bespoke gradient is needed rather than baked into a class. */
+.brand-gradient-text {
+  background-image: linear-gradient(90deg, #60a5fa, #34d399);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -129,6 +150,15 @@ body {
       "profile chart"
       "profile tabs";
   }
+}
+
+/* QA hotfix (Phase 4): CSS Grid items default to min-width:auto, which lets
+   wide non-text content (the lightweight-charts canvas in particular)
+   force the whole grid track wider than the viewport on narrow mobile
+   screens — clipping the chart's right-hand price scale off-screen with
+   no visible scrollbar. Force every grid child to be free to shrink. */
+.analysis-grid > * {
+  min-width: 0;
 }
 
 .analysis-grid > .area-profile {

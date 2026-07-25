@@ -1,4 +1,5 @@
 import type { SearchResultItem } from "@/lib/finance/types";
+import { currencySymbol } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -49,8 +50,11 @@ export function SymbolSearchResultRow({
         <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
           {result.exchange}
         </span>
-        <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary">
-          {result.currency}
+        <span
+          className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary"
+          title={result.currency}
+        >
+          {currencySymbol(result.currency)}
         </span>
       </div>
     </button>

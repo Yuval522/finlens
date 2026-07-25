@@ -13,24 +13,14 @@ import {
   YAxis,
 } from "recharts";
 import type { IncomeStatementYear } from "@/lib/finance/types";
+import { CHART_COLORS, CHART_TOOLTIP_STYLE, compactAxis } from "@/lib/format/chart";
 
 interface IncomeStatementPanelProps {
   income: IncomeStatementYear[];
   currency: string;
 }
 
-const SUCCESS = "#10B981";
-const PRIMARY = "#6366F1";
-const AMBER = "#F59E0B";
-const SLATE = "#64748B";
-
-function compactAxis(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1e9) return `${(value / 1e9).toFixed(0)}B`;
-  if (abs >= 1e6) return `${(value / 1e6).toFixed(0)}M`;
-  if (abs >= 1e3) return `${(value / 1e3).toFixed(0)}K`;
-  return `${value}`;
-}
+const { success: SUCCESS, primary: PRIMARY, amber: AMBER, slate: SLATE } = CHART_COLORS;
 
 function ChartCard({
   title,
@@ -45,7 +35,7 @@ function ChartCard({
 }) {
   return (
     <div
-      className={`glass-card rounded-xl p-3 sm:p-4 ${
+      className={`glass-card min-w-0 rounded-xl p-3 sm:p-4 ${
         fullscreen ? "fixed inset-4 z-50 overflow-auto" : ""
       }`}
     >
@@ -65,13 +55,7 @@ function ChartCard({
   );
 }
 
-const tooltipStyle = {
-  backgroundColor: "#0f1420",
-  border: "1px solid rgba(148, 163, 184, 0.2)",
-  borderRadius: "0.5rem",
-  fontSize: "12px",
-  fontFamily: "var(--font-mono)",
-};
+const tooltipStyle = CHART_TOOLTIP_STYLE;
 
 export function IncomeStatementPanel({ income, currency }: IncomeStatementPanelProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -79,7 +63,7 @@ export function IncomeStatementPanel({ income, currency }: IncomeStatementPanelP
   const toggle = (key: string) => setExpanded((cur) => (cur === key ? null : key));
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
       <ChartCard
         title="Total Revenues"
         fullscreen={expanded === "revenue"}

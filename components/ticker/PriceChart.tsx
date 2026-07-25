@@ -23,6 +23,14 @@ interface PriceChartProps {
   smaPeriod?: number;
   /** Drives area-chart gradient/line color — true = period gained, false = lost. */
   positive: boolean;
+  /**
+   * Intl locale for axis date labels. QA hotfix (Phase 4): this used to be
+   * left unset, so lightweight-charts fell back to the browser's own
+   * locale (e.g. a Hebrew OS/browser setting rendered Hebrew month labels
+   * for every ticker, not just TASE ones). Callers should pass "he-IL"
+   * only for .TA/TLV symbols and "en-US" for everything else.
+   */
+  locale?: string;
 }
 
 const SUCCESS = "#10B981";
@@ -48,6 +56,7 @@ export function PriceChart({
   showSma = false,
   smaPeriod = 20,
   positive,
+  locale = "en-US",
 }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -73,6 +82,7 @@ export function PriceChart({
       rightPriceScale: { borderColor: "rgba(148, 163, 184, 0.15)" },
       timeScale: { borderColor: "rgba(148, 163, 184, 0.15)" },
       crosshair: { mode: CrosshairMode.Normal },
+      localization: { locale },
       width: container.clientWidth,
       height: container.clientHeight || 360,
     });
@@ -93,7 +103,7 @@ export function PriceChart({
       mainSeriesRef.current = null;
       smaSeriesRef.current = null;
     };
-  }, []);
+  }, [locale]);
 
   // Swap the main series whenever mode/data/direction changes.
   useEffect(() => {
@@ -160,5 +170,7 @@ export function PriceChart({
     }
   }, [showSma, smaPeriod, data]);
 
-  return <div ref={containerRef} className="h-[320px] w-full sm:h-[400px]" />;
+  return (
+    <div ref={containerRef} className="h-[320px] w-full min-w-0 overflow-hidden sm:h-[400px]" />
+  );
 }

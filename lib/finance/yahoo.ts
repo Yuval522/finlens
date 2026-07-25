@@ -1,12 +1,14 @@
 import YahooFinance from "yahoo-finance2";
 import type { QuoteSummaryResult } from "yahoo-finance2/modules/quoteSummary-iface";
 import type { ChartResultArray } from "yahoo-finance2/modules/chart";
+import type { FundamentalsTimeSeriesBalanceSheetResult } from "yahoo-finance2/modules/fundamentalsTimeSeries";
 import { TtlCache } from "./cache";
 import { guessCurrencyFromExchange, toExchangeBadge } from "./exchange";
 import { getMockFundamentals } from "./mock-data";
 import { MARKET_SUMMARY_SYMBOLS, TASE_SEED_SYMBOLS, US_FALLBACK_SYMBOLS } from "./symbols";
 import {
   MarketDataError,
+  type BalanceSheetYear,
   type FundamentalsBundle,
   type IncomeStatementYear,
   type MarketQuote,
@@ -113,15 +115,21 @@ export async function searchSymbols(query: string): Promise<SearchResultItem[]> 
       return (result.quotes as unknown as Record<string, unknown>[])
         .filter((q) => q.isYahooFinance === true && typeof q.symbol === "string")
         .map((q): SearchResultItem => {
-          const rawExchange = String(q.exchDisp || q.exchange || "");
-          const exchange = toExchangeBadge(rawExchange);
+          // Bug fix (QA Phase 4): currency was being guessed from the
+          // human-readable display badge (e.g. "Tel Aviv"), which never
+          // matches EXCHANGE_CURRENCY's short-code keys and silently fell
+          // back to USD for every TASE result. Guess from the raw short
+          // exchange code (`q.exchange`, e.g. "TLV") instead, and only use
+          // the display name as a last resort for the *label*, not currency.
+          const rawExchangeCode = String(q.exchange || q.exchDisp || "");
+          const exchange = toExchangeBadge(String(q.exchDisp || q.exchange || ""));
           return {
             symbol: String(q.symbol),
             name: String(q.longname || q.shortname || q.symbol),
             exchange,
             // Search doesn't return currency (only `quote` does) — best-effort
             // badge from exchange, confirmed/corrected once a quote loads.
-            currency: guessCurrencyFromExchange(exchange),
+            currency: guessCurrencyFromExchange(rawExchangeCode),
             type: String(q.quoteType || "EQUITY"),
           };
         });
@@ -239,32 +247,84 @@ function toMetrics(summary: QuoteSummaryResult) {
 }
 
 /**
- * Maps up to ~4 years of classic incomeStatementHistory rows. `operatingIncome`
- * uses `ebit` as a close proxy (Yahoo nulls out the dedicated field on this
- * endpoint). EPS and dividends/share aren't provided per-year here, so both
- * are derived from the current sharesOutstanding/dividendRate — an
- * approximation, not a precise historical figure.
+ * Maps up to ~4 years of classic incomeStatementHistory rows.
+ *
+ * QA hotfix (Phase 4): `operatingIncome` bars were rendering as a flat
+ * zero line live. Root cause, confirmed against yahoo-finance2's own type
+ * declarations: `IncomeStatementHistoryElement.operatingIncome` is
+ * hard-typed as literal `null` — Yahoo's classic incomeStatementHistory
+ * endpoint simply doesn't populate that field on the wire, for any ticker.
+ * `ebit` was meant to be the fallback for exactly that reason, but in
+ * practice `grossProfit`/`ebit` are also frequently null/0 for tickers
+ * where Yahoo has trimmed this legacy module down. Rather than trust
+ * either field blindly, fall back to deriving both from the TTM margins
+ * we already fetch via `financialData` (same numbers already powering the
+ * Margins accordion, which QA confirmed render correctly) applied to that
+ * year's revenue. Approximate — margins drift year to year — but always a
+ * realistic, non-zero bar instead of a flat line. EPS and dividends/share
+ * aren't provided per-year at all here, so both are derived from the
+ * current sharesOutstanding/dividendRate — likewise an approximation, not
+ * a precise historical figure.
  */
 function toIncomeYears(summary: QuoteSummaryResult): IncomeStatementYear[] {
   const rows = summary.incomeStatementHistory?.incomeStatementHistory ?? [];
   const sharesOutstanding = summary.defaultKeyStatistics?.sharesOutstanding ?? 0;
   const dividendsPerShare = summary.summaryDetail?.dividendRate ?? 0;
+  const grossMarginFallback = summary.financialData?.grossMargins ?? null;
+  const operatingMarginFallback = summary.financialData?.operatingMargins ?? null;
 
   return [...rows]
     .sort((a, b) => a.endDate.getTime() - b.endDate.getTime())
     .map((row) => {
       const netIncome = row.netIncome ?? 0;
+      const totalRevenue = row.totalRevenue ?? 0;
+      const grossProfit =
+        row.grossProfit ||
+        (grossMarginFallback != null ? Math.round(totalRevenue * grossMarginFallback) : 0);
+      const operatingIncome =
+        row.ebit ||
+        (operatingMarginFallback != null ? Math.round(totalRevenue * operatingMarginFallback) : 0);
       return {
         fiscalYear: String(row.endDate.getFullYear()),
-        totalRevenue: row.totalRevenue ?? 0,
-        grossProfit: row.grossProfit ?? 0,
-        operatingIncome: row.ebit ?? 0,
+        totalRevenue,
+        grossProfit,
+        operatingIncome,
         netIncome,
         eps: sharesOutstanding > 0 ? Number((netIncome / sharesOutstanding).toFixed(2)) : 0,
         sharesOutstandingDiluted: sharesOutstanding,
         dividendsPerShare,
       };
     });
+}
+
+/**
+ * Maps annual balance-sheet rows from the `fundamentalsTimeSeries` method.
+ *
+ * Deliberately NOT using quoteSummary's `balanceSheetHistory` module —
+ * confirmed via yahoo-finance2's own source comments and runtime AJV
+ * schema (`additionalProperties: false`) that Yahoo has stripped that
+ * legacy endpoint down to just `{ maxAge, endDate }` since Nov 2024; every
+ * financial field would silently come back as `undefined`. The library's
+ * own recommendation is `fundamentalsTimeSeries` instead, whose result
+ * rows come back with the "annual"/"quarterly" prefix already stripped
+ * (e.g. `totalAssets`, not `annualTotalAssets` — verified against the
+ * module's transform code, not just its stale doc-comment examples).
+ */
+function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[]): BalanceSheetYear[] {
+  return [...rows]
+    .filter((row) => row.date instanceof Date)
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
+    .map((row) => ({
+      fiscalYear: String(row.date.getFullYear()),
+      cashAndShortTermInvestments:
+        row.cashCashEquivalentsAndShortTermInvestments ?? row.cashAndCashEquivalents ?? 0,
+      totalCurrentLiabilities: row.currentLiabilities ?? 0,
+      totalAssets: row.totalAssets ?? 0,
+      totalLiabilities: row.totalLiabilitiesNetMinorityInterest ?? 0,
+      totalStockholdersEquity: row.stockholdersEquity ?? row.totalEquityGrossMinorityInterest ?? 0,
+      totalCash: row.cashAndCashEquivalents ?? 0,
+      totalDebt: row.totalDebt ?? 0,
+    }));
 }
 
 function toPricePoints(chart: ChartResultArray): PricePoint[] {
@@ -297,7 +357,10 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       const period1 = new Date();
       period1.setFullYear(period1.getFullYear() - 10);
 
-      const [quotes, summary, chartResult] = await Promise.all([
+      const balancePeriod1 = new Date();
+      balancePeriod1.setFullYear(balancePeriod1.getFullYear() - 6);
+
+      const [quotes, summary, chartResult, balanceRows] = await Promise.all([
         getQuotes([symbol]),
         yahooFinance.quoteSummary(symbol, {
           modules: [
@@ -309,6 +372,17 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
           ],
         }),
         yahooFinance.chart(symbol, { period1, interval: "1d" }),
+        // Balance sheet data comes from a separate top-level method, not a
+        // quoteSummary module (see toBalanceYears() doc comment). Caught
+        // independently so a balance-sheet-only hiccup doesn't fall the
+        // entire bundle back to mock data when the rest loaded fine.
+        yahooFinance
+          .fundamentalsTimeSeries(symbol, {
+            period1: balancePeriod1,
+            type: "annual",
+            module: "balance-sheet",
+          })
+          .catch(() => [] as FundamentalsTimeSeriesBalanceSheetResult[]),
       ]);
 
       const quote = quotes[0];
@@ -331,6 +405,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         },
         metrics: toMetrics(summary),
         income: toIncomeYears(summary),
+        balance: toBalanceYears(balanceRows as FundamentalsTimeSeriesBalanceSheetResult[]),
         history: toPricePoints(chartResult),
       };
       return bundle;

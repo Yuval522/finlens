@@ -5,11 +5,15 @@ import { AreaChart, CandlestickChart } from "lucide-react";
 import { PriceChart, type ChartMode } from "./PriceChart";
 import { TimeRangeSelector, type TimeRange } from "./TimeRangeSelector";
 import { toDisplayUnit } from "@/lib/format/currency";
+import { isTaseListing } from "@/lib/finance/exchange";
 import type { PricePoint } from "@/lib/finance/types";
 
 interface ChartPanelProps {
   history: PricePoint[];
   currency: string | null;
+  /** Used to pick the chart's date-axis locale — he-IL only for TASE listings. */
+  symbol: string;
+  exchange: string | null;
 }
 
 function sliceByRange(history: PricePoint[], range: TimeRange): PricePoint[] {
@@ -40,10 +44,15 @@ function sliceByRange(history: PricePoint[], range: TimeRange): PricePoint[] {
   return history.slice(-days);
 }
 
-export function ChartPanel({ history, currency }: ChartPanelProps) {
+export function ChartPanel({ history, currency, symbol, exchange }: ChartPanelProps) {
   const [range, setRange] = useState<TimeRange>("1Y");
   const [mode, setMode] = useState<ChartMode>("area");
   const [showSma, setShowSma] = useState(false);
+
+  // QA hotfix (Phase 4): date-axis locale is market-aware now — Hebrew only
+  // for TASE listings, English everywhere else (was previously left unset,
+  // so it silently inherited the browser's own locale for every symbol).
+  const locale = isTaseListing(symbol, exchange) ? "he-IL" : "en-US";
 
   const { slicedData, positive } = useMemo(() => {
     const sliced = sliceByRange(history, range);
@@ -116,7 +125,13 @@ export function ChartPanel({ history, currency }: ChartPanelProps) {
       </div>
 
       <div className="mt-4">
-        <PriceChart data={slicedData} mode={mode} showSma={showSma} positive={positive} />
+        <PriceChart
+          data={slicedData}
+          mode={mode}
+          showSma={showSma}
+          positive={positive}
+          locale={locale}
+        />
       </div>
     </div>
   );
