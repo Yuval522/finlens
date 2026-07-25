@@ -80,3 +80,20 @@ export function isTaseListing(
   const upper = exchange?.toUpperCase();
   return upper === "TLV" || upper === "TASE";
 }
+
+/**
+ * True for market indices (e.g. ^GSPC, ^TA125.TA, ^IXIC) — Yahoo's
+ * `quoteType: "INDEX"` is the authoritative signal, but the `^` symbol
+ * prefix is checked too since it's exact and provider-independent (same
+ * defense-in-depth pattern as isTaseListing's symbol-suffix check). Indices
+ * have no income statement/balance sheet/cash flow/estimates to show, so
+ * callers use this to hide the fundamentals tab strip and render only the
+ * header + price chart.
+ */
+export function isIndexQuote(
+  symbol: string | undefined | null,
+  quoteType: string | undefined | null
+): boolean {
+  if (quoteType?.toUpperCase() === "INDEX") return true;
+  return Boolean(symbol?.trim().startsWith("^"));
+}

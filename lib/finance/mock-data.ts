@@ -390,6 +390,83 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       })
     ),
   },
+
+  // Minimal index mock: proves the "hide fundamentals tabs for indices"
+  // logic (isIndexQuote() in lib/finance/exchange.ts, gated in
+  // app/analysis/[symbol]/page.tsx) end-to-end inside this sandbox, since
+  // the live provider is unreachable here and indices otherwise fall
+  // through to the plain "no data" error state rather than exercising that
+  // code path at all. All fundamentals-shaped fields are null/empty on
+  // purpose — an index genuinely has no income statement, balance sheet,
+  // cash flow, or analyst estimates to show.
+  "^TA125.TA": {
+    source: "mock",
+    reportingCurrency: "ILA",
+    quote: {
+      symbol: "^TA125.TA",
+      name: "TA-125 Index",
+      exchange: "TLV",
+      currency: "ILA",
+      quoteType: "INDEX",
+      price: 2_142_530,
+      change: 8_410,
+      changePercent: 0.39,
+      marketCap: null,
+      marketState: "REGULAR",
+      asOf: Date.now(),
+      timezone: "Asia/Jerusalem",
+      preMarketPrice: null,
+      preMarketChange: null,
+      preMarketChangePercent: null,
+      postMarketPrice: null,
+      postMarketChange: null,
+      postMarketChangePercent: null,
+    },
+    profile: {
+      sector: null,
+      industry: null,
+      website: null,
+      ceo: null,
+      description:
+        "The TA-125 Index tracks the 125 largest and most liquid companies listed on the Tel Aviv Stock Exchange.",
+    },
+    metrics: {
+      financials: {
+        marketCap: null,
+        peRatio: null,
+        forwardPE: null,
+        forwardPeg: null,
+        priceToCashFlow: null,
+        priceToFreeCashFlow: null,
+      },
+      yields: {
+        earningsYield: null,
+        cashFlowYield: null,
+        freeCashFlowYield: null,
+        dividendYield: null,
+        payoutRatio: null,
+      },
+      balances: { totalCash: null, totalDebt: null, netCashPosition: null },
+      margins: { grossMargin: null, operatingMargin: null, netIncomeMargin: null },
+    },
+    income: [],
+    balance: [],
+    cashFlow: [],
+    estimates: { quarterly: [], annual: [] },
+    history: generateSyntheticHistory({
+      seed: "^TA125.TA",
+      endPrice: 21_425.3,
+      annualDriftPct: 9,
+      annualVolPct: 18,
+    }).map((p) => ({
+      // Same agorot-scaling convention as TEVA.TA above.
+      date: p.date,
+      open: Math.round(p.open * 100),
+      high: Math.round(p.high * 100),
+      low: Math.round(p.low * 100),
+      close: Math.round(p.close * 100),
+    })),
+  },
 };
 
 export function getMockFundamentals(symbol: string): FundamentalsBundle | null {

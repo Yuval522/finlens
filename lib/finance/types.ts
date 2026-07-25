@@ -13,6 +13,14 @@ export interface MarketQuote {
   name: string;
   /** Exchange code, e.g. "NASDAQ", "NYSE", "TLV" */
   exchange: string;
+  /**
+   * Yahoo's instrument classification, e.g. "EQUITY", "INDEX", "ETF",
+   * "CRYPTOCURRENCY". Optional (mock quotes omit it — they're all EQUITY)
+   * and only really used to gate the fundamentals tab strip for indices,
+   * which have no income statement/balance sheet/etc. to show. See
+   * isIndexQuote() in lib/finance/exchange.ts.
+   */
+  quoteType?: string | null;
   /** ISO-ish currency code as returned by the provider, e.g. USD, ILA, EUR */
   currency: string;
   price: number | null;

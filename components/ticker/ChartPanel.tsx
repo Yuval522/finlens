@@ -1,12 +1,20 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AreaChart, CandlestickChart } from "lucide-react";
+import { AreaChart, CandlestickChart, Grid3x3 } from "lucide-react";
 import { PriceChart, type ChartMode } from "./PriceChart";
 import { TimeRangeSelector, type TimeRange } from "./TimeRangeSelector";
 import { toDisplayUnit } from "@/lib/format/currency";
 import { isTaseListing } from "@/lib/finance/exchange";
 import type { PricePoint } from "@/lib/finance/types";
+
+/** Chart color picker presets — a flat accent color overrides the default green-gain/red-loss coloring. */
+const COLOR_PRESETS: { name: string; hex: string }[] = [
+  { name: "Classic Blue", hex: "#3B82F6" },
+  { name: "Emerald Green", hex: "#10B981" },
+  { name: "Electric Purple", hex: "#A855F7" },
+  { name: "Amber Gold", hex: "#F59E0B" },
+];
 
 interface ChartPanelProps {
   history: PricePoint[];
@@ -48,6 +56,8 @@ export function ChartPanel({ history, currency, symbol, exchange }: ChartPanelPr
   const [range, setRange] = useState<TimeRange>("1Y");
   const [mode, setMode] = useState<ChartMode>("area");
   const [showSma, setShowSma] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
+  const [chartColor, setChartColor] = useState<string | null>(null);
 
   // QA hotfix (Phase 4): date-axis locale is market-aware now — Hebrew only
   // for TASE listings, English everywhere else (was previously left unset,
@@ -73,7 +83,7 @@ export function ChartPanel({ history, currency, symbol, exchange }: ChartPanelPr
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <TimeRangeSelector value={range} onChange={setRange} />
 
-        <div className="flex shrink-0 items-center gap-3 self-end sm:self-auto">
+        <div className="flex shrink-0 flex-wrap items-center gap-3 self-end sm:self-auto">
           <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
             <span>SMA 20</span>
             <button
@@ -92,6 +102,59 @@ export function ChartPanel({ history, currency, symbol, exchange }: ChartPanelPr
               />
             </button>
           </label>
+
+          <label
+            className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground"
+            title="הצג/הסתר רשת — toggle chart grid lines"
+          >
+            <Grid3x3 className="h-3.5 w-3.5" />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showGrid}
+              aria-label="Toggle grid lines"
+              onClick={() => setShowGrid((v) => !v)}
+              className={`relative h-5 w-9 rounded-full transition-colors ${
+                showGrid ? "bg-primary" : "bg-accent"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                  showGrid ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </label>
+
+          <div
+            className="flex items-center gap-1.5 rounded-lg border border-slate-800/80 px-2 py-1"
+            role="group"
+            aria-label="Chart color"
+          >
+            <button
+              type="button"
+              onClick={() => setChartColor(null)}
+              aria-pressed={chartColor === null}
+              title="Auto (trend color)"
+              className={`h-3.5 w-3.5 shrink-0 rounded-full transition-shadow ${
+                chartColor === null ? "ring-2 ring-primary ring-offset-1 ring-offset-background" : ""
+              }`}
+              style={{ background: "linear-gradient(135deg, #10B981 50%, #EF4444 50%)" }}
+            />
+            {COLOR_PRESETS.map((preset) => (
+              <button
+                key={preset.hex}
+                type="button"
+                onClick={() => setChartColor(preset.hex)}
+                aria-pressed={chartColor === preset.hex}
+                title={preset.name}
+                className={`h-3.5 w-3.5 shrink-0 rounded-full transition-shadow ${
+                  chartColor === preset.hex ? "ring-2 ring-primary ring-offset-1 ring-offset-background" : ""
+                }`}
+                style={{ backgroundColor: preset.hex }}
+              />
+            ))}
+          </div>
 
           <div className="flex items-center rounded-lg border border-slate-800/80 p-0.5">
             <button
@@ -131,6 +194,8 @@ export function ChartPanel({ history, currency, symbol, exchange }: ChartPanelPr
           showSma={showSma}
           positive={positive}
           locale={locale}
+          showGrid={showGrid}
+          overrideColor={chartColor}
         />
       </div>
     </div>

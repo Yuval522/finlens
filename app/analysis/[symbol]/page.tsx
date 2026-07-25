@@ -1,6 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 import { getFundamentals } from "@/lib/finance/yahoo";
 import { MarketDataError } from "@/lib/finance/types";
+import { isIndexQuote } from "@/lib/finance/exchange";
 import { CompanyProfileHeader } from "@/components/ticker/CompanyProfileHeader";
 import { CompanyMetricsAccordions } from "@/components/ticker/CompanyMetricsAccordions";
 import { PriceHeaderBlock } from "@/components/ticker/PriceHeaderBlock";
@@ -43,11 +44,19 @@ export default async function AnalysisPage({
 
   const { quote, profile, metrics, income, balance, cashFlow, estimates, history, reportingCurrency } = bundle;
 
+  // Indices (^GSPC, ^TA125.TA, ^IXIC, ...) have no income statement, balance
+  // sheet, cash flow, analyst estimates, or valuation to show — Yahoo simply
+  // doesn't carry fundamentals data for them. Rather than render a tab strip
+  // full of empty/broken panels, hide the entire fundamentals section (tabs
+  // + the P/E-and-margins metrics accordions, which are equally meaningless
+  // for an index) and show only the header card and the price chart.
+  const isIndex = isIndexQuote(quote.symbol, quote.quoteType);
+
   return (
     <div className="analysis-grid">
       <div className="area-profile space-y-4">
         <CompanyProfileHeader quote={quote} profile={profile} />
-        <CompanyMetricsAccordions metrics={metrics} reportingCurrency={reportingCurrency} />
+        {!isIndex && <CompanyMetricsAccordions metrics={metrics} reportingCurrency={reportingCurrency} />}
       </div>
 
       <div className="area-price">
@@ -63,17 +72,19 @@ export default async function AnalysisPage({
         />
       </div>
 
-      <div className="area-tabs">
-        <DataExplorerTabs
-          income={income}
-          balance={balance}
-          cashFlow={cashFlow}
-          estimates={estimates}
-          reportingCurrency={reportingCurrency}
-          quote={quote}
-          metrics={metrics}
-        />
-      </div>
+      {!isIndex && (
+        <div className="area-tabs">
+          <DataExplorerTabs
+            income={income}
+            balance={balance}
+            cashFlow={cashFlow}
+            estimates={estimates}
+            reportingCurrency={reportingCurrency}
+            quote={quote}
+            metrics={metrics}
+          />
+        </div>
+      )}
     </div>
   );
 }

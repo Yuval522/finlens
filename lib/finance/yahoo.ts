@@ -73,6 +73,7 @@ function toMarketQuote(q: Record<string, unknown>): MarketQuote {
     name: String(q.shortName || q.longName || q.symbol || ""),
     exchange: String(q.fullExchangeName || q.exchange || "—"),
     currency: String(q.currency || "USD"),
+    quoteType: typeof q.quoteType === "string" ? q.quoteType : null,
     price: num(q.regularMarketPrice),
     change: num(q.regularMarketChange),
     changePercent: num(q.regularMarketChangePercent),

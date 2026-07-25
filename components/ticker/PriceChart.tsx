@@ -23,7 +23,7 @@ interface PriceChartProps {
   mode: ChartMode;
   showSma?: boolean;
   smaPeriod?: number;
-  /** Drives area-chart gradient/line color — true = period gained, false = lost. */
+  /** Drives area-chart gradient/line color — true = period gained, false = lost. Ignored when overrideColor is set. */
   positive: boolean;
   /**
    * Intl locale for axis date labels. QA hotfix (Phase 4): this used to be
@@ -33,11 +33,29 @@ interface PriceChartProps {
    * only for .TA/TLV symbols and "en-US" for everything else.
    */
   locale?: string;
+  /** Show/hide background grid lines. Defaults to visible. */
+  showGrid?: boolean;
+  /**
+   * When set, overrides the default green-gain/red-loss color with a single
+   * flat accent color (area line/fill, or candle up+down+wick colors) —
+   * powers the chart's color-preset picker. `null`/`undefined` keeps the
+   * default trend-based coloring.
+   */
+  overrideColor?: string | null;
 }
 
 const SUCCESS = "#10B981";
 const DESTRUCTIVE = "#EF4444";
 const SMA_COLOR = "#F59E0B";
+
+/** Converts a "#RRGGBB" hex color to an "rgba(r, g, b, alpha)" string for area-chart fills. */
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 function timeToDate(time: Time): Date {
   if (typeof time === "string") return new Date(time);
@@ -94,6 +112,8 @@ export function PriceChart({
   smaPeriod = 20,
   positive,
   locale = "en-US",
+  showGrid = true,
+  overrideColor = null,
 }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -113,8 +133,8 @@ export function PriceChart({
         textColor: "#94a3b8",
       },
       grid: {
-        vertLines: { color: "rgba(148, 163, 184, 0.08)" },
-        horzLines: { color: "rgba(148, 163, 184, 0.08)" },
+        vertLines: { color: "rgba(148, 163, 184, 0.08)", visible: showGrid },
+        horzLines: { color: "rgba(148, 163, 184, 0.08)", visible: showGrid },
       },
       rightPriceScale: { borderColor: "rgba(148, 163, 184, 0.15)" },
       timeScale: {
@@ -143,9 +163,27 @@ export function PriceChart({
       mainSeriesRef.current = null;
       smaSeriesRef.current = null;
     };
+    // showGrid is intentionally read only as this effect's *initial* value —
+    // it must stay out of the deps array, since re-running it would tear
+    // down and recreate the whole chart (losing zoom/scroll position) just
+    // to flip a grid switch. Live toggling is handled by the dedicated
+    // applyOptions() effect below instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locale]);
 
-  // Swap the main series whenever mode/data/direction changes.
+  // Live grid visibility toggle — applyOptions() rather than baking it into
+  // the creation effect above, so flipping the switch doesn't tear down and
+  // recreate the whole chart (losing zoom/scroll position).
+  useEffect(() => {
+    chartRef.current?.applyOptions({
+      grid: {
+        vertLines: { visible: showGrid },
+        horzLines: { visible: showGrid },
+      },
+    });
+  }, [showGrid]);
+
+  // Swap the main series whenever mode/data/direction/color changes.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -157,22 +195,24 @@ export function PriceChart({
 
     if (data.length === 0) return;
 
+    const upDownColor = overrideColor ?? (positive ? SUCCESS : DESTRUCTIVE);
+
     if (mode === "area") {
       const series = chart.addSeries(AreaSeries, {
-        lineColor: positive ? SUCCESS : DESTRUCTIVE,
-        topColor: positive ? "rgba(16, 185, 129, 0.35)" : "rgba(239, 68, 68, 0.35)",
-        bottomColor: positive ? "rgba(16, 185, 129, 0.02)" : "rgba(239, 68, 68, 0.02)",
+        lineColor: upDownColor,
+        topColor: hexToRgba(upDownColor, 0.35),
+        bottomColor: hexToRgba(upDownColor, 0.02),
         lineWidth: 2,
       });
       series.setData(data.map((d) => ({ time: d.date, value: d.close })));
       mainSeriesRef.current = series;
     } else {
       const series = chart.addSeries(CandlestickSeries, {
-        upColor: SUCCESS,
-        downColor: DESTRUCTIVE,
+        upColor: overrideColor ?? SUCCESS,
+        downColor: overrideColor ?? DESTRUCTIVE,
         borderVisible: false,
-        wickUpColor: SUCCESS,
-        wickDownColor: DESTRUCTIVE,
+        wickUpColor: overrideColor ?? SUCCESS,
+        wickDownColor: overrideColor ?? DESTRUCTIVE,
       });
       series.setData(
         data.map((d) => ({
@@ -187,7 +227,7 @@ export function PriceChart({
     }
 
     chart.timeScale().fitContent();
-  }, [mode, data, positive]);
+  }, [mode, data, positive, overrideColor]);
 
   // SMA overlay toggle.
   useEffect(() => {
