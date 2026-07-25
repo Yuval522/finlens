@@ -53,10 +53,14 @@ export function CompanyMetricsAccordions({
 
   return (
     <div className="glass-card rounded-2xl px-4 sm:px-5">
+      {/* QA fix (audit finding): reference terminal keeps every fundamentals
+          group expanded by default so the page reads information-dense on
+          first load; FinLens previously only defaulted Financials open,
+          requiring 3 extra clicks to see Yields/Balances/Margins. */}
       <MetricAccordionGroup title="Financials" items={financials} defaultOpen />
-      <MetricAccordionGroup title="Yields" items={yields} />
-      <MetricAccordionGroup title="Balances" items={balances} />
-      <MetricAccordionGroup title="Margins" items={margins} />
+      <MetricAccordionGroup title="Yields" items={yields} defaultOpen />
+      <MetricAccordionGroup title="Balances" items={balances} defaultOpen />
+      <MetricAccordionGroup title="Margins" items={margins} defaultOpen />
     </div>
   );
 }

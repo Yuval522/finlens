@@ -113,7 +113,20 @@ export function ValuationCalculator({
   const [revenueB, setRevenueB] = useState(() => round2(baseRevenue / 1_000_000_000));
   const [forecastYears, setForecastYears] = useState(5);
   const [growthRate, setGrowthRate] = useState(10);
-  const [targetMargin, setTargetMargin] = useState(() => round2(currentNetMargin ?? 15));
+  // QA fix (audit finding): this used to default straight to the trailing
+  // net margin whenever it existed, even when negative — for a
+  // currently-unprofitable company (e.g. a name like INTC mid-turnaround)
+  // that seeded the whole calculator with a negative margin, producing
+  // impossible negative target prices and a blank "Annual Return: —" on
+  // every scenario. A forecast tool's whole point is projecting toward a
+  // plausible future, not extrapolating a loss forever, so a negative (or
+  // missing) trailing margin now falls back to a normalized modest-but-
+  // positive assumption instead — same 15% fallback as before when there's
+  // no margin at all, 8% when the real margin exists but is negative. Both
+  // remain fully editable inputs either way.
+  const [targetMargin, setTargetMargin] = useState(() =>
+    round2(currentNetMargin == null ? 15 : currentNetMargin > 0 ? currentNetMargin : 8)
+  );
   const [peLow, setPeLow] = useState(() => round2((currentPE ?? 20) * 0.7));
   const [peBase, setPeBase] = useState(() => round2(currentPE ?? 20));
   const [peHigh, setPeHigh] = useState(() => round2((currentPE ?? 20) * 1.3));

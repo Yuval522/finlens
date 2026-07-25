@@ -63,13 +63,24 @@ export default async function AnalysisPage({
     // stay pinned while *its own containing block* still intersects the
     // viewport — once you scrolled past that short box, the whole profile
     // card scrolled away with it instead of staying pinned, i.e. it just
-    // vanished. Fix: drop `items-start` (grid's default `stretch` makes
-    // both columns' boxes span the full (taller) row height — tops still
-    // align exactly, since that's just where the row starts) and move
+    // vanished. Fix: drop `items-start` (the default cross-axis `stretch`
+    // makes both columns' boxes span the full (taller) row height — tops
+    // still align exactly, since that's just where the row starts) and move
     // `sticky` onto an *inner* wrapper, which now has a tall parent to
     // stick within for as long as the right column keeps scrolling.
-    <div className="analysis-grid grid grid-cols-1 gap-6 lg:grid-cols-[22rem_1fr]">
-      <div className="order-2 lg:order-1">
+    //
+    // QA fix (audit finding, layered on top of the above): this was CSS
+    // Grid with a fixed `22rem 1fr` column template. At common desktop
+    // widths that left the right (chart/tab) column meaningfully narrower
+    // than the reference terminal's — every downstream chart grid inside it
+    // was sized off that narrow column. Switched to `flex` with an explicit
+    // `w-[22rem] shrink-0` left column instead of a grid track: identical
+    // visual result (fixed-width left, fluid right) but the right column
+    // now gets `flex-1` — flexbox's default `align-items: stretch` gives it
+    // the exact same full-row-height box the sticky fix above depends on,
+    // so nothing about that fix needed to change.
+    <div className="analysis-grid flex flex-col gap-6 lg:flex-row">
+      <div className="order-2 w-full lg:order-1 lg:w-[22rem] lg:shrink-0">
         <div className="area-profile space-y-4 lg:sticky lg:top-6">
           <CompanyProfileHeader quote={quote} profile={profile} />
           {!isNonFundamental && (
@@ -78,7 +89,7 @@ export default async function AnalysisPage({
         </div>
       </div>
 
-      <div className="order-1 space-y-6 lg:order-2">
+      <div className="order-1 min-w-0 flex-1 space-y-6 lg:order-2">
         <PriceHeaderBlock quote={quote} />
 
         <ChartPanel

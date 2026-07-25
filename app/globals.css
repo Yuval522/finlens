@@ -148,26 +148,32 @@ body {
 /* Ticker analysis page layout — desktop split-view / mobile stack        */
 /* Order on mobile: price -> chart -> tabs, then profile (see the `order` */
 /* utility classes at the call site in analysis/[symbol]/page.tsx).       */
-/* Desktop: two plain grid columns — a fixed-width left column (profile)  */
-/* and a fluid right column (price/chart/tabs stacked), using the grid's  */
-/* default `stretch` alignment (NOT `items-start`) so both columns' boxes */
-/* span the full row height — that's what gives the inner sticky profile */
-/* wrapper (`.area-profile`, styled via Tailwind's `lg:sticky lg:top-6`   */
-/* at the call site) a tall parent to stick within. An earlier pass used  */
+/* Desktop: flex row — a fixed-width left column (profile, `lg:w-[22rem]  */
+/* lg:shrink-0`) and a fluid right column (price/chart/tabs stacked,      */
+/* `flex-1`), using flexbox's default `stretch` cross-axis alignment (NOT */
+/* `items-start`) so both columns' boxes span the full row height —      */
+/* that's what gives the inner sticky profile wrapper (`.area-profile`,   */
+/* styled via Tailwind's `lg:sticky lg:top-6` at the call site) a tall    */
+/* parent to stick within. An earlier pass used a CSS Grid with           */
 /* `items-start` for top-edge alignment, but that shrank the column's own */
 /* box to just its content height, leaving `position: sticky` with no     */
 /* room to operate — it stayed "stuck" for zero pixels and then scrolled  */
-/* away with the rest of the page the moment you scrolled past it. Tops   */
-/* still align exactly under `stretch` too, since that's simply where the */
-/* row starts — no `items-start` needed for that part.                    */
+/* away with the rest of the page the moment you scrolled past it. A      */
+/* later audit found the fixed `22rem 1fr` grid track was also capping    */
+/* the right column narrower than the reference terminal's equivalent —   */
+/* switching to flex with an explicit `w-[22rem]` left column instead of  */
+/* a grid track fixes that width cap while keeping the same stretch       */
+/* behavior the sticky fix depends on. Tops still align exactly under     */
+/* `stretch`, since that's simply where the row starts — no `items-start` */
+/* needed for that part, under grid or flex alike.                        */
 /* ---------------------------------------------------------------------- */
 
-/* QA hotfix (Phase 4, still applies): CSS Grid items default to
-   min-width:auto, which lets wide non-text content (the lightweight-charts
-   canvas in particular) force the whole grid track wider than the
-   viewport on narrow mobile screens — clipping the chart's right-hand
-   price scale off-screen with no visible scrollbar. Force every grid
-   child to be free to shrink. */
+/* QA hotfix (Phase 4, still applies under flex too): flex/grid items
+   default to min-width:auto, which lets wide non-text content (the
+   lightweight-charts canvas in particular) force its column wider than
+   the viewport on narrow mobile screens — clipping the chart's right-hand
+   price scale off-screen with no visible scrollbar. Force every direct
+   child free to shrink below its content size. */
 .analysis-grid,
 .analysis-grid > * {
   min-width: 0;

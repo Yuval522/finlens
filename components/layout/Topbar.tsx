@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Menu } from "lucide-react";
 import { FinLensLogo } from "@/components/branding/FinLensLogo";
 import { SymbolSearchInput } from "@/components/search/SymbolSearchInput";
@@ -52,15 +53,30 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 
         {menuOpen && (
           <div className="absolute right-0 top-11 w-48 rounded-md border border-border bg-card py-1 shadow-lg">
-            {MENU_ITEMS.map((item) => (
-              <button
-                key={item}
-                type="button"
-                className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-accent/60"
-              >
-                {item}
-              </button>
-            ))}
+            {MENU_ITEMS.map((item) =>
+              // QA polish: now that /settings is a real page, route "Account"
+              // there instead of leaving it as a dead button — the other
+              // items (Payment/Contact/Logout) have no backing page yet, so
+              // they stay inert placeholders.
+              item === "Account" ? (
+                <Link
+                  key={item}
+                  href="/settings"
+                  onClick={() => setMenuOpen(false)}
+                  className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-accent/60"
+                >
+                  {item}
+                </Link>
+              ) : (
+                <button
+                  key={item}
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-accent/60"
+                >
+                  {item}
+                </button>
+              )
+            )}
           </div>
         )}
       </div>
