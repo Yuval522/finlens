@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import type { EstimatesBundle } from "@/lib/finance/types";
 import { compactAxis } from "@/lib/format/chart";
 
@@ -33,6 +33,7 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
           <h3 className="text-sm font-semibold text-foreground">Analyst Revenue Estimates</h3>
           <p className="text-xs text-muted-foreground">Consensus by fiscal period</p>
         </div>
+        {/* Segmented toggle */}
         <div className="flex shrink-0 gap-1 rounded-lg border border-border bg-card/60 p-0.5">
           {(["Quarterly", "Annual"] as const).map((p) => (
             <button
@@ -43,7 +44,7 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
                 period === p ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {p}
+              {p} Estimates
             </button>
           ))}
         </div>
@@ -61,11 +62,10 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
                 <th className="px-2 py-2 font-medium">Fiscal Period Ending</th>
                 <th className="px-2 py-2 text-right font-medium">Estimate</th>
                 <th className="px-2 py-2 text-right font-medium">YoY Growth</th>
-                <th className="px-2 py-2 text-right font-medium">Low</th>
                 <th className="px-2 py-2 text-right font-medium">Average</th>
+                <th className="px-2 py-2 text-right font-medium">Low</th>
                 <th className="px-2 py-2 text-right font-medium">High</th>
-                <th className="px-2 py-2 text-right font-medium"># Analysts</th>
-                <th className="px-2 py-2 text-right font-medium">Actual</th>
+                <th className="px-2 py-2 text-right font-medium"># of Analysts</th>
               </tr>
             </thead>
             <tbody>
@@ -77,12 +77,31 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
                   <td className="px-2 py-2.5 font-medium text-foreground">
                     <div className="flex items-center gap-2">
                       {row.fiscalPeriodLabel}
+                      {/* Glowing beat badge inline with the period, only for
+                          historical periods where reported revenue cleared
+                          consensus. */}
+                      {row.isHistorical && row.beat && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.35)]">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Beat
+                        </span>
+                      )}
+                      {row.isHistorical && row.beat === false && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/40 bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-rose-400">
+                          Miss
+                        </span>
+                      )}
                       {!row.isHistorical && (
                         <span className="rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-400">
                           Forward
                         </span>
                       )}
                     </div>
+                    {row.isHistorical && row.actualRevenue != null && (
+                      <p className="mt-0.5 text-[10px] text-muted-foreground">
+                        Actual: {money(row.actualRevenue, currency)}
+                      </p>
+                    )}
                   </td>
                   <td className="px-2 py-2.5 text-right font-mono text-foreground">
                     {money(row.revenueEstimate, currency)}
@@ -97,32 +116,16 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
                     {pct(row.revenueYoyGrowthPct)}
                   </td>
                   <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
-                    {money(row.revenueLow, currency)}
+                    {money(row.revenueAvg, currency)}
                   </td>
                   <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
-                    {money(row.revenueAvg, currency)}
+                    {money(row.revenueLow, currency)}
                   </td>
                   <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
                     {money(row.revenueHigh, currency)}
                   </td>
                   <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
                     {row.numberOfAnalysts ?? "—"}
-                  </td>
-                  <td className="px-2 py-2.5 text-right">
-                    {row.isHistorical && row.beat != null ? (
-                      <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                          row.beat
-                            ? "border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.25)]"
-                            : "border border-rose-500/40 bg-rose-500/10 text-rose-400"
-                        }`}
-                      >
-                        {row.beat ? <CheckCircle2 className="h-3 w-3" /> : <XCircle className="h-3 w-3" />}
-                        {row.beat ? "Beat" : "Miss"}
-                      </span>
-                    ) : (
-                      <span className="font-mono text-muted-foreground">—</span>
-                    )}
                   </td>
                 </tr>
               ))}

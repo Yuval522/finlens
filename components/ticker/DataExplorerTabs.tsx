@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles } from "lucide-react";
 import { IncomeStatementPanel } from "./IncomeStatementPanel";
 import { BalanceSheetPanel } from "./BalanceSheetPanel";
 import { CashFlowPanel } from "./CashFlowPanel";
 import { EstimatesPanel } from "./EstimatesPanel";
 import { ComparePanel } from "./ComparePanel";
 import { ValuationCalculator } from "./ValuationCalculator";
+import { AIInsightsPanel } from "./AIInsightsPanel";
 import { ComingSoon } from "@/components/shared/ComingSoon";
 import { toDisplayUnit } from "@/lib/format/currency";
 import type {
@@ -104,7 +104,16 @@ export function DataExplorerTabs({
             quoteCurrency={quote.currency}
           />
         )}
-        {tab === "AI Insights" && <ComingSoon title="AI Insights" icon={Sparkles} />}
+        {tab === "AI Insights" && (
+          <AIInsightsPanel
+            income={income}
+            balance={balance}
+            cashFlow={cashFlow}
+            estimates={estimates}
+            metrics={metrics}
+            currency={reportingCurrency}
+          />
+        )}
         {(tab === "Reports" || tab === "Ratios") && <ComingSoon title={tab} />}
       </div>
     </div>

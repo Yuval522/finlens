@@ -1,7 +1,8 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 interface FinLensLogoProps {
-  /** Emblem size in px (square). */
+  /** Emblem size in px (height — width follows the mark's native aspect ratio). */
   size?: number;
   /** Show the "Fin" + "Lens" wordmark next to the emblem. */
   showWordmark?: boolean;
@@ -10,11 +11,22 @@ interface FinLensLogoProps {
   className?: string;
 }
 
+// Native asset dimensions (public/finlens-mark.png) — used to keep the
+// emblem's aspect ratio correct at any requested `size`.
+const MARK_NATIVE_WIDTH = 291;
+const MARK_NATIVE_HEIGHT = 269;
+
 /**
- * Bespoke FinLens emblem — a focus/aperture lens ring intertwined with an
- * ascending candlestick "alpha wave" trend line, rendered as a single
- * gradient SVG (electric blue -> luminous emerald) with a soft glow.
- * Replaces the generic lucide LineChart icon that shipped in Phase 1-3.
+ * FinLens brand emblem — the user's uploaded logo artwork (a chrome
+ * magnifying glass over an ascending candlestick pattern), lifted from
+ * public/finlens-mark.png. The source file ships as a large flattened
+ * mockup (icon + outlined wordmark on an opaque brushed-metal panel);
+ * the icon alone was isolated onto a transparent background so it reads
+ * correctly on this app's dark slate theme instead of showing a gray box.
+ * See public/finlens-mark.png provenance note below the component.
+ * The "FinLens" wordmark stays as crisp gradient text (rather than the
+ * source file's embossed outline text) so it stays legible at nav-bar
+ * sizes and matches the app's cyan/emerald brand gradient.
  */
 export function FinLensLogo({
   size = 32,
@@ -22,74 +34,19 @@ export function FinLensLogo({
   wordmarkClassName,
   className,
 }: FinLensLogoProps) {
+  const width = Math.round((size * MARK_NATIVE_WIDTH) / MARK_NATIVE_HEIGHT);
+
   return (
     <div className={cn("flex items-center gap-2", className)}>
-      <svg
-        width={size}
+      <Image
+        src="/finlens-mark.png"
+        alt="FinLens"
+        width={width}
         height={size}
-        viewBox="0 0 40 40"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        style={{ filter: "drop-shadow(0 0 8px rgba(59,130,246,0.5))" }}
-        aria-hidden="true"
-      >
-        <defs>
-          <linearGradient
-            id="finlens-emblem-gradient"
-            x1="4"
-            y1="36"
-            x2="36"
-            y2="4"
-            gradientUnits="userSpaceOnUse"
-          >
-            <stop offset="0" stopColor="#3B82F6" />
-            <stop offset="1" stopColor="#10B981" />
-          </linearGradient>
-        </defs>
-
-        {/* Focus / aperture ring */}
-        <circle
-          cx="20"
-          cy="20"
-          r="16"
-          stroke="url(#finlens-emblem-gradient)"
-          strokeWidth="2"
-          opacity="0.9"
-        />
-        <circle
-          cx="20"
-          cy="20"
-          r="16"
-          stroke="url(#finlens-emblem-gradient)"
-          strokeWidth="2"
-          strokeDasharray="2 6"
-          strokeLinecap="round"
-          opacity="0.5"
-          transform="rotate(20 20 20)"
-        />
-
-        {/* Ascending candlesticks — the "alpha wave" */}
-        <g stroke="url(#finlens-emblem-gradient)" strokeWidth="1.6" strokeLinecap="round">
-          <line x1="12" y1="29" x2="12" y2="22" />
-          <line x1="18" y1="25" x2="18" y2="15" />
-          <line x1="24" y1="19" x2="24" y2="9" />
-        </g>
-        <g fill="url(#finlens-emblem-gradient)">
-          <rect x="10.5" y="24" width="3" height="4" rx="0.75" />
-          <rect x="16.5" y="17" width="3" height="6" rx="0.75" />
-          <rect x="22.5" y="11" width="3" height="6" rx="0.75" />
-        </g>
-
-        {/* Trend arrowhead breaking out of the ring, top-right */}
-        <path
-          d="M26 12 L30 8 M30 8 H26.5 M30 8 V11.5"
-          stroke="url(#finlens-emblem-gradient)"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
-      </svg>
+        priority
+        style={{ filter: "drop-shadow(0 0 6px rgba(59,130,246,0.35))" }}
+        className="shrink-0"
+      />
 
       {showWordmark && (
         <span className={cn("truncate text-[15px] font-semibold tracking-tight", wordmarkClassName)}>
@@ -100,3 +57,14 @@ export function FinLensLogo({
     </div>
   );
 }
+
+/**
+ * Provenance: public/finlens-mark.png was derived from the user-uploaded
+ * logo.png (a 1536x1024 mockup render — icon + outlined wordmark centered
+ * on an opaque brushed-metal gradient panel). The icon was isolated via
+ * local-contrast edge detection + enclosed-region fill (not simple color
+ * keying, since the icon's own chrome tones are close to the background
+ * gray) to produce a clean transparent-background PNG suitable for a dark
+ * UI. The original upload is left untouched at the project root
+ * (logo.png) for reference.
+ */

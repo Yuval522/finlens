@@ -436,9 +436,11 @@ function toEstimates(summary: QuoteSummaryResult, income: IncomeStatementYear[])
         : null;
 
     const row: EstimateRow = {
-      fiscalPeriodLabel: isQuarterly
-        ? t.endDate.toLocaleDateString("en-US", { year: "numeric", month: "short" })
-        : String(t.endDate.getFullYear()),
+      // "Mon YYYY" for both quarterly and annual rows (e.g. "Sep 2024") —
+      // matches the reference dashboard's fiscal-period labeling, which
+      // shows the fiscal year-end month even for annual rows rather than
+      // a bare year number.
+      fiscalPeriodLabel: t.endDate.toLocaleDateString("en-US", { year: "numeric", month: "short" }),
       periodEndDate: t.endDate.toISOString().slice(0, 10),
       revenueEstimate,
       revenueYoyGrowthPct:
