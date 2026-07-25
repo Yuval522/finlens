@@ -1,6 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  TrendingUp,
+  Landmark,
+  Wallet,
+  FileText,
+  Percent,
+  Target,
+  GitCompare,
+  Calculator,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 import { IncomeStatementPanel } from "./IncomeStatementPanel";
 import { BalanceSheetPanel } from "./BalanceSheetPanel";
 import { CashFlowPanel } from "./CashFlowPanel";
@@ -33,6 +45,21 @@ const TABS = [
 ] as const;
 
 type Tab = (typeof TABS)[number];
+
+// Design-audit fix: the reference terminal pairs every tab with an icon.
+// Kept as a lookup (rather than inlining icons in the TABS array) so TABS
+// stays a plain readonly string tuple for the Tab union type above.
+const TAB_ICONS: Record<Tab, LucideIcon> = {
+  Income: TrendingUp,
+  Balance: Landmark,
+  "Cash Flow": Wallet,
+  Reports: FileText,
+  Ratios: Percent,
+  Estimates: Target,
+  Compare: GitCompare,
+  Valuation: Calculator,
+  "AI Insights": Sparkles,
+};
 
 const FADE_PX = "20px";
 
@@ -121,6 +148,21 @@ export function DataExplorerTabs({
         listeners. Each tab still scrolls itself into view on click, so
         selecting a currently-hidden tab always brings it fully into frame.
       */}
+      {/*
+        QA fix (root-caused via live DOM inspection): buttons used to be
+        `shrink-0` — fixed to their own content width — inside a flex row
+        that was narrower than their combined width at ordinary desktop
+        sizes (~656px of tabs in a ~412px container), so most of the strip
+        silently overflowed behind the fade/scroll mask instead of ever
+        being visibly "misaligned". The reference terminal instead divides
+        the full strip width evenly across every tab. `flex-1` (no
+        shrink-0) does the same: all tabs fill the row and compress
+        together as one, so nothing overflows at normal widths. A
+        `min-w` floor plus the existing tab-scroll/fade mechanism still
+        kicks in as a fallback once the strip genuinely can't fit even at
+        the floor (very narrow mobile), so nothing here was removed —
+        just no longer the *first* thing that engages.
+      */}
       <div
         ref={tabStripRef}
         className="tab-scroll flex gap-1 border-b border-slate-800/80 pb-2"
@@ -132,6 +174,7 @@ export function DataExplorerTabs({
       >
         {TABS.map((t) => {
           const active = t === tab;
+          const Icon = TAB_ICONS[t];
           return (
             <button
               key={t}
@@ -150,13 +193,14 @@ export function DataExplorerTabs({
               // "pressed button" look) instead of a bright color fill,
               // while keeping every existing behavior (scroll-into-view,
               // fade mask, index-aware tab logic) completely untouched.
-              className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
+              className={`flex min-w-[68px] flex-1 flex-col items-center justify-center gap-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-medium transition-colors ${
                 active
                   ? "bg-white/10 text-foreground shadow-sm ring-1 ring-white/10"
                   : "text-muted-foreground hover:bg-accent hover:text-foreground"
               }`}
             >
-              {t}
+              <Icon className="h-3.5 w-3.5" />
+              <span className="truncate">{t}</span>
             </button>
           );
         })}

@@ -22,7 +22,11 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
   return (
     // Phase 5: 3-column breakdown (Short-Term Position / Total Structure /
     // Debt vs Liquidity), replacing the earlier 2-chart layout.
-    <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-3">
+    // QA fix: auto-fit/minmax instead of a viewport breakpoint — see the
+    // matching comment in IncomeStatementPanel.tsx for the root cause
+    // (this grid's real available width is the right-hand analysis column,
+    // not the full viewport).
+    <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
       <ChartCard
         title="Short-Term Position"
         subtitle="Cash & ST Investments vs Current Assets vs Current Liabilities"

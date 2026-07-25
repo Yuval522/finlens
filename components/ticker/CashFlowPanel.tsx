@@ -62,7 +62,9 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
   const toggle = (key: string) => setExpanded((cur) => (cur === key ? null : key));
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-3">
+    // QA fix: auto-fit/minmax instead of a viewport breakpoint — see the
+    // matching comment in IncomeStatementPanel.tsx for the root cause.
+    <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
       <ChartCard
         title="Cash Flow Breakdown"
         subtitle="Operating CF, Free CF, Stock-Based Comp, CapEx"

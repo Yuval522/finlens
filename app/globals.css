@@ -3,24 +3,25 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------- */
-/* FinLens Signature Theme v3 — Executive Royal Slate & Platinum Glass     */
-/* Hard override: v2 ("Bright Deep Slate") still read as flat/heavy in    */
-/* review. v3 pushes the whole palette lighter again — background carries */
-/* an actual multi-stop gradient (not just a flat token) for warmth, card */
-/* lightness is boosted further above the page for a real "pop", borders  */
-/* are brighter/platinum, and every .glass-card gets a built-in border +  */
-/* interactive cyan-glow hover baked in by default (previously borders    */
-/* had to be added per-usage, which is how some cards ended up looking    */
-/* flatter than intended). HSL triplets (no hsl() wrapper) so Tailwind    */
-/* can compose hsl(var(--x)) / hsl(var(--x)/alpha). Gradient accents      */
+/* FinLens Signature Theme v4 — Deep Charcoal & Platinum Glass             */
+/* Hard override: v3's "Royal Slate" carried a strong blue tint that read  */
+/* as a generic web-app dark mode rather than an institutional terminal.   */
+/* v4 keeps the exact same token/architecture (glass-card gradient, inset  */
+/* highlight, cyan-glow hover, platinum borders) and only shifts the hue   */
+/* toward neutral zinc/charcoal — background near-black matte, card       */
+/* surfaces a clear step lighter for a real "pop", borders/muted-fg tuned  */
+/* to match. Semantic colors (primary/success/destructive/ring) untouched */
+/* — they're chosen to read clearly against any neutral dark surface.     */
+/* HSL triplets (no hsl() wrapper) so Tailwind can compose                */
+/* hsl(var(--x)) / hsl(var(--x)/alpha). Gradient accents                  */
 /* (from-blue-500 to-cyan-400 / from-blue-400 to-emerald-400) stay as     */
 /* plain Tailwind utilities in components — no extra tokens needed.       */
 /* ---------------------------------------------------------------------- */
 :root {
-  --background: 220 33% 14%; /* Royal Slate — matches the #182030 gradient midpoint */
+  --background: 240 6% 5%; /* near-black matte charcoal, Tailwind zinc-950 territory */
   --foreground: 0 0% 100%; /* pure white for headings/primary text */
 
-  --card: 219 32% 22%; /* Platinum Glass surface — clearly lighter than bg, ~#222D42 */
+  --card: 240 5% 11%; /* Platinum Glass surface — clearly lighter than bg, zinc-900 territory */
   --card-foreground: 0 0% 100%;
 
   --primary: 217 91% 60%; /* luminous sky-blue, Tailwind blue-500 territory */
@@ -32,10 +33,10 @@
   --destructive: 0 84% 60%; /* #EF4444 — sharp red for losses */
   --destructive-foreground: 0 0% 100%;
 
-  --border: 217 25% 32%; /* crisp platinum border, Tailwind slate-700 territory */
-  --muted: 217 24% 24%;
-  --muted-foreground: 215 20% 68%; /* bright slate for labels, Tailwind slate-400 territory */
-  --accent: 217 26% 27%;
+  --border: 240 5% 20%; /* crisp neutral border, Tailwind zinc-800 territory */
+  --muted: 240 5% 15%;
+  --muted-foreground: 240 5% 65%; /* neutral zinc-400 for labels */
+  --accent: 240 5% 17%;
   --accent-foreground: 0 0% 100%;
 
   --ring: 217 91% 60%;
@@ -56,11 +57,13 @@ html {
 }
 
 body {
-  /* Royal Slate Gradient — a flat --background color read as a dead black
-     box; a real multi-stop gradient (fixed, so it doesn't scroll/repeat
-     per-section) gives the page actual depth and warmth. */
-  background-color: #161e2e;
-  background-image: linear-gradient(to bottom right, #0f172a, #182030 45%, #0f172a);
+  /* Deep Charcoal Gradient (v4) — replaces the old blue-tinted "Royal
+     Slate" gradient with a true neutral matte-black gradient (fixed, so
+     it doesn't scroll/repeat per-section) for an institutional-terminal
+     feel rather than a "web app" one, while keeping the same subtle
+     depth/warmth the flat --background token alone can't provide. */
+  background-color: #0a0a0b;
+  background-image: linear-gradient(to bottom right, #050506, #141416 45%, #050506);
   background-attachment: fixed;
   color: hsl(var(--foreground));
 }

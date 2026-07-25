@@ -96,7 +96,17 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
   });
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    // QA fix (root-caused via DOM inspection against the reference
+    // terminal): this used to be viewport-width breakpoints
+    // (sm:grid-cols-2 xl:grid-cols-4), sized off the *window's* width. But
+    // this grid lives in the right-hand column of a `22rem 1fr` split —
+    // its actual available width is often much narrower than the viewport
+    // implies, so at common desktop sizes it was stuck at 2 columns of
+    // ~200px, making every bar chart read as squished/stretched. CSS
+    // Grid's auto-fit + minmax sizes columns off the *container's* real
+    // width instead, so it self-adapts correctly regardless of the split
+    // — no viewport breakpoints, no container-query plugin needed.
+    <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
       <ChartCard title="Total Revenues" fullscreen={expanded === "revenue"} onToggleFullscreen={() => toggle("revenue")}>
         <SingleMetricChart data={income} dataKey="totalRevenue" color={PRIMARY} valueLabel="Revenue" formatValue={money} />
       </ChartCard>
