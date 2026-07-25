@@ -1,3 +1,4 @@
+import { BarChart3 } from "lucide-react";
 import { QuoteCardGrid } from "@/components/dashboard/QuoteCardGrid";
 import { getMarketSummary } from "@/lib/finance/yahoo";
 import { MarketDataError } from "@/lib/finance/types";
@@ -8,6 +9,7 @@ const SLOTS = 5;
 // 5-column track, with a 300px floor so "NASDAQ Composite" and similar
 // index names get enough room before truncating, at any viewport.
 const COLUMNS = "grid-cols-[repeat(auto-fit,minmax(300px,1fr))]";
+const ICON_CLASS = "bg-blue-500/15 text-blue-400";
 
 /** Async Server Component — fetched inside a <Suspense> boundary on the home page. */
 export async function MarketSummarySection() {
@@ -19,6 +21,8 @@ export async function MarketSummarySection() {
         quotes={quotes}
         slots={SLOTS}
         columnsClassName={COLUMNS}
+        icon={BarChart3}
+        iconClassName={ICON_CLASS}
       />
     );
   } catch (err) {
@@ -33,6 +37,8 @@ export async function MarketSummarySection() {
         slots={SLOTS}
         error={message}
         columnsClassName={COLUMNS}
+        icon={BarChart3}
+        iconClassName={ICON_CLASS}
       />
     );
   }

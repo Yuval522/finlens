@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AreaSeries,
   CandlestickSeries,
@@ -11,6 +11,7 @@ import {
   createChart,
   type IChartApi,
   type ISeriesApi,
+  type MouseEventParams,
   type Time,
 } from "lightweight-charts";
 import type { PricePoint } from "@/lib/finance/types";
@@ -61,6 +62,48 @@ function timeToDate(time: Time): Date {
   if (typeof time === "string") return new Date(time);
   if (typeof time === "number") return new Date(time * 1000);
   return new Date(Date.UTC(time.year, time.month - 1, time.day));
+}
+
+/** Formats the hovered point's date for the floating crosshair tooltip. */
+function formatTooltipTime(time: Time, locale: string): string {
+  return timeToDate(time).toLocaleDateString(locale, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+/**
+ * Pulls a display price out of whatever shape lightweight-charts'
+ * `seriesData.get(series)` hands back — `{ value }` for the area/line
+ * series, `{ close }` for candlesticks. Written with `unknown` + `in`
+ * narrowing (no `any`) since the exact union type depends on which main
+ * series is currently mounted.
+ */
+function extractTooltipPrice(data: unknown): number | null {
+  if (!data || typeof data !== "object") return null;
+  if ("value" in data && typeof (data as { value: unknown }).value === "number") {
+    return (data as { value: number }).value;
+  }
+  if ("close" in data && typeof (data as { close: unknown }).close === "number") {
+    return (data as { close: number }).close;
+  }
+  return null;
+}
+
+const TOOLTIP_WIDTH = 132;
+const TOOLTIP_HEIGHT = 52;
+const TOOLTIP_MARGIN = 8;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), Math.max(min, max));
+}
+
+interface ChartTooltipState {
+  x: number;
+  y: number;
+  time: string;
+  price: number;
 }
 
 /**
@@ -121,6 +164,11 @@ export function PriceChart({
     ISeriesApi<"Area"> | ISeriesApi<"Candlestick"> | null
   >(null);
   const smaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  // Tracks the main series' current display color so the floating tooltip's
+  // legend swatch always matches the line/candles on screen, including when
+  // the color-preset picker (ChartPanel.tsx) overrides it.
+  const seriesColorRef = useRef<string>(SUCCESS);
+  const [tooltip, setTooltip] = useState<ChartTooltipState | null>(null);
 
   // Create the chart instance once, tear it down on unmount.
   useEffect(() => {
@@ -148,6 +196,38 @@ export function PriceChart({
     });
     chartRef.current = chart;
 
+    /**
+     * Design-audit item #5 ("Priority Order for Dev Hand-off"): a floating
+     * cursor-tracking tooltip to match iCharts' near-cursor time+price
+     * readout, without removing the existing crosshair. Purely additive —
+     * doesn't touch the grid-toggle/color-picker options or index-aware
+     * logic elsewhere in the app.
+     */
+    function handleCrosshairMove(param: MouseEventParams<Time>) {
+      // TS doesn't carry the outer `if (!container) return;` narrowing into
+      // a nested function declaration's body, so re-check here explicitly.
+      if (!container) return;
+      const series = mainSeriesRef.current;
+      if (!series || !param.point || !param.time) {
+        setTooltip(null);
+        return;
+      }
+      const price = extractTooltipPrice(param.seriesData.get(series));
+      if (price == null) {
+        setTooltip(null);
+        return;
+      }
+      const maxX = Math.max(container.clientWidth - TOOLTIP_WIDTH - TOOLTIP_MARGIN, TOOLTIP_MARGIN);
+      const maxY = Math.max(container.clientHeight - TOOLTIP_HEIGHT - TOOLTIP_MARGIN, TOOLTIP_MARGIN);
+      setTooltip({
+        x: clamp(param.point.x + 14, TOOLTIP_MARGIN, maxX),
+        y: clamp(param.point.y - 12, TOOLTIP_MARGIN, maxY),
+        time: formatTooltipTime(param.time, locale),
+        price,
+      });
+    }
+    chart.subscribeCrosshairMove(handleCrosshairMove);
+
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
@@ -157,11 +237,13 @@ export function PriceChart({
     ro.observe(container);
 
     return () => {
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
       mainSeriesRef.current = null;
       smaSeriesRef.current = null;
+      setTooltip(null);
     };
     // showGrid is intentionally read only as this effect's *initial* value —
     // it must stay out of the deps array, since re-running it would tear
@@ -192,10 +274,15 @@ export function PriceChart({
       chart.removeSeries(mainSeriesRef.current);
       mainSeriesRef.current = null;
     }
+    // The old series (and any hovered point on it) is gone — clear any
+    // stale floating tooltip rather than leaving it pinned to a price
+    // that no longer belongs to the chart underneath it.
+    setTooltip(null);
 
     if (data.length === 0) return;
 
     const upDownColor = overrideColor ?? (positive ? SUCCESS : DESTRUCTIVE);
+    seriesColorRef.current = upDownColor;
 
     if (mode === "area") {
       const series = chart.addSeries(AreaSeries, {
@@ -251,6 +338,25 @@ export function PriceChart({
   }, [showSma, smaPeriod, data]);
 
   return (
-    <div ref={containerRef} className="h-[320px] w-full min-w-0 overflow-hidden sm:h-[400px]" />
+    <div
+      ref={containerRef}
+      className="relative h-[320px] w-full min-w-0 overflow-hidden sm:h-[400px]"
+    >
+      {tooltip && (
+        <div
+          className="pointer-events-none absolute z-10 flex flex-col gap-1 rounded-md border border-white/10 bg-slate-900/95 px-3 py-2 shadow-lg backdrop-blur-sm"
+          style={{ left: tooltip.x, top: tooltip.y, width: TOOLTIP_WIDTH }}
+        >
+          <span className="text-[10px] text-muted-foreground">{tooltip.time}</span>
+          <span className="flex items-center gap-1.5 font-mono text-xs font-semibold text-foreground">
+            <span
+              className="h-2 w-2 shrink-0 rounded-full"
+              style={{ backgroundColor: seriesColorRef.current }}
+            />
+            {tooltip.price.toFixed(2)}
+          </span>
+        </div>
+      )}
+    </div>
   );
 }

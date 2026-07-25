@@ -142,9 +142,17 @@ export function DataExplorerTabs({
                 setTab(t);
                 e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
               }}
+              // Design-audit fix: a saturated primary-blue fill on the active
+              // tab read as "generic web app" rather than "institutional
+              // terminal" next to the reference's restrained neutral-chip
+              // treatment. Softened to an elevated neutral surface (white-
+              // tinted background + a hairline ring + a soft shadow — a
+              // "pressed button" look) instead of a bright color fill,
+              // while keeping every existing behavior (scroll-into-view,
+              // fade mask, index-aware tab logic) completely untouched.
               className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors ${
                 active
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-white/10 text-foreground shadow-sm ring-1 ring-white/10"
                   : "text-muted-foreground hover:bg-accent hover:text-foreground"
               }`}
             >

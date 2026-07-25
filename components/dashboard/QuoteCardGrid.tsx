@@ -1,3 +1,4 @@
+import type { LucideIcon } from "lucide-react";
 import { IndexCard } from "@/components/dashboard/IndexCard";
 import { MarketQuoteCard } from "@/components/dashboard/MarketQuoteCard";
 import type { MarketQuote } from "@/lib/finance/types";
@@ -13,6 +14,10 @@ interface QuoteCardGridProps {
   /** Passed through to each MarketQuoteCard — the /watchlist page opts in for a remove affordance. */
   showWatchlistToggle?: boolean;
   emptyMessage?: string;
+  /** Section badge icon (e.g. BarChart3 for Market Summary, TrendingUp for Most Active). Omit for a plain heading. */
+  icon?: LucideIcon;
+  /** Tailwind bg/text classes for the icon's rounded-square badge, e.g. "bg-blue-500/15 text-blue-400". */
+  iconClassName?: string;
 }
 
 // QA hotfix (Phase 4, re-tuned in Final Polish pass, widened again in the
@@ -30,7 +35,7 @@ interface QuoteCardGridProps {
 // that comfortable for all but the longest company names.
 const DEFAULT_COLUMNS = "grid-cols-[repeat(auto-fit,minmax(300px,1fr))]";
 
-/** Presentational grid shared by the live Market Summary and Most Active sections. */
+/** Presentational grid shared by the live Market Summary, Most Active, and Watchlist sections. */
 export function QuoteCardGrid({
   title,
   quotes,
@@ -39,12 +44,32 @@ export function QuoteCardGrid({
   columnsClassName = DEFAULT_COLUMNS,
   showWatchlistToggle = false,
   emptyMessage = "No data available.",
+  icon: Icon,
+  iconClassName,
 }: QuoteCardGridProps) {
   return (
     <section>
-      <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
-        {title}
-      </h2>
+      {/*
+        Design-audit fix: section headings were text-sm/muted-foreground —
+        far too small/quiet to establish real hierarchy against the
+        reference terminal's text-2xl/bold treatment. Bumped up (responsive
+        text-xl -> sm:text-2xl so it doesn't dominate on narrow phones), plus
+        an optional rounded-square icon badge to match "Market Summary" and
+        "Most Active"'s mini chart-icon treatment in the reference.
+      */}
+      <div className="mb-4 flex items-center gap-2.5">
+        {Icon && (
+          <span
+            className={cn(
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+              iconClassName ?? "bg-accent text-muted-foreground"
+            )}
+          >
+            <Icon className="h-4 w-4" />
+          </span>
+        )}
+        <h2 className="text-xl font-bold text-foreground sm:text-2xl">{title}</h2>
+      </div>
 
       {error && (
         <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -52,7 +77,7 @@ export function QuoteCardGrid({
         </p>
       )}
 
-      <div className={cn("grid gap-3", columnsClassName)}>
+      <div className={cn("grid gap-4", columnsClassName)}>
         {quotes === null
           ? Array.from({ length: slots }).map((_, i) => <IndexCard key={i} />)
           : quotes.map((q) => (

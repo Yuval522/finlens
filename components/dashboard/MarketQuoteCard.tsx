@@ -34,7 +34,15 @@ export function MarketQuoteCard({ quote, showWatchlistToggle = false }: MarketQu
   return (
     <Link
       href={`/analysis/${encodeURIComponent(quote.symbol)}`}
-      className="glass-card relative flex items-center gap-3 rounded-lg p-5"
+      // Design-audit fix: reference cards lift + scale slightly on hover;
+      // FinLens's had no hover micro-interaction at all. .glass-card's own
+      // CSS already declares a `transition: border-color, box-shadow`
+      // shorthand for its built-in cyan-glow hover — re-declaring the full
+      // property list here (rather than adding a separate `transition-
+      // transform` utility) keeps all three animating together instead of
+      // a bare `transition-property` override silently dropping the other
+      // two mid-cascade.
+      className="glass-card relative flex items-center gap-3 rounded-lg p-5 transition-[transform,border-color,box-shadow] duration-200 hover:scale-[1.02] hover:shadow-lg"
     >
       <div className="absolute right-3 top-3 flex items-center gap-1">
         {showWatchlistToggle && <WatchlistButton symbol={quote.symbol} size={15} />}
