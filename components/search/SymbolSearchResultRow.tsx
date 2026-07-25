@@ -1,6 +1,7 @@
 import type { SearchResultItem } from "@/lib/finance/types";
 import { currencySymbol } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
+import { WatchlistButton } from "@/components/shared/WatchlistButton";
 
 const TYPE_LABELS: Record<string, string> = {
   EQUITY: "Stock",
@@ -21,8 +22,12 @@ export function SymbolSearchResultRow({
   onSelect: (result: SearchResultItem) => void;
 }) {
   return (
-    <button
-      type="button"
+    // A plain div rather than <button> — a nested WatchlistButton needs to
+    // live inside this row without producing invalid button-in-button HTML.
+    // Selection semantics are unchanged: SymbolSearchInput drives keyboard
+    // nav itself (activeIndex + Enter), this row only needs the mousedown
+    // handler for pointer selection.
+    <div
       role="option"
       aria-selected={active}
       onMouseDown={(e) => {
@@ -31,7 +36,7 @@ export function SymbolSearchResultRow({
         onSelect(result);
       }}
       className={cn(
-        "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors",
+        "flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors",
         active ? "bg-accent" : "hover:bg-accent/60"
       )}
     >
@@ -56,7 +61,8 @@ export function SymbolSearchResultRow({
         >
           {currencySymbol(result.currency)}
         </span>
+        <WatchlistButton symbol={result.symbol} size={14} className="p-1" />
       </div>
-    </button>
+    </div>
   );
 }

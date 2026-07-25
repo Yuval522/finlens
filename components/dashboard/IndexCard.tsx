@@ -10,17 +10,20 @@ export function IndexCard({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "glass-card flex items-center gap-3 rounded-lg p-4",
+        // Matches MarketQuoteCard's density-pass sizing (p-5 padding, 40px
+        // avatar) so the skeleton-to-loaded swap doesn't reflow/jump.
+        "glass-card relative flex items-center gap-3 rounded-lg p-5",
         className
       )}
     >
-      <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
-      <div className="min-w-0 flex-1 space-y-2">
+      <Skeleton className="absolute right-3 top-3 h-6 w-6 rounded-full" />
+      <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+      <div className="min-w-0 flex-1 space-y-2 pr-7">
         <Skeleton className="h-3.5 w-24" />
         <Skeleton className="h-3 w-14" />
       </div>
       <div className="flex flex-col items-end gap-2">
-        <Skeleton className="h-3.5 w-16" />
+        <Skeleton className="h-4 w-16" />
         <Skeleton className="h-3 w-12" />
       </div>
     </div>

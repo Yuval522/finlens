@@ -1,16 +1,11 @@
 import { Globe, User } from "lucide-react";
 import type { CompanyProfile, MarketQuote } from "@/lib/finance/types";
+import { CompanyLogo } from "@/components/dashboard/CompanyLogo";
+import { WatchlistButton } from "@/components/shared/WatchlistButton";
 
 interface CompanyProfileHeaderProps {
   quote: MarketQuote;
   profile: CompanyProfile;
-}
-
-function initials(name: string): string {
-  const words = name.replace(/[^a-zA-Z0-9 ]/g, "").split(" ").filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[1][0]).toUpperCase();
 }
 
 export function CompanyProfileHeader({ quote, profile }: CompanyProfileHeaderProps) {
@@ -19,10 +14,16 @@ export function CompanyProfileHeader({ quote, profile }: CompanyProfileHeaderPro
   return (
     <div className="glass-card rounded-2xl p-4 sm:p-5">
       <div className="flex items-start gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-indigo-700 text-sm font-bold text-white shadow-lg shadow-primary/20">
-          {initials(quote.name)}
-        </div>
-        <div className="min-w-0">
+        {/*
+          QA fix: this used to always fall back to a generic letter-avatar,
+          even though the same real-logo-with-fallback CompanyLogo component
+          (FMP image CDN, initials/caret badge on failure) already existed
+          and worked correctly on the home dashboard cards. Reusing it here
+          means a resolvable logo now actually renders instead of unions
+          always dropping straight to initials.
+        */}
+        <CompanyLogo symbol={quote.symbol} name={quote.name} size={48} />
+        <div className="min-w-0 flex-1">
           <h1 className="truncate text-base font-semibold text-foreground">{quote.name}</h1>
           <div className="mt-1 flex items-center gap-1.5">
             <span className="rounded-md bg-accent px-1.5 py-0.5 font-mono text-xs font-medium text-foreground">
@@ -31,6 +32,7 @@ export function CompanyProfileHeader({ quote, profile }: CompanyProfileHeaderPro
             <span className="text-xs text-muted-foreground">{quote.exchange}</span>
           </div>
         </div>
+        <WatchlistButton symbol={quote.symbol} size={18} className="mt-0.5" />
       </div>
 
       <dl className="mt-4 space-y-2 text-xs">

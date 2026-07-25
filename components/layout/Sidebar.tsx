@@ -100,23 +100,36 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           })}
         </nav>
 
-        {/* Collapse toggle (desktop only) */}
+        {/*
+          Collapse toggle (desktop only). QA note: a screenshot flagged a
+          circular "N" badge overlapping this control, but there's no avatar
+          or circle element anywhere in this file to begin with — the app's
+          only user-avatar badge ("YR") lives in Topbar.tsx, top-right, not
+          here. That strongly points to a browser extension's own injected
+          UI (many note-taking/clipper-style extensions anchor a small badge
+          to the bottom-left viewport corner) rather than anything FinLens
+          renders. Still widened the hit area and made the icon a fixed,
+          non-shrinking flex item with its own background so the control
+          reads cleanly regardless of what else might be drawn nearby.
+        */}
         <div className="hidden border-t border-border p-3 md:block">
           <button
             type="button"
             onClick={() => setCollapsed((v) => !v)}
             className={cn(
-              "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground",
+              "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground",
               collapsed && "justify-center px-0"
             )}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {collapsed ? (
-              <ChevronRight className="h-[18px] w-[18px]" />
-            ) : (
-              <ChevronLeft className="h-[18px] w-[18px]" />
-            )}
-            {!collapsed && <span>Collapse</span>}
+            <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+              {collapsed ? (
+                <ChevronRight className="h-[18px] w-[18px]" />
+              ) : (
+                <ChevronLeft className="h-[18px] w-[18px]" />
+              )}
+            </span>
+            {!collapsed && <span className="truncate">Collapse</span>}
           </button>
         </div>
       </aside>

@@ -28,9 +28,17 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
 
   return (
     <div className="glass-card min-w-0 rounded-xl p-3 sm:p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">Analyst Revenue Estimates</h3>
+      {/*
+        QA fix: at narrower right-column widths (~1230px total window) this
+        heading used to wrap into three stacked short lines before the
+        table even rendered. flex-wrap on the row lets the *row* wrap as a
+        unit (heading above, toggle below) when space is tight, while
+        whitespace-nowrap keeps "Analyst Revenue Estimates" itself from
+        breaking mid-phrase either way.
+      */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0">
+          <h3 className="whitespace-nowrap text-sm font-semibold text-foreground">Analyst Revenue Estimates</h3>
           <p className="text-xs text-muted-foreground">Consensus by fiscal period</p>
         </div>
         {/* Segmented toggle */}
@@ -56,16 +64,26 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
         </p>
       ) : (
         <div className="-mx-1 overflow-x-auto">
-          <table className="w-full min-w-[640px] border-collapse text-xs">
+          {/*
+            QA fix: at ~1400px desktop width (a normal laptop, not a narrow
+            one) this table only showed 4-5 of its 7 columns before forcing
+            horizontal scroll — the reference terminal fits all 7 at a
+            comparable width. min-w dropped from 640 to 560px and every
+            cell's horizontal padding tightened (px-2 -> px-1.5) buys back
+            enough width for "# of Analysts" (now the shorter "# Analysts")
+            to fit alongside the rest without scrolling on most desktop
+            viewports; it still scrolls gracefully on genuinely narrow ones.
+          */}
+          <table className="w-full min-w-[560px] border-collapse text-xs">
             <thead>
               <tr className="border-b border-slate-700/80 text-left text-muted-foreground">
-                <th className="px-2 py-2 font-medium">Fiscal Period Ending</th>
-                <th className="px-2 py-2 text-right font-medium">Estimate</th>
-                <th className="px-2 py-2 text-right font-medium">YoY Growth</th>
-                <th className="px-2 py-2 text-right font-medium">Average</th>
-                <th className="px-2 py-2 text-right font-medium">Low</th>
-                <th className="px-2 py-2 text-right font-medium">High</th>
-                <th className="px-2 py-2 text-right font-medium"># of Analysts</th>
+                <th className="px-1.5 py-2 font-medium">Fiscal Period Ending</th>
+                <th className="px-1.5 py-2 text-right font-medium">Estimate</th>
+                <th className="px-1.5 py-2 text-right font-medium">YoY Growth</th>
+                <th className="px-1.5 py-2 text-right font-medium">Average</th>
+                <th className="px-1.5 py-2 text-right font-medium">Low</th>
+                <th className="px-1.5 py-2 text-right font-medium">High</th>
+                <th className="px-1.5 py-2 text-right font-medium"># Analysts</th>
               </tr>
             </thead>
             <tbody>
@@ -74,7 +92,7 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
                   key={row.periodEndDate}
                   className="border-b border-slate-800/60 transition-colors last:border-0 hover:bg-accent/40"
                 >
-                  <td className="px-2 py-2.5 font-medium text-foreground">
+                  <td className="px-1.5 py-2 font-medium text-foreground">
                     <div className="flex items-center gap-2">
                       {row.fiscalPeriodLabel}
                       {/* Glowing beat badge inline with the period. Live
@@ -113,11 +131,11 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
                       </p>
                     )}
                   </td>
-                  <td className="px-2 py-2.5 text-right font-mono text-foreground">
+                  <td className="px-1.5 py-2 text-right font-mono text-foreground">
                     {money(row.revenueEstimate, currency)}
                   </td>
                   <td
-                    className={`px-2 py-2.5 text-right font-mono ${
+                    className={`px-1.5 py-2 text-right font-mono ${
                       row.revenueYoyGrowthPct != null && row.revenueYoyGrowthPct >= 0
                         ? "text-emerald-400"
                         : "text-rose-400"
@@ -125,16 +143,16 @@ export function EstimatesPanel({ estimates, currency }: EstimatesPanelProps) {
                   >
                     {pct(row.revenueYoyGrowthPct)}
                   </td>
-                  <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
+                  <td className="px-1.5 py-2 text-right font-mono text-muted-foreground">
                     {money(row.revenueAvg, currency)}
                   </td>
-                  <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
+                  <td className="px-1.5 py-2 text-right font-mono text-muted-foreground">
                     {money(row.revenueLow, currency)}
                   </td>
-                  <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
+                  <td className="px-1.5 py-2 text-right font-mono text-muted-foreground">
                     {money(row.revenueHigh, currency)}
                   </td>
-                  <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
+                  <td className="px-1.5 py-2 text-right font-mono text-muted-foreground">
                     {row.numberOfAnalysts ?? "—"}
                   </td>
                 </tr>

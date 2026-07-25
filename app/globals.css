@@ -194,7 +194,23 @@ body {
 @media (min-width: 1024px) {
   .area-profile {
     position: sticky;
-    top: 5rem; /* clears the sticky Topbar */
+    /*
+      QA fix: this used to be 5rem, meant to "clear the sticky Topbar" — but
+      Topbar (see components/layout/Topbar.tsx) is a static sibling *above*
+      <main>, not inside it, and <main> is the actual independently
+      scrolling container (DashboardShell: overflow-y-auto). Topbar never
+      overlaps <main>'s scrolled content, so there was nothing to clear.
+      Worse, since 5rem (80px) is larger than this card's natural offset
+      from the top of <main>'s scrollport (<main>'s own p-4/md:p-6 padding,
+      ~24px), sticky positioning yanked the card downward immediately on
+      load — even at scroll position zero — visibly misaligning it against
+      area-price's top edge. Matching `top` to that same padding (md:p-6 =
+      1.5rem, the only padding value in effect at this >=1024px breakpoint)
+      means the sticky threshold equals the card's natural position, so
+      there's no initial jump, while scrolling still keeps it pinned
+      sensibly once the user scrolls the tabs section past this point.
+    */
+    top: 1.5rem;
   }
 }
 
