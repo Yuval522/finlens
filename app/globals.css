@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------- */
-/* iCharts design tokens — dark-mode-first financial terminal theme       */
+/* FinLens design tokens — dark-mode-first financial terminal theme       */
 /* HSL triplets (no hsl() wrapper) so Tailwind can compose hsl(var(--x))  */
 /* ---------------------------------------------------------------------- */
 :root {
@@ -73,4 +73,17 @@ body {
 /* Tabular numerals for all price/ticker data rendered in the mono font */
 .font-mono {
   font-variant-numeric: tabular-nums;
+}
+
+/* Premium glass-panel accent — used sparingly (Topbar, brand mark, elevated
+   cards) to give FinLens a distinct, modern feel vs. flat competitor UIs. */
+.glass-panel {
+  background-color: hsl(var(--card) / 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.brand-glow {
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.4),
+    0 0 24px 0 hsl(var(--primary) / 0.35);
 }

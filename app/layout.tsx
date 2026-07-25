@@ -7,9 +7,9 @@ import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "iCharts — Financial Intelligence",
+  title: "FinLens — Financial Intelligence",
   description:
-    "Real-time market data, fundamentals, and analysis for US & TASE equities.",
+    "FinLens is a next-generation financial terminal with live market data, charting, technical indicators, and screening for US & TASE equities.",
   manifest: "/manifest.json",
 };
 

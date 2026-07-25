@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Search } from "lucide-react";
+import { SymbolSearchInput } from "@/components/search/SymbolSearchInput";
 
 const USER_INITIALS = "YR";
 const MENU_ITEMS = ["Account", "Payment", "Contact", "Logout"] as const;
@@ -21,15 +21,8 @@ export function Topbar() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-4 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/75 md:px-6">
-      <div className="relative w-full max-w-xl">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Search stocks, symbol, companies..."
-          className="w-full rounded-md border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-        />
-      </div>
+    <header className="glass-panel sticky top-0 z-30 flex h-16 shrink-0 items-center gap-4 border-b border-border px-4 md:px-6">
+      <SymbolSearchInput />
 
       <div ref={menuRef} className="relative ml-auto">
         <button

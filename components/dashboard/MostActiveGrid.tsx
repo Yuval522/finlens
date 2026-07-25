@@ -1,7 +1,10 @@
 import { IndexCard } from "@/components/dashboard/IndexCard";
 
-const MOST_ACTIVE_SLOTS = 9;
+// Live US "most actives" screener (6) blended with a curated TASE list (6)
+// — see lib/finance/symbols.ts and lib/finance/yahoo.ts#getMostActive.
+const MOST_ACTIVE_SLOTS = 12;
 
+/** Loading-state skeleton — shown as the Suspense fallback for MostActiveSection. */
 export function MostActiveGrid() {
   return (
     <section>

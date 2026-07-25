@@ -38,12 +38,12 @@ export function Sidebar() {
     >
       {/* Wordmark */}
       <div className="flex h-16 items-center gap-2 border-b border-border px-4">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+        <div className="brand-glow flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
           <LineChart className="h-5 w-5" />
         </div>
         {!collapsed && (
           <span className="truncate text-[15px] font-semibold tracking-tight">
-            iCharts
+            FinLens
           </span>
         )}
       </div>
