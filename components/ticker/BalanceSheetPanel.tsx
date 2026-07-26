@@ -7,6 +7,7 @@ import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compact
 import { filterByRange, toYoY, type ChartRange, type ChartView } from "@/lib/finance/chart-transform";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
+import { SourceAttributionBadge } from "./SourceAttributionBadge";
 
 interface BalanceSheetPanelProps {
   balance: BalanceSheetYear[];
@@ -49,13 +50,15 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
   );
 
   return (
-    // Phase 5: 3-column breakdown (Short-Term Position / Total Structure /
-    // Debt vs Liquidity), replacing the earlier 2-chart layout.
-    // QA fix: auto-fit/minmax instead of a viewport breakpoint — see the
-    // matching comment in IncomeStatementPanel.tsx for the root cause
-    // (this grid's real available width is the right-hand analysis column,
-    // not the full viewport).
-    <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
+    <div className="space-y-2">
+      <SourceAttributionBadge years={balance} />
+      {/* Phase 5: 3-column breakdown (Short-Term Position / Total Structure /
+          Debt vs Liquidity), replacing the earlier 2-chart layout.
+          QA fix: auto-fit/minmax instead of a viewport breakpoint — see the
+          matching comment in IncomeStatementPanel.tsx for the root cause
+          (this grid's real available width is the right-hand analysis column,
+          not the full viewport). */}
+      <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
       <ChartCard
         title="Short-Term Position"
         subtitle="Cash & ST Investments vs Current Assets vs Current Liabilities"
@@ -195,6 +198,7 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
+      </div>
     </div>
   );
 }

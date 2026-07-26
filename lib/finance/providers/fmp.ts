@@ -93,3 +93,56 @@ export async function fetchFmpKeyMetricsTTM(symbol: string): Promise<FmpKeyMetri
   const rows = await fmpGet<FmpKeyMetricsTTM[]>(`/key-metrics-ttm/${encodeURIComponent(symbol)}`);
   return rows?.[0] ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// Multi-source aggregation (lib/finance/aggregate.ts) — third-tier fallback
+// for whichever fiscal years neither SEC EDGAR (primary deep-history source)
+// nor Yahoo (recent data / non-SEC-registered tickers) came back with.
+// Note: FMP's free tier caps historical annual statements at roughly 5
+// years as of their current pricing, so this mainly helps fill isolated
+// gaps rather than provide depth on its own — see fetchSecFinancials() in
+// providers/sec-edgar.ts for the actual 10-year source.
+// ---------------------------------------------------------------------------
+
+export interface FmpIncomeStatement {
+  date: string;
+  calendarYear: string;
+  revenue: number;
+  grossProfit: number;
+  operatingIncome: number;
+  netIncome: number;
+  epsdiluted: number;
+  weightedAverageShsOutDil: number;
+}
+
+/** Annual income statements — see the module doc comment above for this fallback's role/limits. */
+export async function fetchFmpIncomeStatements(symbol: string, limit = 10): Promise<FmpIncomeStatement[] | null> {
+  return fmpGet<FmpIncomeStatement[]>(`/income-statement/${encodeURIComponent(symbol)}`, {
+    period: "annual",
+    limit: String(limit),
+  });
+}
+
+export interface FmpBalanceSheetStatement {
+  date: string;
+  calendarYear: string;
+  cashAndShortTermInvestments: number;
+  totalCurrentAssets: number;
+  totalCurrentLiabilities: number;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalStockholdersEquity: number;
+  cashAndCashEquivalents: number;
+  totalDebt: number;
+}
+
+/** Annual balance sheets — see the module doc comment above for this fallback's role/limits. */
+export async function fetchFmpBalanceSheets(
+  symbol: string,
+  limit = 10
+): Promise<FmpBalanceSheetStatement[] | null> {
+  return fmpGet<FmpBalanceSheetStatement[]>(`/balance-sheet-statement/${encodeURIComponent(symbol)}`, {
+    period: "annual",
+    limit: String(limit),
+  });
+}

@@ -7,9 +7,18 @@ import type {
   FundamentalsTimeSeriesFinancialsResult,
 } from "yahoo-finance2/modules/fundamentalsTimeSeries";
 import { TtlCache } from "./cache";
+import { mergeYearsBySource } from "./aggregate";
 import { guessCurrencyForSearchResult, toExchangeBadge } from "./exchange";
 import { getMockFundamentals } from "./mock-data";
-import { fetchFmpCashFlowStatements, isFmpConfigured } from "./providers/fmp";
+import {
+  fetchFmpBalanceSheets,
+  fetchFmpCashFlowStatements,
+  fetchFmpIncomeStatements,
+  type FmpBalanceSheetStatement,
+  type FmpCashFlowStatement,
+  type FmpIncomeStatement,
+} from "./providers/fmp";
+import { fetchSecFinancials } from "./providers/sec-edgar";
 import { MARKET_SUMMARY_SYMBOLS, TASE_SEED_SYMBOLS, US_FALLBACK_SYMBOLS } from "./symbols";
 import {
   MarketDataError,
@@ -340,6 +349,7 @@ function toIncomeYears(rows: FundamentalsTimeSeriesFinancialsResult[], summary: 
         eps: row.dilutedEPS ?? (sharesOutstanding > 0 ? Number((netIncome / sharesOutstanding).toFixed(2)) : 0),
         sharesOutstandingDiluted: sharesOutstanding,
         dividendsPerShare: row.dividendPerShare ?? dividendsPerShareFallback,
+        dataSource: "yahoo" as const,
       };
     })
     // Same "phantom zero-height bar" fix as toBalanceYears/toCashFlowYears —
@@ -379,6 +389,7 @@ function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[], symbol
       totalStockholdersEquity: row.stockholdersEquity ?? row.totalEquityGrossMinorityInterest ?? 0,
       totalCash: row.cashAndCashEquivalents ?? 0,
       totalDebt: row.totalDebt ?? 0,
+      dataSource: "yahoo" as const,
     }))
     // QA fix (live report: a "2021" axis label rendered with no visible bar
     // on Balance/Cash Flow charts, while every other year rendered fine).
@@ -434,6 +445,7 @@ function toCashFlowYears(rows: FundamentalsTimeSeriesCashFlowResult[], symbol: s
       stockBasedCompensation: row.stockBasedCompensation ?? 0,
       capitalExpenditures: row.capitalExpenditure ?? 0,
       netIncome: row.netIncomeFromContinuingOperations ?? 0,
+      dataSource: "yahoo" as const,
     }))
     // QA fix — same root cause as toBalanceYears' matching filter above:
     // a dated-but-otherwise-empty row for the oldest period renders as an
@@ -444,32 +456,64 @@ function toCashFlowYears(rows: FundamentalsTimeSeriesCashFlowResult[], symbol: s
 }
 
 /**
- * Backfills any fiscal year where Yahoo's cash-flow rows came back missing
- * stock-based comp or capex (0, since toCashFlowYears defaults to 0), using
- * FMP's annual cash-flow-statement endpoint keyed by fiscal year. No-op
- * (returns the input unchanged) when FMP isn't configured — see
- * lib/finance/providers/fmp.ts for why this can't be verified live here.
+ * Maps FMP's annual statement endpoints into this app's Year shapes, tagged
+ * `dataSource: "fmp"`. Used only as the third-tier layer in the
+ * multi-source merge (see aggregate.ts) — superseded the old field-by-field
+ * "backfill zeros" enrichment, which only ever patched gaps *within*
+ * Yahoo's own ~5-year window. A whole-row merge is both simpler (one merge
+ * strategy for all three statements, all three sources) and more capable
+ * (FMP rows can now also fill entire fiscal years Yahoo doesn't have, not
+ * just individual fields within years it does).
  */
-async function enrichCashFlowWithFmp(symbol: string, years: CashFlowYear[]): Promise<CashFlowYear[]> {
-  if (!isFmpConfigured()) return years;
-  const needsEnrichment = years.some(
-    (y) => y.stockBasedCompensation === 0 || y.capitalExpenditures === 0
-  );
-  if (!needsEnrichment) return years;
+function fmpIncomeToYears(rows: FmpIncomeStatement[] | null): IncomeStatementYear[] {
+  if (!rows) return [];
+  return rows
+    .filter((r) => r.calendarYear)
+    .map((r) => ({
+      fiscalYear: r.calendarYear,
+      totalRevenue: r.revenue ?? 0,
+      grossProfit: r.grossProfit ?? 0,
+      operatingIncome: r.operatingIncome ?? 0,
+      netIncome: r.netIncome ?? 0,
+      eps: r.epsdiluted ?? 0,
+      sharesOutstandingDiluted: r.weightedAverageShsOutDil ?? 0,
+      // FMP's income-statement endpoint doesn't include dividends/share.
+      dividendsPerShare: 0,
+      dataSource: "fmp" as const,
+    }));
+}
 
-  const fmpRows = await fetchFmpCashFlowStatements(symbol, years.length + 2).catch(() => null);
-  if (!fmpRows || fmpRows.length === 0) return years;
+function fmpBalanceToYears(rows: FmpBalanceSheetStatement[] | null): BalanceSheetYear[] {
+  if (!rows) return [];
+  return rows
+    .filter((r) => r.calendarYear)
+    .map((r) => ({
+      fiscalYear: r.calendarYear,
+      cashAndShortTermInvestments: r.cashAndShortTermInvestments ?? 0,
+      totalCurrentAssets: r.totalCurrentAssets ?? 0,
+      totalCurrentLiabilities: r.totalCurrentLiabilities ?? 0,
+      totalAssets: r.totalAssets ?? 0,
+      totalLiabilities: r.totalLiabilities ?? 0,
+      totalStockholdersEquity: r.totalStockholdersEquity ?? 0,
+      totalCash: r.cashAndCashEquivalents ?? 0,
+      totalDebt: r.totalDebt ?? 0,
+      dataSource: "fmp" as const,
+    }));
+}
 
-  const fmpByYear = new Map(fmpRows.map((r) => [r.calendarYear, r]));
-  return years.map((y) => {
-    const fmp = fmpByYear.get(y.fiscalYear);
-    if (!fmp) return y;
-    return {
-      ...y,
-      stockBasedCompensation: y.stockBasedCompensation || fmp.stockBasedCompensation || 0,
-      capitalExpenditures: y.capitalExpenditures || fmp.capitalExpenditure || 0,
-    };
-  });
+function fmpCashFlowToYears(rows: FmpCashFlowStatement[] | null): CashFlowYear[] {
+  if (!rows) return [];
+  return rows
+    .filter((r) => r.calendarYear)
+    .map((r) => ({
+      fiscalYear: r.calendarYear,
+      operatingCashFlow: r.operatingCashFlow ?? 0,
+      freeCashFlow: r.freeCashFlow ?? 0,
+      stockBasedCompensation: r.stockBasedCompensation ?? 0,
+      capitalExpenditures: r.capitalExpenditure ?? 0,
+      netIncome: r.netIncome ?? 0,
+      dataSource: "fmp" as const,
+    }));
 }
 
 /**
@@ -644,7 +688,19 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       const quarterlyPeriod1 = new Date();
       quarterlyPeriod1.setFullYear(quarterlyPeriod1.getFullYear() - 2);
 
-      const [quotes, summary, chartResult, balanceRows, cashFlowRows, incomeRows, quarterlyRevenueRows] = await Promise.all([
+      const [
+        quotes,
+        summary,
+        chartResult,
+        balanceRows,
+        cashFlowRows,
+        incomeRows,
+        quarterlyRevenueRows,
+        secFinancials,
+        fmpIncomeRows,
+        fmpBalanceRows,
+        fmpCashFlowRows,
+      ] = await Promise.all([
         getQuotes([symbol]),
         yahooFinance.quoteSummary(symbol, {
           modules: [
@@ -704,6 +760,23 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             module: "financials",
           })
           .catch(() => [] as FundamentalsTimeSeriesFinancialsResult[]),
+        // Multi-source aggregation, primary deep-history layer (see
+        // aggregate.ts / providers/sec-edgar.ts doc comments) — audited
+        // XBRL data straight from 10-K/20-F filings, the only source that
+        // can genuinely back a "10 Years"/"All Available" range selection
+        // for an established filer. fetchSecFinancials() never throws (its
+        // own try/catch resolves a well-formed { status: "unavailable" }
+        // result), caught here too only for defense-in-depth consistency
+        // with the other independently-caught fetches above.
+        fetchSecFinancials(symbol).catch(
+          () => ({ status: "unavailable" as const, income: [], balance: [], cashFlow: [] })
+        ),
+        // Multi-source aggregation, third-tier layer — no-op (resolves
+        // null almost instantly) unless FMP_API_KEY is configured; see
+        // providers/fmp.ts.
+        fetchFmpIncomeStatements(symbol).catch(() => null),
+        fetchFmpBalanceSheets(symbol).catch(() => null),
+        fetchFmpCashFlowStatements(symbol).catch(() => null),
       ]);
 
       const quote = quotes[0];
@@ -712,11 +785,31 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       }
 
       const assetProfile = summary.assetProfile;
-      const income = toIncomeYears(incomeRows as FundamentalsTimeSeriesFinancialsResult[], summary, symbol);
-      const cashFlowYears = toCashFlowYears(cashFlowRows as FundamentalsTimeSeriesCashFlowResult[], symbol);
-      // Best-effort enrichment — no-op unless FMP_API_KEY is set (see
-      // enrichCashFlowWithFmp doc comment and providers/fmp.ts).
-      const cashFlow = await enrichCashFlowWithFmp(symbol, cashFlowYears);
+
+      const yahooIncome = toIncomeYears(incomeRows as FundamentalsTimeSeriesFinancialsResult[], summary, symbol);
+      const yahooBalance = toBalanceYears(balanceRows as FundamentalsTimeSeriesBalanceSheetResult[], symbol);
+      const yahooCashFlow = toCashFlowYears(cashFlowRows as FundamentalsTimeSeriesCashFlowResult[], symbol);
+
+      // Multi-source aggregation (see aggregate.ts): for each fiscal year,
+      // SEC EDGAR's audited deep history wins when it has that year, Yahoo
+      // fills recent years and any ticker SEC doesn't register, FMP fills
+      // whatever isolated gap remains. Every row keeps a `dataSource` tag
+      // for the UI attribution badge (see Income/Balance/CashFlow panels).
+      const income = mergeYearsBySource("income", symbol, [
+        { source: "sec-edgar", years: secFinancials.income },
+        { source: "yahoo", years: yahooIncome },
+        { source: "fmp", years: fmpIncomeToYears(fmpIncomeRows) },
+      ]);
+      const balance = mergeYearsBySource("balance", symbol, [
+        { source: "sec-edgar", years: secFinancials.balance },
+        { source: "yahoo", years: yahooBalance },
+        { source: "fmp", years: fmpBalanceToYears(fmpBalanceRows) },
+      ]);
+      const cashFlow = mergeYearsBySource("cashFlow", symbol, [
+        { source: "sec-edgar", years: secFinancials.cashFlow },
+        { source: "yahoo", years: yahooCashFlow },
+        { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRows) },
+      ]);
 
       const bundle: FundamentalsBundle = {
         source: "live",
@@ -731,7 +824,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         },
         metrics: toMetrics(summary),
         income,
-        balance: toBalanceYears(balanceRows as FundamentalsTimeSeriesBalanceSheetResult[], symbol),
+        balance,
         cashFlow,
         estimates: toEstimates(summary, income, quarterlyRevenueRows as FundamentalsTimeSeriesFinancialsResult[]),
         history: toPricePoints(chartResult),

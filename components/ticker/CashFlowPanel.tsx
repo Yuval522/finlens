@@ -7,6 +7,7 @@ import { CHART_COLORS, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/fo
 import { filterByRange, toYoY, type ChartRange, type ChartView } from "@/lib/finance/chart-transform";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
+import { SourceAttributionBadge } from "./SourceAttributionBadge";
 
 interface CashFlowPanelProps {
   cashFlow: CashFlowYear[];
@@ -91,9 +92,11 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
   );
 
   return (
-    // QA fix: auto-fit/minmax instead of a viewport breakpoint — see the
-    // matching comment in IncomeStatementPanel.tsx for the root cause.
-    <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
+    <div className="space-y-2">
+      <SourceAttributionBadge years={cashFlow} />
+      {/* QA fix: auto-fit/minmax instead of a viewport breakpoint — see the
+          matching comment in IncomeStatementPanel.tsx for the root cause. */}
+      <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
       <ChartCard
         title="Cash Flow Breakdown"
         subtitle="Operating CF, Free CF, Stock-Based Comp, CapEx"
@@ -152,6 +155,7 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
+      </div>
     </div>
   );
 }

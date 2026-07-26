@@ -96,6 +96,19 @@ export interface TickerMetrics {
   margins: MarginMetrics;
 }
 
+/**
+ * Multi-source aggregation (see lib/finance/aggregate.ts): each historical
+ * financial-statement year is fetched from whichever provider has it,
+ * prioritized deepest/most-authoritative first. "sec-edgar" is the primary
+ * deep-history source (audited XBRL data straight from 10-K/20-F filings,
+ * typically 10+ years for any SEC-registered filer); "yahoo" covers recent
+ * years and any ticker SEC doesn't register (foreign-only listings);
+ * "fmp" is a third-tier fallback for whatever gap remains. Optional and
+ * omitted on mock/demo data (see mock-data.ts) — a missing `dataSource`
+ * should be read as "mock" whenever `FundamentalsBundle.source === "mock"`.
+ */
+export type FinancialDataSource = "sec-edgar" | "yahoo" | "fmp";
+
 export interface IncomeStatementYear {
   fiscalYear: string;
   totalRevenue: number;
@@ -105,6 +118,7 @@ export interface IncomeStatementYear {
   eps: number;
   sharesOutstandingDiluted: number;
   dividendsPerShare: number;
+  dataSource?: FinancialDataSource;
 }
 
 export interface BalanceSheetYear {
@@ -119,6 +133,7 @@ export interface BalanceSheetYear {
   /** Cash & cash equivalents only (subset of cashAndShortTermInvestments). */
   totalCash: number;
   totalDebt: number;
+  dataSource?: FinancialDataSource;
 }
 
 export interface CashFlowYear {
@@ -134,6 +149,7 @@ export interface CashFlowYear {
    *  against `income[]` at render time since the two arrays aren't
    *  guaranteed to cover identical fiscal years. */
   netIncome: number;
+  dataSource?: FinancialDataSource;
 }
 
 export interface EstimateRow {

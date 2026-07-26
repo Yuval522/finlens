@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer,
 import type { CashFlowYear, IncomeStatementYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
 import { filterByRange, toYoY, type ChartRange, type ChartView } from "@/lib/finance/chart-transform";
+import { SourceAttributionBadge } from "./SourceAttributionBadge";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
 
@@ -173,17 +174,19 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
   );
 
   return (
-    // QA fix (root-caused via DOM inspection against the reference
-    // terminal): this used to be viewport-width breakpoints
-    // (sm:grid-cols-2 xl:grid-cols-4), sized off the *window's* width. But
-    // this grid lives in the right-hand column of a `22rem 1fr` split —
-    // its actual available width is often much narrower than the viewport
-    // implies, so at common desktop sizes it was stuck at 2 columns of
-    // ~200px, making every bar chart read as squished/stretched. CSS
-    // Grid's auto-fit + minmax sizes columns off the *container's* real
-    // width instead, so it self-adapts correctly regardless of the split
-    // — no viewport breakpoints, no container-query plugin needed.
-    <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
+    <div className="space-y-2">
+      <SourceAttributionBadge years={income} />
+      {/* QA fix (root-caused via DOM inspection against the reference
+          terminal): this used to be viewport-width breakpoints
+          (sm:grid-cols-2 xl:grid-cols-4), sized off the *window's* width. But
+          this grid lives in the right-hand column of a `22rem 1fr` split —
+          its actual available width is often much narrower than the viewport
+          implies, so at common desktop sizes it was stuck at 2 columns of
+          ~200px, making every bar chart read as squished/stretched. CSS
+          Grid's auto-fit + minmax sizes columns off the *container's* real
+          width instead, so it self-adapts correctly regardless of the split
+          — no viewport breakpoints, no container-query plugin needed. */}
+      <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
       <ChartCard
         title="Total Revenues"
         fullscreen={expanded === "revenue"}
@@ -302,6 +305,7 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
           view={view}
         />
       </ChartCard>
+      </div>
     </div>
   );
 }
