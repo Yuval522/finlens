@@ -23,7 +23,9 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
   // pattern as IncomeStatementPanel; see that file's doc comment. Balance
   // Sheet's charts are multi-series, so `toYoY` is called per-chart with
   // that chart's specific keys rather than once globally.
-  const [range, setRange] = useState<ChartRange>(5);
+  // QA fix ("Select Range does nothing" report): default "All" instead of
+  // a hardcoded 5 — see IncomeStatementPanel.tsx's matching comment.
+  const [range, setRange] = useState<ChartRange>("All");
   const [view, setView] = useState<ChartView>("absolute");
 
   const rangedBalance = useMemo(() => filterByRange(balance, range), [balance, range]);
@@ -36,7 +38,15 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
   const tooltipFormatter = (value: unknown) =>
     view === "yoy" ? `${Number(value) >= 0 ? "+" : ""}${Number(value).toFixed(1)}%` : `${compactAxis(Number(value))} ${currency}`;
 
-  const controls = <ChartControls range={range} onRangeChange={setRange} view={view} onViewChange={setView} />;
+  const controls = (
+    <ChartControls
+      range={range}
+      onRangeChange={setRange}
+      view={view}
+      onViewChange={setView}
+      totalYears={balance.length}
+    />
+  );
 
   return (
     // Phase 5: 3-column breakdown (Short-Term Position / Total Structure /

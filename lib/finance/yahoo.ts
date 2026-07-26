@@ -596,8 +596,16 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       const period1 = new Date();
       period1.setFullYear(period1.getFullYear() - 10);
 
+      // QA fix ("Select Range does nothing" report): this used to be -6,
+      // which meant the Select Range dropdown's "10 Years" option could
+      // *never* actually show 10 years of data even when Yahoo has it —
+      // the fetch itself was already capping the window below that. Bumped
+      // to comfortably clear the broadest range the UI offers (see
+      // ChartControls' CHART_RANGES), so "10 Years"/"All Available" can
+      // genuinely differ from "5 Years" whenever the ticker's real history
+      // goes back that far.
       const balancePeriod1 = new Date();
-      balancePeriod1.setFullYear(balancePeriod1.getFullYear() - 6);
+      balancePeriod1.setFullYear(balancePeriod1.getFullYear() - 11);
 
       // Trailing ~2 years is enough to cover earningsHistory's ~4 quarters
       // with room to spare for the nearest-date matching in

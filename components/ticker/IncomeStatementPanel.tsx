@@ -108,7 +108,16 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
   // Real transforms over the real dataset (lib/finance/chart-transform.ts)
   // — see ChartControls' doc comment for why "Chart Type" only offers
   // Annually.
-  const [range, setRange] = useState<ChartRange>(5);
+  // QA fix ("Select Range does nothing" report): default to "All" instead
+  // of a hardcoded 5 — with FinLens's typical ~5-year data depth, a
+  // default of 5 already silently equals "All" for most tickers, so the
+  // very first thing a user saw was indistinguishable from what "All"
+  // would show anyway. Defaulting to "All" is both more useful (show
+  // everything available up front) and removes any chance of the initial
+  // range value being invalid (see ChartControls' getAvailableRanges use
+  // for why a hardcoded number could occasionally fall outside the
+  // options offered for a thinner dataset).
+  const [range, setRange] = useState<ChartRange>("All");
   const [view, setView] = useState<ChartView>("absolute");
 
   const money = (v: number) => `${compactAxis(v)} ${currency}`;
@@ -153,7 +162,14 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
   });
 
   const controls = (showView = true) => (
-    <ChartControls range={range} onRangeChange={setRange} view={view} onViewChange={setView} showView={showView} />
+    <ChartControls
+      range={range}
+      onRangeChange={setRange}
+      view={view}
+      onViewChange={setView}
+      showView={showView}
+      totalYears={income.length}
+    />
   );
 
   return (

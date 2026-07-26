@@ -68,7 +68,9 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
 
   // QA feature (fullscreen chart modal controls) — same shared Range/View
   // pattern as IncomeStatementPanel/BalanceSheetPanel.
-  const [range, setRange] = useState<ChartRange>(5);
+  // QA fix ("Select Range does nothing" report): default "All" instead of
+  // a hardcoded 5 — see IncomeStatementPanel.tsx's matching comment.
+  const [range, setRange] = useState<ChartRange>("All");
   const [view, setView] = useState<ChartView>("absolute");
 
   const rangedCashFlow = useMemo(() => filterByRange(cashFlow, range), [cashFlow, range]);
@@ -78,7 +80,15 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
   }
 
   const axisFormatter = view === "yoy" ? (v: number) => `${v}%` : compactAxis;
-  const controls = <ChartControls range={range} onRangeChange={setRange} view={view} onViewChange={setView} />;
+  const controls = (
+    <ChartControls
+      range={range}
+      onRangeChange={setRange}
+      view={view}
+      onViewChange={setView}
+      totalYears={cashFlow.length}
+    />
+  );
 
   return (
     // QA fix: auto-fit/minmax instead of a viewport breakpoint — see the

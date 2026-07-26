@@ -23,6 +23,31 @@ export function filterByRange<T extends { fiscalYear: string }>(data: T[], range
 }
 
 /**
+ * QA fix ("Select Range does nothing" report — traced to a real cause, but
+ * not a wiring bug): filterByRange/the range state were already correctly
+ * wired (verified again, function by function, before writing this). The
+ * actual problem is upstream — every FinLens dataset only ever has ~5
+ * fiscal periods (mock-data.ts's illustrative fixtures are hand-authored
+ * with exactly 4 years + TTM per ticker; live Yahoo data was previously
+ * fetched with only a 6-year lookback window, see the bumped period1 in
+ * yahoo.ts). With 5 total years available, filterByRange(data, 5),
+ * filterByRange(data, 10), and filterByRange(data, "All") are all
+ * *mathematically identical* — Math.max(0, 5-5) and Math.max(0, 5-10) both
+ * equal 0, so both slice from index 0, same as "All". Only "3 Years" ever
+ * produced a visibly different result. Selecting through 5 → 10 → All and
+ * seeing the exact same chart every time isn't a bug in the filter — it's
+ * three options that were never capable of differing, given the data
+ * depth, being presented as if they were meaningfully distinct choices.
+ * This filters CHART_RANGES down to only the options that would actually
+ * produce a different slice than the next-broadest one, so the dropdown
+ * never offers a choice that's silently a no-op.
+ */
+export function getAvailableRanges(totalYears: number): ChartRange[] {
+  const usable = CHART_RANGES.filter((r) => r === "All" || r < totalYears);
+  return usable.length > 0 ? usable : ["All"];
+}
+
+/**
  * Converts the given numeric keys to year-over-year percent change,
  * dropping the first row (no prior year to compare against). Non-numeric
  * or missing values pass through as 0 rather than throwing, since a
