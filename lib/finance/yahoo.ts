@@ -12,8 +12,11 @@ import { guessCurrencyForSearchResult, toExchangeBadge } from "./exchange";
 import { getMockFundamentals } from "./mock-data";
 import {
   fetchFmpBalanceSheets,
+  fetchFmpBalanceSheetsQuarterly,
   fetchFmpCashFlowStatements,
+  fetchFmpCashFlowStatementsQuarterly,
   fetchFmpIncomeStatements,
+  fetchFmpIncomeStatementsQuarterly,
   type FmpBalanceSheetStatement,
   type FmpCashFlowStatement,
   type FmpIncomeStatement,
@@ -320,13 +323,28 @@ function warnIfFiscalYearGaps(label: string, symbol: string, fiscalYears: string
  * used for the quarterly revenue backfill and proven live for balance
  * sheet / cash flow.
  */
-function toIncomeYears(rows: FundamentalsTimeSeriesFinancialsResult[], summary: QuoteSummaryResult, symbol: string): IncomeStatementYear[] {
+/** "2023" for annual rows, "2023-Q2" for quarterly — see quarterLabel(). String-sortable either way (see aggregate.ts). */
+type PeriodLabelFn = (date: Date) => string;
+const annualLabel: PeriodLabelFn = (date) => String(date.getFullYear());
+/** Calendar-quarter label — Yahoo's fundamentalsTimeSeries rows are dated by
+ *  period end, so this reads as "the quarter ending in this row's date,"
+ *  matching the same "fiscalYear-Qn" convention SEC EDGAR's quarterlySeries
+ *  uses (see providers/sec-edgar.ts), so both sources merge cleanly. */
+const quarterLabel: PeriodLabelFn = (date) => `${date.getFullYear()}-Q${Math.floor(date.getMonth() / 3) + 1}`;
+
+function toIncomeRows(
+  rows: FundamentalsTimeSeriesFinancialsResult[],
+  summary: QuoteSummaryResult,
+  symbol: string,
+  labelFn: PeriodLabelFn,
+  label: string
+): IncomeStatementYear[] {
   const sharesOutstandingFallback = summary.defaultKeyStatistics?.sharesOutstanding ?? 0;
   const dividendsPerShareFallback = summary.summaryDetail?.dividendRate ?? 0;
   const grossMarginFallback = summary.financialData?.grossMargins ?? null;
   const operatingMarginFallback = summary.financialData?.operatingMargins ?? null;
 
-  const years = [...rows]
+  const periods = [...rows]
     .filter((row) => row.date instanceof Date)
     .sort((a, b) => a.date.getTime() - b.date.getTime())
     .map((row) => {
@@ -341,7 +359,7 @@ function toIncomeYears(rows: FundamentalsTimeSeriesFinancialsResult[], summary: 
         (operatingMarginFallback != null ? Math.round(totalRevenue * operatingMarginFallback) : 0);
       const sharesOutstanding = row.dilutedAverageShares || sharesOutstandingFallback;
       return {
-        fiscalYear: String(row.date.getFullYear()),
+        fiscalYear: labelFn(row.date),
         totalRevenue,
         grossProfit,
         operatingIncome,
@@ -352,13 +370,13 @@ function toIncomeYears(rows: FundamentalsTimeSeriesFinancialsResult[], summary: 
         dataSource: "yahoo" as const,
       };
     })
-    // Same "phantom zero-height bar" fix as toBalanceYears/toCashFlowYears —
+    // Same "phantom zero-height bar" fix as toBalanceRows/toCashFlowRows —
     // a row with a valid date but every financial field missing shouldn't
-    // contribute an empty year to the chart/table.
+    // contribute an empty period to the chart/table.
     .filter((y) => y.totalRevenue !== 0 || y.netIncome !== 0 || y.grossProfit !== 0);
 
-  warnIfFiscalYearGaps("toIncomeYears", symbol, years.map((y) => y.fiscalYear));
-  return years;
+  warnIfFiscalYearGaps(label, symbol, periods.map((y) => y.fiscalYear));
+  return periods;
 }
 
 /**
@@ -374,12 +392,17 @@ function toIncomeYears(rows: FundamentalsTimeSeriesFinancialsResult[], summary: 
  * (e.g. `totalAssets`, not `annualTotalAssets` — verified against the
  * module's transform code, not just its stale doc-comment examples).
  */
-function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[], symbol: string): BalanceSheetYear[] {
-  const years = [...rows]
+function toBalanceRows(
+  rows: FundamentalsTimeSeriesBalanceSheetResult[],
+  symbol: string,
+  labelFn: PeriodLabelFn,
+  label: string
+): BalanceSheetYear[] {
+  const periods = [...rows]
     .filter((row) => row.date instanceof Date)
     .sort((a, b) => a.date.getTime() - b.date.getTime())
     .map((row) => ({
-      fiscalYear: String(row.date.getFullYear()),
+      fiscalYear: labelFn(row.date),
       cashAndShortTermInvestments:
         row.cashCashEquivalentsAndShortTermInvestments ?? row.cashAndCashEquivalents ?? 0,
       totalCurrentAssets: row.currentAssets ?? 0,
@@ -414,8 +437,8 @@ function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[], symbol
         y.totalCurrentLiabilities !== 0 ||
         y.cashAndShortTermInvestments !== 0
     );
-  warnIfFiscalYearGaps("toBalanceYears", symbol, years.map((y) => y.fiscalYear));
-  return years;
+  warnIfFiscalYearGaps(label, symbol, periods.map((y) => y.fiscalYear));
+  return periods;
 }
 
 /**
@@ -434,12 +457,17 @@ function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[], symbol
  * balance-sheet/financials modules) — its closest equivalent is
  * `netIncomeFromContinuingOperations`, confirmed against the same .d.ts.
  */
-function toCashFlowYears(rows: FundamentalsTimeSeriesCashFlowResult[], symbol: string): CashFlowYear[] {
-  const years = [...rows]
+function toCashFlowRows(
+  rows: FundamentalsTimeSeriesCashFlowResult[],
+  symbol: string,
+  labelFn: PeriodLabelFn,
+  label: string
+): CashFlowYear[] {
+  const periods = [...rows]
     .filter((row) => row.date instanceof Date)
     .sort((a, b) => a.date.getTime() - b.date.getTime())
     .map((row) => ({
-      fiscalYear: String(row.date.getFullYear()),
+      fiscalYear: labelFn(row.date),
       operatingCashFlow: row.operatingCashFlow ?? 0,
       freeCashFlow: row.freeCashFlow ?? 0,
       stockBasedCompensation: row.stockBasedCompensation ?? 0,
@@ -451,8 +479,8 @@ function toCashFlowYears(rows: FundamentalsTimeSeriesCashFlowResult[], symbol: s
     // a dated-but-otherwise-empty row for the oldest period renders as an
     // axis label with an invisible zero-height bar. Drop it instead.
     .filter((y) => y.operatingCashFlow !== 0 || y.freeCashFlow !== 0 || y.netIncome !== 0);
-  warnIfFiscalYearGaps("toCashFlowYears", symbol, years.map((y) => y.fiscalYear));
-  return years;
+  warnIfFiscalYearGaps(label, symbol, periods.map((y) => y.fiscalYear));
+  return periods;
 }
 
 /**
@@ -465,12 +493,17 @@ function toCashFlowYears(rows: FundamentalsTimeSeriesCashFlowResult[], symbol: s
  * (FMP rows can now also fill entire fiscal years Yahoo doesn't have, not
  * just individual fields within years it does).
  */
+/** "2023" for annual FMP rows, "2023-Q2" for quarterly ones (FMP's `period` field is present only on quarterly responses) — matches the same convention Yahoo/SEC EDGAR quarterly rows use, so all three sources merge cleanly. */
+function fmpPeriodKey(r: { calendarYear: string; period?: string }): string {
+  return r.period ? `${r.calendarYear}-${r.period}` : r.calendarYear;
+}
+
 function fmpIncomeToYears(rows: FmpIncomeStatement[] | null): IncomeStatementYear[] {
   if (!rows) return [];
   return rows
     .filter((r) => r.calendarYear)
     .map((r) => ({
-      fiscalYear: r.calendarYear,
+      fiscalYear: fmpPeriodKey(r),
       totalRevenue: r.revenue ?? 0,
       grossProfit: r.grossProfit ?? 0,
       operatingIncome: r.operatingIncome ?? 0,
@@ -488,7 +521,7 @@ function fmpBalanceToYears(rows: FmpBalanceSheetStatement[] | null): BalanceShee
   return rows
     .filter((r) => r.calendarYear)
     .map((r) => ({
-      fiscalYear: r.calendarYear,
+      fiscalYear: fmpPeriodKey(r),
       cashAndShortTermInvestments: r.cashAndShortTermInvestments ?? 0,
       totalCurrentAssets: r.totalCurrentAssets ?? 0,
       totalCurrentLiabilities: r.totalCurrentLiabilities ?? 0,
@@ -506,7 +539,7 @@ function fmpCashFlowToYears(rows: FmpCashFlowStatement[] | null): CashFlowYear[]
   return rows
     .filter((r) => r.calendarYear)
     .map((r) => ({
-      fiscalYear: r.calendarYear,
+      fiscalYear: fmpPeriodKey(r),
       operatingCashFlow: r.operatingCashFlow ?? 0,
       freeCashFlow: r.freeCashFlow ?? 0,
       stockBasedCompensation: r.stockBasedCompensation ?? 0,
@@ -619,18 +652,36 @@ function toEstimates(
     if (existingQuarterlyDates.has(periodEndDate)) continue; // don't duplicate an earningsTrend row
 
     const beat = h.epsActual != null && h.epsEstimate != null ? h.epsActual >= h.epsEstimate : null;
+    const actualRevenue = findNearestQuarterlyRevenue(quarterlyRevenueRows, h.quarter);
+    // QA fix (bug report Issue #4 — "Estimates tab: historical quarters
+    // have null consensus fields"): Yahoo's free tier has no point-in-time
+    // historical revenue *consensus* to show here (see this function's doc
+    // comment), so revenueEstimate/Avg/Low/High/numberOfAnalysts stay
+    // honestly null — there's no real forecast data to backfill them with.
+    // revenueYoyGrowthPct is different: it's not a consensus figure, it's
+    // a straightforward comparison of two *actuals* (this quarter vs. the
+    // same calendar quarter a year prior), and we already have the real
+    // revenue history via quarterlyRevenueRows — so compute it instead of
+    // leaving it null.
+    const priorYearQuarter = new Date(h.quarter);
+    priorYearQuarter.setFullYear(priorYearQuarter.getFullYear() - 1);
+    const priorYearRevenue = findNearestQuarterlyRevenue(quarterlyRevenueRows, priorYearQuarter);
+    const revenueYoyGrowthPct =
+      actualRevenue != null && priorYearRevenue != null && priorYearRevenue !== 0
+        ? Number((((actualRevenue - priorYearRevenue) / Math.abs(priorYearRevenue)) * 100).toFixed(2))
+        : null;
     quarterly.push({
       fiscalPeriodLabel: h.quarter.toLocaleDateString("en-US", { year: "numeric", month: "short" }),
       periodEndDate,
       revenueEstimate: null,
-      revenueYoyGrowthPct: null,
+      revenueYoyGrowthPct,
       revenueAvg: null,
       revenueLow: null,
       revenueHigh: null,
       numberOfAnalysts: null,
       isHistorical: true,
       beat,
-      actualRevenue: findNearestQuarterlyRevenue(quarterlyRevenueRows, h.quarter),
+      actualRevenue,
       epsActual: h.epsActual,
       epsEstimate: h.epsEstimate,
       beatBasis: beat != null ? "eps" : null,
@@ -696,10 +747,15 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         cashFlowRows,
         incomeRows,
         quarterlyRevenueRows,
+        balanceRowsQuarterly,
+        cashFlowRowsQuarterly,
         secFinancials,
         fmpIncomeRows,
         fmpBalanceRows,
         fmpCashFlowRows,
+        fmpIncomeRowsQuarterly,
+        fmpBalanceRowsQuarterly,
+        fmpCashFlowRowsQuarterly,
       ] = await Promise.all([
         getQuotes([symbol]),
         yahooFinance.quoteSummary(symbol, {
@@ -750,9 +806,11 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             module: "financials",
           })
           .catch(() => [] as FundamentalsTimeSeriesFinancialsResult[]),
-        // Real quarterly actual revenue, used only to backfill the
-        // "Actual" figure next to earningsHistory's historical EPS rows —
-        // see findNearestQuarterlyRevenue().
+        // Real quarterly actual revenue, used both to backfill the
+        // "Actual" figure next to earningsHistory's historical EPS rows
+        // (see findNearestQuarterlyRevenue()) AND as the quarterly Income
+        // Statement source for the Chart Type: Quarterly view below — same
+        // module, no need for a second fetch.
         yahooFinance
           .fundamentalsTimeSeries(symbol, {
             period1: quarterlyPeriod1,
@@ -760,6 +818,21 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             module: "financials",
           })
           .catch(() => [] as FundamentalsTimeSeriesFinancialsResult[]),
+        // Quarterly balance sheet / cash flow — Chart Type: Quarterly view.
+        yahooFinance
+          .fundamentalsTimeSeries(symbol, {
+            period1: quarterlyPeriod1,
+            type: "quarterly",
+            module: "balance-sheet",
+          })
+          .catch(() => [] as FundamentalsTimeSeriesBalanceSheetResult[]),
+        yahooFinance
+          .fundamentalsTimeSeries(symbol, {
+            period1: quarterlyPeriod1,
+            type: "quarterly",
+            module: "cash-flow",
+          })
+          .catch(() => [] as FundamentalsTimeSeriesCashFlowResult[]),
         // Multi-source aggregation, primary deep-history layer (see
         // aggregate.ts / providers/sec-edgar.ts doc comments) — audited
         // XBRL data straight from 10-K/20-F filings, the only source that
@@ -769,7 +842,15 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         // result), caught here too only for defense-in-depth consistency
         // with the other independently-caught fetches above.
         fetchSecFinancials(symbol).catch(
-          () => ({ status: "unavailable" as const, income: [], balance: [], cashFlow: [] })
+          () => ({
+            status: "unavailable" as const,
+            income: [],
+            balance: [],
+            cashFlow: [],
+            incomeQuarterly: [],
+            balanceQuarterly: [],
+            cashFlowQuarterly: [],
+          })
         ),
         // Multi-source aggregation, third-tier layer — no-op (resolves
         // null almost instantly) unless FMP_API_KEY is configured; see
@@ -777,6 +858,9 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         fetchFmpIncomeStatements(symbol).catch(() => null),
         fetchFmpBalanceSheets(symbol).catch(() => null),
         fetchFmpCashFlowStatements(symbol).catch(() => null),
+        fetchFmpIncomeStatementsQuarterly(symbol).catch(() => null),
+        fetchFmpBalanceSheetsQuarterly(symbol).catch(() => null),
+        fetchFmpCashFlowStatementsQuarterly(symbol).catch(() => null),
       ]);
 
       const quote = quotes[0];
@@ -786,9 +870,9 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
 
       const assetProfile = summary.assetProfile;
 
-      const yahooIncome = toIncomeYears(incomeRows as FundamentalsTimeSeriesFinancialsResult[], summary, symbol);
-      const yahooBalance = toBalanceYears(balanceRows as FundamentalsTimeSeriesBalanceSheetResult[], symbol);
-      const yahooCashFlow = toCashFlowYears(cashFlowRows as FundamentalsTimeSeriesCashFlowResult[], symbol);
+      const yahooIncome = toIncomeRows(incomeRows as FundamentalsTimeSeriesFinancialsResult[], summary, symbol, annualLabel, "toIncomeRows");
+      const yahooBalance = toBalanceRows(balanceRows as FundamentalsTimeSeriesBalanceSheetResult[], symbol, annualLabel, "toBalanceRows");
+      const yahooCashFlow = toCashFlowRows(cashFlowRows as FundamentalsTimeSeriesCashFlowResult[], symbol, annualLabel, "toCashFlowRows");
 
       // Multi-source aggregation (see aggregate.ts): for each fiscal year,
       // SEC EDGAR's audited deep history wins when it has that year, Yahoo
@@ -811,6 +895,47 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRows) },
       ]);
 
+      // Quarterly counterparts — Chart Type: Quarterly view. Same merge
+      // priority (SEC EDGAR 10-Qs > Yahoo > FMP), keyed "fiscalYear-Qn"
+      // instead of a bare year (see quarterLabel()/quarterlySeries()).
+      // Foreign private issuers (20-F filers) generally don't file 10-Qs,
+      // so `secFinancials.*Quarterly` is often empty for them — Yahoo/FMP
+      // still cover that case.
+      const yahooIncomeQuarterly = toIncomeRows(
+        quarterlyRevenueRows as FundamentalsTimeSeriesFinancialsResult[],
+        summary,
+        symbol,
+        quarterLabel,
+        "toIncomeRows(quarterly)"
+      );
+      const yahooBalanceQuarterly = toBalanceRows(
+        balanceRowsQuarterly as FundamentalsTimeSeriesBalanceSheetResult[],
+        symbol,
+        quarterLabel,
+        "toBalanceRows(quarterly)"
+      );
+      const yahooCashFlowQuarterly = toCashFlowRows(
+        cashFlowRowsQuarterly as FundamentalsTimeSeriesCashFlowResult[],
+        symbol,
+        quarterLabel,
+        "toCashFlowRows(quarterly)"
+      );
+      const incomeQuarterly = mergeYearsBySource("incomeQuarterly", symbol, [
+        { source: "sec-edgar", years: secFinancials.incomeQuarterly },
+        { source: "yahoo", years: yahooIncomeQuarterly },
+        { source: "fmp", years: fmpIncomeToYears(fmpIncomeRowsQuarterly) },
+      ]);
+      const balanceQuarterly = mergeYearsBySource("balanceQuarterly", symbol, [
+        { source: "sec-edgar", years: secFinancials.balanceQuarterly },
+        { source: "yahoo", years: yahooBalanceQuarterly },
+        { source: "fmp", years: fmpBalanceToYears(fmpBalanceRowsQuarterly) },
+      ]);
+      const cashFlowQuarterly = mergeYearsBySource("cashFlowQuarterly", symbol, [
+        { source: "sec-edgar", years: secFinancials.cashFlowQuarterly },
+        { source: "yahoo", years: yahooCashFlowQuarterly },
+        { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRowsQuarterly) },
+      ]);
+
       const bundle: FundamentalsBundle = {
         source: "live",
         reportingCurrency: summary.financialData?.financialCurrency || quote.currency,
@@ -826,6 +951,9 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         income,
         balance,
         cashFlow,
+        incomeQuarterly,
+        balanceQuarterly,
+        cashFlowQuarterly,
         estimates: toEstimates(summary, income, quarterlyRevenueRows as FundamentalsTimeSeriesFinancialsResult[]),
         history: toPricePoints(chartResult),
       };

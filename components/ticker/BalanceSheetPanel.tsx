@@ -4,21 +4,30 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { BalanceSheetYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
-import { filterByRange, toYoY, type ChartRange, type ChartView } from "@/lib/finance/chart-transform";
+import { filterByRange, toYoY, type ChartRange, type ChartType, type ChartView } from "@/lib/finance/chart-transform";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
 import { SourceAttributionBadge } from "./SourceAttributionBadge";
 
 interface BalanceSheetPanelProps {
   balance: BalanceSheetYear[];
+  /** Quarterly counterpart (SEC 10-Q / Yahoo / FMP) — see FundamentalsBundle
+   *  in lib/finance/types.ts. Empty/omitted disables Chart Type: Quarterly. */
+  balanceQuarterly?: BalanceSheetYear[];
   currency: string;
 }
 
 const { success: SUCCESS, primary: PRIMARY, destructive: DESTRUCTIVE, sky: SKY } = CHART_COLORS;
 
-export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps) {
+export function BalanceSheetPanel({ balance, balanceQuarterly = [], currency }: BalanceSheetPanelProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const toggle = (key: string) => setExpanded((cur) => (cur === key ? null : key));
+
+  // Chart Type: Annually/Quarterly — see ChartControls' doc comment.
+  const [chartType, setChartType] = useState<ChartType>("annually");
+  const quarterlyAvailable = balanceQuarterly.length > 0;
+  const activeBalance = chartType === "quarterly" ? balanceQuarterly : balance;
+  const periodsPerYear = chartType === "quarterly" ? 4 : 1;
 
   // QA feature (fullscreen chart modal controls) — same shared Range/View
   // pattern as IncomeStatementPanel; see that file's doc comment. Balance
@@ -29,7 +38,10 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
   const [range, setRange] = useState<ChartRange>("All");
   const [view, setView] = useState<ChartView>("absolute");
 
-  const rangedBalance = useMemo(() => filterByRange(balance, range), [balance, range]);
+  const rangedBalance = useMemo(
+    () => filterByRange(activeBalance, range, periodsPerYear),
+    [activeBalance, range, periodsPerYear]
+  );
 
   function chartData(keys: (keyof BalanceSheetYear)[]) {
     return view === "yoy" ? toYoY(rangedBalance, keys) : rangedBalance;
@@ -45,13 +57,16 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
       onRangeChange={setRange}
       view={view}
       onViewChange={setView}
-      totalYears={balance.length}
+      totalYears={chartType === "quarterly" ? Math.floor(activeBalance.length / 4) : activeBalance.length}
+      chartType={chartType}
+      onChartTypeChange={setChartType}
+      quarterlyAvailable={quarterlyAvailable}
     />
   );
 
   return (
     <div className="space-y-2">
-      <SourceAttributionBadge years={balance} />
+      <SourceAttributionBadge years={activeBalance} />
       {/* Phase 5: 3-column breakdown (Short-Term Position / Total Structure /
           Debt vs Liquidity), replacing the earlier 2-chart layout.
           QA fix: auto-fit/minmax instead of a viewport breakpoint — see the

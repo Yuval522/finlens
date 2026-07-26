@@ -60,6 +60,8 @@ async function fmpGet<T>(path: string, params: Record<string, string> = {}): Pro
 export interface FmpCashFlowStatement {
   date: string;
   calendarYear: string;
+  /** Present on quarterly responses only, e.g. "Q1". Absent (undefined) on annual rows. */
+  period?: string;
   operatingCashFlow: number;
   freeCashFlow: number;
   stockBasedCompensation: number;
@@ -78,6 +80,17 @@ export async function fetchFmpCashFlowStatements(
 ): Promise<FmpCashFlowStatement[] | null> {
   return fmpGet<FmpCashFlowStatement[]>(`/cash-flow-statement/${encodeURIComponent(symbol)}`, {
     period: "annual",
+    limit: String(limit),
+  });
+}
+
+/** Quarterly cash flow statements — third-tier fallback for the Chart Type: Quarterly view. */
+export async function fetchFmpCashFlowStatementsQuarterly(
+  symbol: string,
+  limit = 16
+): Promise<FmpCashFlowStatement[] | null> {
+  return fmpGet<FmpCashFlowStatement[]>(`/cash-flow-statement/${encodeURIComponent(symbol)}`, {
+    period: "quarter",
     limit: String(limit),
   });
 }
@@ -107,6 +120,8 @@ export async function fetchFmpKeyMetricsTTM(symbol: string): Promise<FmpKeyMetri
 export interface FmpIncomeStatement {
   date: string;
   calendarYear: string;
+  /** Present on quarterly responses only, e.g. "Q1". Absent (undefined) on annual rows. */
+  period?: string;
   revenue: number;
   grossProfit: number;
   operatingIncome: number;
@@ -123,9 +138,22 @@ export async function fetchFmpIncomeStatements(symbol: string, limit = 10): Prom
   });
 }
 
+/** Quarterly income statements — third-tier fallback for the Chart Type: Quarterly view. */
+export async function fetchFmpIncomeStatementsQuarterly(
+  symbol: string,
+  limit = 16
+): Promise<FmpIncomeStatement[] | null> {
+  return fmpGet<FmpIncomeStatement[]>(`/income-statement/${encodeURIComponent(symbol)}`, {
+    period: "quarter",
+    limit: String(limit),
+  });
+}
+
 export interface FmpBalanceSheetStatement {
   date: string;
   calendarYear: string;
+  /** Present on quarterly responses only, e.g. "Q1". Absent (undefined) on annual rows. */
+  period?: string;
   cashAndShortTermInvestments: number;
   totalCurrentAssets: number;
   totalCurrentLiabilities: number;
@@ -143,6 +171,17 @@ export async function fetchFmpBalanceSheets(
 ): Promise<FmpBalanceSheetStatement[] | null> {
   return fmpGet<FmpBalanceSheetStatement[]>(`/balance-sheet-statement/${encodeURIComponent(symbol)}`, {
     period: "annual",
+    limit: String(limit),
+  });
+}
+
+/** Quarterly balance sheets — third-tier fallback for the Chart Type: Quarterly view. */
+export async function fetchFmpBalanceSheetsQuarterly(
+  symbol: string,
+  limit = 16
+): Promise<FmpBalanceSheetStatement[] | null> {
+  return fmpGet<FmpBalanceSheetStatement[]>(`/balance-sheet-statement/${encodeURIComponent(symbol)}`, {
+    period: "quarter",
     limit: String(limit),
   });
 }

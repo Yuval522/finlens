@@ -1,25 +1,34 @@
 /**
  * Shared range/view transforms for the fullscreen financial-chart modal
- * controls (Select Range, View: Absolute/YoY). Generic over any row shape
- * that has a `fiscalYear` string field, so the same two functions serve
- * Income, Balance, and Cash Flow's chart data without per-metric special
- * casing. Real data transforms, not cosmetic — Select Range genuinely
- * slices the underlying array and View genuinely recomputes values, so a
- * user can only pick "Chart Type: Annually" (Quarterly isn't offered)
- * because FinLens's fundamentals data model is annual-only for now — see
- * lib/finance/types.ts. Faking a Quarterly toggle with annual data
- * repeated 4x would be actively misleading, so it's left out rather than
- * stubbed.
+ * controls (Select Range, View: Absolute/YoY, Chart Type: Annually/
+ * Quarterly). Generic over any row shape that has a `fiscalYear` string
+ * field, so the same functions serve Income, Balance, and Cash Flow's
+ * chart data without per-metric special casing. Real data transforms, not
+ * cosmetic — Select Range genuinely slices the underlying array and View
+ * genuinely recomputes values.
+ *
+ * Chart Type: Quarterly is real too now (see FundamentalsBundle's
+ * `*Quarterly` fields in lib/finance/types.ts, populated from SEC EDGAR
+ * 10-Qs / Yahoo / FMP — see lib/finance/aggregate.ts) — panels pass
+ * whichever dataset (annual or quarterly) matches the current Chart Type
+ * selection into filterByRange, with `periodsPerYear` set accordingly so
+ * "5 Years" means 5 actual years' worth of periods either way (20
+ * quarters, not 5).
  */
 
 export type ChartRange = 3 | 5 | 10 | "All";
 export const CHART_RANGES: ChartRange[] = [3, 5, 10, "All"];
 
 export type ChartView = "absolute" | "yoy";
+export type ChartType = "annually" | "quarterly";
 
-export function filterByRange<T extends { fiscalYear: string }>(data: T[], range: ChartRange): T[] {
+export function filterByRange<T extends { fiscalYear: string }>(
+  data: T[],
+  range: ChartRange,
+  periodsPerYear = 1
+): T[] {
   if (range === "All") return data;
-  return data.slice(Math.max(0, data.length - range));
+  return data.slice(Math.max(0, data.length - range * periodsPerYear));
 }
 
 /**

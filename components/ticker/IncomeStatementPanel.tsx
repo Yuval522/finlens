@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear, IncomeStatementYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
-import { filterByRange, toYoY, type ChartRange, type ChartView } from "@/lib/finance/chart-transform";
+import { filterByRange, toYoY, type ChartRange, type ChartType, type ChartView } from "@/lib/finance/chart-transform";
 import { SourceAttributionBadge } from "./SourceAttributionBadge";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
@@ -12,6 +12,11 @@ import { ChartControls } from "./ChartControls";
 interface IncomeStatementPanelProps {
   income: IncomeStatementYear[];
   cashFlow: CashFlowYear[];
+  /** Quarterly counterparts (SEC 10-Q / Yahoo / FMP) — see FundamentalsBundle
+   *  in lib/finance/types.ts. Empty/omitted means Chart Type: Quarterly is
+   *  disabled for this symbol (see ChartControls' quarterlyAvailable prop). */
+  incomeQuarterly?: IncomeStatementYear[];
+  cashFlowQuarterly?: CashFlowYear[];
   currency: string;
 }
 
@@ -99,9 +104,24 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
   );
 }
 
-export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeStatementPanelProps) {
+export function IncomeStatementPanel({
+  income,
+  cashFlow,
+  incomeQuarterly = [],
+  cashFlowQuarterly = [],
+  currency,
+}: IncomeStatementPanelProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const toggle = (key: string) => setExpanded((cur) => (cur === key ? null : key));
+
+  // Chart Type: Annually/Quarterly — see ChartControls' doc comment. Only
+  // real when incomeQuarterly actually has rows (SEC EDGAR 10-Qs / Yahoo /
+  // FMP quarterly data); otherwise the toggle renders disabled.
+  const [chartType, setChartType] = useState<ChartType>("annually");
+  const quarterlyAvailable = incomeQuarterly.length > 0;
+  const activeIncome = chartType === "quarterly" ? incomeQuarterly : income;
+  const activeCashFlow = chartType === "quarterly" ? cashFlowQuarterly : cashFlow;
+  const periodsPerYear = chartType === "quarterly" ? 4 : 1;
 
   // QA feature (fullscreen chart modal controls, shared across every card
   // in this panel): Select Range slices the trailing N years; View toggles
@@ -124,8 +144,14 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
   const money = (v: number) => `${compactAxis(v)} ${currency}`;
   const perShare = (v: number) => `${v.toFixed(2)} ${currency}`;
 
-  const rangedIncome = useMemo(() => filterByRange(income, range), [income, range]);
-  const rangedCashFlow = useMemo(() => filterByRange(cashFlow, range), [cashFlow, range]);
+  const rangedIncome = useMemo(
+    () => filterByRange(activeIncome, range, periodsPerYear),
+    [activeIncome, range, periodsPerYear]
+  );
+  const rangedCashFlow = useMemo(
+    () => filterByRange(activeCashFlow, range, periodsPerYear),
+    [activeCashFlow, range, periodsPerYear]
+  );
 
   function chartData(dataKey: keyof IncomeStatementYear) {
     return view === "yoy" ? toYoY(rangedIncome, [dataKey]) : rangedIncome;
@@ -169,13 +195,16 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
       view={view}
       onViewChange={setView}
       showView={showView}
-      totalYears={income.length}
+      totalYears={chartType === "quarterly" ? Math.floor(activeIncome.length / 4) : activeIncome.length}
+      chartType={chartType}
+      onChartTypeChange={setChartType}
+      quarterlyAvailable={quarterlyAvailable}
     />
   );
 
   return (
     <div className="space-y-2">
-      <SourceAttributionBadge years={income} />
+      <SourceAttributionBadge years={activeIncome} />
       {/* QA fix (root-caused via DOM inspection against the reference
           terminal): this used to be viewport-width breakpoints
           (sm:grid-cols-2 xl:grid-cols-4), sized off the *window's* width. But

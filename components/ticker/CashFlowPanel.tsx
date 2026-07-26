@@ -4,13 +4,16 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
-import { filterByRange, toYoY, type ChartRange, type ChartView } from "@/lib/finance/chart-transform";
+import { filterByRange, toYoY, type ChartRange, type ChartType, type ChartView } from "@/lib/finance/chart-transform";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
 import { SourceAttributionBadge } from "./SourceAttributionBadge";
 
 interface CashFlowPanelProps {
   cashFlow: CashFlowYear[];
+  /** Quarterly counterpart (SEC 10-Q / Yahoo / FMP) — see FundamentalsBundle
+   *  in lib/finance/types.ts. Empty/omitted disables Chart Type: Quarterly. */
+  cashFlowQuarterly?: CashFlowYear[];
   currency: string;
 }
 
@@ -63,9 +66,15 @@ function CashFlowTooltip({ active, payload, label, currency, view }: CashFlowToo
   );
 }
 
-export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
+export function CashFlowPanel({ cashFlow, cashFlowQuarterly = [], currency }: CashFlowPanelProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const toggle = (key: string) => setExpanded((cur) => (cur === key ? null : key));
+
+  // Chart Type: Annually/Quarterly — see ChartControls' doc comment.
+  const [chartType, setChartType] = useState<ChartType>("annually");
+  const quarterlyAvailable = cashFlowQuarterly.length > 0;
+  const activeCashFlow = chartType === "quarterly" ? cashFlowQuarterly : cashFlow;
+  const periodsPerYear = chartType === "quarterly" ? 4 : 1;
 
   // QA feature (fullscreen chart modal controls) — same shared Range/View
   // pattern as IncomeStatementPanel/BalanceSheetPanel.
@@ -74,7 +83,10 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
   const [range, setRange] = useState<ChartRange>("All");
   const [view, setView] = useState<ChartView>("absolute");
 
-  const rangedCashFlow = useMemo(() => filterByRange(cashFlow, range), [cashFlow, range]);
+  const rangedCashFlow = useMemo(
+    () => filterByRange(activeCashFlow, range, periodsPerYear),
+    [activeCashFlow, range, periodsPerYear]
+  );
 
   function chartData(keys: (keyof CashFlowYear)[]) {
     return view === "yoy" ? toYoY(rangedCashFlow, keys) : rangedCashFlow;
@@ -87,13 +99,16 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
       onRangeChange={setRange}
       view={view}
       onViewChange={setView}
-      totalYears={cashFlow.length}
+      totalYears={chartType === "quarterly" ? Math.floor(activeCashFlow.length / 4) : activeCashFlow.length}
+      chartType={chartType}
+      onChartTypeChange={setChartType}
+      quarterlyAvailable={quarterlyAvailable}
     />
   );
 
   return (
     <div className="space-y-2">
-      <SourceAttributionBadge years={cashFlow} />
+      <SourceAttributionBadge years={activeCashFlow} />
       {/* QA fix: auto-fit/minmax instead of a viewport breakpoint — see the
           matching comment in IncomeStatementPanel.tsx for the root cause. */}
       <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">

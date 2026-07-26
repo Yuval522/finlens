@@ -84,6 +84,12 @@ interface DataExplorerTabsProps {
   income: IncomeStatementYear[];
   balance: BalanceSheetYear[];
   cashFlow: CashFlowYear[];
+  /** Quarterly counterparts (SEC 10-Q / Yahoo / FMP) — see FundamentalsBundle
+   *  in lib/finance/types.ts. Empty/omitted disables Chart Type: Quarterly
+   *  in the corresponding panel. */
+  incomeQuarterly?: IncomeStatementYear[];
+  balanceQuarterly?: BalanceSheetYear[];
+  cashFlowQuarterly?: CashFlowYear[];
   estimates: EstimatesBundle;
   reportingCurrency: string;
   quote: MarketQuote;
@@ -94,6 +100,9 @@ export function DataExplorerTabs({
   income,
   balance,
   cashFlow,
+  incomeQuarterly,
+  balanceQuarterly,
+  cashFlowQuarterly,
   estimates,
   reportingCurrency,
   quote,
@@ -208,13 +217,19 @@ export function DataExplorerTabs({
 
       <div className="mt-4">
         {tab === "Income" && (
-          <IncomeStatementPanel income={income} cashFlow={cashFlow} currency={reportingCurrency} />
+          <IncomeStatementPanel
+            income={income}
+            cashFlow={cashFlow}
+            incomeQuarterly={incomeQuarterly}
+            cashFlowQuarterly={cashFlowQuarterly}
+            currency={reportingCurrency}
+          />
         )}
         {tab === "Balance" && (
-          <BalanceSheetPanel balance={balance} currency={reportingCurrency} />
+          <BalanceSheetPanel balance={balance} balanceQuarterly={balanceQuarterly} currency={reportingCurrency} />
         )}
         {tab === "Cash Flow" && (
-          <CashFlowPanel cashFlow={cashFlow} currency={reportingCurrency} />
+          <CashFlowPanel cashFlow={cashFlow} cashFlowQuarterly={cashFlowQuarterly} currency={reportingCurrency} />
         )}
         {tab === "Estimates" && (
           <EstimatesPanel estimates={estimates} currency={reportingCurrency} />

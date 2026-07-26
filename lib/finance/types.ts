@@ -205,12 +205,22 @@ export interface FundamentalsBundle {
   quote: MarketQuote;
   profile: CompanyProfile;
   metrics: TickerMetrics;
-  /** Most recent ~5 fiscal years, oldest first */
+  /** Annual, oldest first — depth varies by source (see aggregate.ts), typically 10+ years for SEC-registered filers. */
   income: IncomeStatementYear[];
-  /** Most recent ~5 fiscal years, oldest first */
   balance: BalanceSheetYear[];
-  /** Most recent ~5 fiscal years, oldest first */
   cashFlow: CashFlowYear[];
+  /**
+   * Quarterly counterparts, `fiscalYear` holds a "YYYY-Qn" label (e.g.
+   * "2025-Q2") instead of a bare year — see quarterLabel()/quarterlySeries()
+   * in yahoo.ts / providers/sec-edgar.ts. Powers the Chart Type: Quarterly
+   * toggle (ChartControls.tsx); may be empty (e.g. mock/demo data, or a
+   * foreign private issuer with no 10-Q filings and thin Yahoo/FMP
+   * quarterly coverage) — panels should treat an empty array as "Quarterly
+   * unavailable for this symbol" rather than rendering an empty chart.
+   */
+  incomeQuarterly?: IncomeStatementYear[];
+  balanceQuarterly?: BalanceSheetYear[];
+  cashFlowQuarterly?: CashFlowYear[];
   estimates: EstimatesBundle;
   /** Daily closes, oldest first — sliced client-side per selected time range */
   history: PricePoint[];

@@ -42,7 +42,20 @@ export default async function AnalysisPage({
     );
   }
 
-  const { quote, profile, metrics, income, balance, cashFlow, estimates, history, reportingCurrency } = bundle;
+  const {
+    quote,
+    profile,
+    metrics,
+    income,
+    balance,
+    cashFlow,
+    incomeQuarterly,
+    balanceQuarterly,
+    cashFlowQuarterly,
+    estimates,
+    history,
+    reportingCurrency,
+  } = bundle;
 
   // Indices (^GSPC, ^TA125.TA, ^IXIC, ...) — and, more broadly, commodities,
   // currency/forex pairs, and crypto — have no income statement, balance
@@ -104,6 +117,9 @@ export default async function AnalysisPage({
             income={income}
             balance={balance}
             cashFlow={cashFlow}
+            incomeQuarterly={incomeQuarterly}
+            balanceQuarterly={balanceQuarterly}
+            cashFlowQuarterly={cashFlowQuarterly}
             estimates={estimates}
             reportingCurrency={reportingCurrency}
             quote={quote}

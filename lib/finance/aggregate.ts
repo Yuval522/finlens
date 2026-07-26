@@ -58,7 +58,13 @@ export function mergeYearsBySource<T extends YearRow>(
       }
     }
   }
-  const merged = [...byYear.values()].sort((a, b) => Number(a.fiscalYear) - Number(b.fiscalYear));
+  // String comparison, not Number() subtraction — `fiscalYear` is either a
+  // bare year ("2023") or a quarter label ("2023-Q2", see quarterLabel() /
+  // quarterlySeries()), and Number("2023-Q2") is NaN. Plain lexicographic
+  // comparison sorts both correctly: same-length year strings compare in
+  // numeric order, and "YYYY-Qn" keys compare correctly too since the year
+  // prefix dominates and Q1 < Q2 < Q3 < Q4 as characters.
+  const merged = [...byYear.values()].sort((a, b) => a.fiscalYear.localeCompare(b.fiscalYear));
   logSourceBreakdown(label, symbol, merged);
   return merged;
 }
