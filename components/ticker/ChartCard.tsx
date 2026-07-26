@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { Maximize2, Minimize2, X } from "lucide-react";
 
 /**
@@ -36,7 +37,81 @@ export function ChartCard({
    */
   controls?: React.ReactNode;
 }) {
-  return (
+  // QA fix (modal positioning/sizing bug): the fullscreen overlay used to
+  // render inline, as a normal descendant of whatever tab panel it lives
+  // in (e.g. IncomeStatementPanel's chart grid, itself nested inside
+  // DataExplorerTabs' `.glass-card` wrapper). `.glass-card` sets
+  // `backdrop-filter: blur(20px)` — and per the CSS spec, `backdrop-filter`
+  // (like `filter`/`transform`/`perspective`/`will-change: transform`)
+  // creates a new containing block for any `position: fixed` DESCENDANT.
+  // So this card's `fixed inset-4` was never actually measured against the
+  // *viewport* — it was measured against the nearest `.glass-card`
+  // ancestor's box, which for a tab panel with 8 stacked chart cards can
+  // easily be 2,000px+ tall. `inset-4` relative to *that* box positions the
+  // "modal" somewhere inside that huge scrollable area instead of centered
+  // in the viewport, pushing most of it off-screen. Rendering the overlay
+  // through a portal straight onto `document.body` sidesteps the whole
+  // problem: it's no longer a descendant of any blurred/transformed
+  // ancestor, so `fixed` resolves against the real viewport every time,
+  // regardless of how deep in the tree the triggering ChartCard lives.
+  const cardBody = (
+    <>
+      <div className="mb-2 flex shrink-0 items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="truncate text-sm font-semibold text-foreground">{title}</h3>
+          {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={onToggleFullscreen}
+          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title={fullscreen ? "Collapse" : "Expand"}
+        >
+          {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+        </button>
+      </div>
+      {fullscreen && controls && <div className="mb-3 shrink-0">{controls}</div>}
+      {/*
+        QA fix (confirmed live via the comparison audit): fullscreen used
+        to give the outer card a viewport-percentage size (inset-x-[8%]/
+        inset-y-[6%]) while the chart wrapper inside it was set to an
+        *independent* fixed height (h-[70vh]) — on most viewports those
+        two numbers don't match, leaving a large dead-space gap below the
+        chart that reads as a stretched/distorted card. flex-1 + min-h-0
+        makes the chart wrapper always exactly fill whatever room the
+        outer card actually has, with zero gap, regardless of viewport
+        size. Non-fullscreen mode is unchanged (still the fixed `height`
+        prop, e.g. h-64).
+      */}
+      <div className={fullscreen ? "min-h-0 w-full flex-1" : `${height} w-full`}>{children}</div>
+      {/* QA fix: reference terminal has a prominent explicit Close button
+          in addition to the top-right icon — the icon alone wasn't
+          obvious enough on first glance per the screenshot comparison. */}
+      {fullscreen && (
+        <div className="mt-3 flex shrink-0 justify-end">
+          <button
+            type="button"
+            onClick={onToggleFullscreen}
+            className="flex items-center gap-1.5 rounded-md border border-border bg-accent/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+          >
+            <X className="h-3.5 w-3.5" />
+            Close
+          </button>
+        </div>
+      )}
+    </>
+  );
+
+  if (!fullscreen) {
+    return <div className={`glass-card min-w-0 rounded-xl p-3 sm:p-4 ${className}`}>{cardBody}</div>;
+  }
+
+  // fullscreen is only ever flipped true by a client click handler (every
+  // caller initializes its `expanded` state to null/false), so `document`
+  // is always available by the time this branch runs — no SSR mismatch.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <>
       {/*
         QA polish: the maximize control itself already existed (this card
@@ -48,64 +123,15 @@ export function ChartCard({
         click-outside-to-close affordance; bumping to z-[60] guarantees the
         expanded chart always wins over the sidebar (z-50) or topbar.
       */}
-      {fullscreen && (
-        <div
-          className="fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm"
-          onClick={onToggleFullscreen}
-          aria-hidden="true"
-        />
-      )}
       <div
-        className={`glass-card min-w-0 rounded-xl p-3 sm:p-4 ${
-          fullscreen
-            ? "fixed inset-4 z-[60] flex flex-col overflow-hidden shadow-2xl sm:inset-x-[8%] sm:inset-y-[6%]"
-            : className
-        }`}
-      >
-        <div className="mb-2 flex shrink-0 items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-foreground">{title}</h3>
-            {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-          </div>
-          <button
-            type="button"
-            onClick={onToggleFullscreen}
-            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            title={fullscreen ? "Collapse" : "Expand"}
-          >
-            {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-        {fullscreen && controls && <div className="mb-3 shrink-0">{controls}</div>}
-        {/*
-          QA fix (confirmed live via the comparison audit): fullscreen used
-          to give the outer card a viewport-percentage size (inset-x-[8%]/
-          inset-y-[6%]) while the chart wrapper inside it was set to an
-          *independent* fixed height (h-[70vh]) — on most viewports those
-          two numbers don't match, leaving a large dead-space gap below the
-          chart that reads as a stretched/distorted card. flex-1 + min-h-0
-          makes the chart wrapper always exactly fill whatever room the
-          outer card actually has, with zero gap, regardless of viewport
-          size. Non-fullscreen mode is unchanged (still the fixed `height`
-          prop, e.g. h-64).
-        */}
-        <div className={fullscreen ? "min-h-0 w-full flex-1" : `${height} w-full`}>{children}</div>
-        {/* QA fix: reference terminal has a prominent explicit Close button
-            in addition to the top-right icon — the icon alone wasn't
-            obvious enough on first glance per the screenshot comparison. */}
-        {fullscreen && (
-          <div className="mt-3 flex shrink-0 justify-end">
-            <button
-              type="button"
-              onClick={onToggleFullscreen}
-              className="flex items-center gap-1.5 rounded-md border border-border bg-accent/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
-            >
-              <X className="h-3.5 w-3.5" />
-              Close
-            </button>
-          </div>
-        )}
+        className="fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm"
+        onClick={onToggleFullscreen}
+        aria-hidden="true"
+      />
+      <div className="glass-card fixed inset-4 z-[60] flex min-w-0 flex-col overflow-hidden rounded-xl p-3 shadow-2xl sm:inset-x-[8%] sm:inset-y-[6%] sm:p-4">
+        {cardBody}
       </div>
-    </>
+    </>,
+    document.body
   );
 }

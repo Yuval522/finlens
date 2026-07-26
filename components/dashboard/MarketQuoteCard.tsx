@@ -68,7 +68,19 @@ export function MarketQuoteCard({ quote, showWatchlistToggle = false }: MarketQu
           {quote.symbol}
         </p>
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-0.5">
+      {/*
+        QA fix (price/badge collision): the absolute top-right trend badge
+        (h-6 w-6 circle at right-3/top-3, so it spans roughly 12-36px in
+        from the card's right edge) overlaps the price block, which — being
+        the last flex child, right-aligned via items-end — otherwise renders
+        flush with the card's own padding edge (only 20px in). Long price
+        strings like "₪4,173.88" run right under the badge. pr-6 (24px)
+        pushes the price block's right edge in past the badge's left edge
+        with a small visible gap; pt-0.5 gives the top price line a little
+        extra clearance from the badge's vertical band too, since the row
+        is vertically centered and can otherwise start almost level with it.
+      */}
+      <div className="flex shrink-0 flex-col items-end gap-0.5 pr-6 pt-0.5">
         <p className="font-mono text-base font-bold text-foreground">
           {formatPrice(quote.price, quote.currency)}
         </p>

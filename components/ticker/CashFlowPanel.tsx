@@ -99,7 +99,8 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
             barCategoryGap="20%"
           >
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
-            <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+            {/* QA fix: explicit type="category" — see IncomeStatementPanel.tsx's matching comment. */}
+            <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               content={<CashFlowTooltip currency={currency} view={view} />}
@@ -126,7 +127,8 @@ export function CashFlowPanel({ cashFlow, currency }: CashFlowPanelProps) {
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData(["operatingCashFlow", "netIncome"])} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
-            <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+            {/* QA fix: explicit type="category" — see IncomeStatementPanel.tsx's matching comment. */}
+            <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               content={<CashFlowTooltip currency={currency} view={view} />}

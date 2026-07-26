@@ -52,7 +52,12 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
         <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
-        <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+        {/* QA fix: explicit type="category" — this was already Recharts'
+            default for XAxis, but the reported "bars bunched left with
+            dead space" symptom matches what happens under a *numeric*
+            scale (which this never was), so making it explicit removes
+            any doubt and any risk from a future Recharts default change. */}
+        <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
         <YAxis
           stroke="#64748b"
           fontSize={11}
@@ -235,7 +240,12 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={ruleOf40Data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
               <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
-              <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+              {/* QA fix: explicit type="category" — this was already Recharts'
+            default for XAxis, but the reported "bars bunched left with
+            dead space" symptom matches what happens under a *numeric*
+            scale (which this never was), so making it explicit removes
+            any doubt and any risk from a future Recharts default change. */}
+        <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
               <ReferenceLine y={40} stroke={AMBER} strokeDasharray="4 4" />
               <Tooltip

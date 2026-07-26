@@ -283,14 +283,45 @@ function toMetrics(summary: QuoteSummaryResult) {
  * current sharesOutstanding/dividendRate — likewise an approximation, not
  * a precise historical figure.
  */
-function toIncomeYears(summary: QuoteSummaryResult): IncomeStatementYear[] {
+/**
+ * QA investigation (chart bug report — "missing 2022", bars bunched left):
+ * couldn't reproduce this against real Yahoo data in this environment
+ * (network egress to Yahoo is blocked in this sandbox, same restriction
+ * documented on lib/finance/providers/fmp.ts) — the illustrative mock
+ * fixtures (mock-data.ts) have no such gap by construction, and every
+ * chart's XAxis already defaults to (and now explicitly sets) Recharts'
+ * category scale, which spaces bars evenly regardless of a numeric gap in
+ * the underlying fiscalYear values — so a missing year wouldn't visually
+ * "bunch" the remaining bars, it would just render one fewer bar. If
+ * Yahoo's fundamentalsTimeSeries genuinely skips a fiscal year for some
+ * ticker (plausible — it has for other fields per this file's other doc
+ * comments), the honest fix is *not* to fabricate a $0 bar for that year
+ * (that would misrepresent a real company as having zero revenue/assets/
+ * cash flow that year, which is worse than a gap) — it's to surface the
+ * gap somewhere visible for debugging instead of silently losing it.
+ */
+function warnIfFiscalYearGaps(label: string, symbol: string, fiscalYears: string[]): void {
+  if (process.env.NODE_ENV === "production") return;
+  const numericYears = fiscalYears.map(Number).filter((y) => Number.isFinite(y)).sort((a, b) => a - b);
+  for (let i = 1; i < numericYears.length; i++) {
+    if (numericYears[i] - numericYears[i - 1] > 1) {
+      console.warn(
+        `[FinLens] ${label}(${symbol}): fiscal year gap detected — ${numericYears[i - 1]} to ${numericYears[i]} ` +
+          `(missing ${numericYears[i] - numericYears[i - 1] - 1} year(s)). This reflects what Yahoo returned; ` +
+          `no data was fabricated to fill it.`
+      );
+    }
+  }
+}
+
+function toIncomeYears(summary: QuoteSummaryResult, symbol: string): IncomeStatementYear[] {
   const rows = summary.incomeStatementHistory?.incomeStatementHistory ?? [];
   const sharesOutstanding = summary.defaultKeyStatistics?.sharesOutstanding ?? 0;
   const dividendsPerShare = summary.summaryDetail?.dividendRate ?? 0;
   const grossMarginFallback = summary.financialData?.grossMargins ?? null;
   const operatingMarginFallback = summary.financialData?.operatingMargins ?? null;
 
-  return [...rows]
+  const years = [...rows]
     .sort((a, b) => a.endDate.getTime() - b.endDate.getTime())
     .map((row) => {
       const netIncome = row.netIncome ?? 0;
@@ -312,6 +343,8 @@ function toIncomeYears(summary: QuoteSummaryResult): IncomeStatementYear[] {
         dividendsPerShare,
       };
     });
+  warnIfFiscalYearGaps("toIncomeYears", symbol, years.map((y) => y.fiscalYear));
+  return years;
 }
 
 /**
@@ -327,8 +360,8 @@ function toIncomeYears(summary: QuoteSummaryResult): IncomeStatementYear[] {
  * (e.g. `totalAssets`, not `annualTotalAssets` — verified against the
  * module's transform code, not just its stale doc-comment examples).
  */
-function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[]): BalanceSheetYear[] {
-  return [...rows]
+function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[], symbol: string): BalanceSheetYear[] {
+  const years = [...rows]
     .filter((row) => row.date instanceof Date)
     .sort((a, b) => a.date.getTime() - b.date.getTime())
     .map((row) => ({
@@ -343,6 +376,8 @@ function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[]): Balan
       totalCash: row.cashAndCashEquivalents ?? 0,
       totalDebt: row.totalDebt ?? 0,
     }));
+  warnIfFiscalYearGaps("toBalanceYears", symbol, years.map((y) => y.fiscalYear));
+  return years;
 }
 
 /**
@@ -361,8 +396,8 @@ function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[]): Balan
  * balance-sheet/financials modules) — its closest equivalent is
  * `netIncomeFromContinuingOperations`, confirmed against the same .d.ts.
  */
-function toCashFlowYears(rows: FundamentalsTimeSeriesCashFlowResult[]): CashFlowYear[] {
-  return [...rows]
+function toCashFlowYears(rows: FundamentalsTimeSeriesCashFlowResult[], symbol: string): CashFlowYear[] {
+  const years = [...rows]
     .filter((row) => row.date instanceof Date)
     .sort((a, b) => a.date.getTime() - b.date.getTime())
     .map((row) => ({
@@ -373,6 +408,8 @@ function toCashFlowYears(rows: FundamentalsTimeSeriesCashFlowResult[]): CashFlow
       capitalExpenditures: row.capitalExpenditure ?? 0,
       netIncome: row.netIncomeFromContinuingOperations ?? 0,
     }));
+  warnIfFiscalYearGaps("toCashFlowYears", symbol, years.map((y) => y.fiscalYear));
+  return years;
 }
 
 /**
@@ -626,8 +663,8 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       }
 
       const assetProfile = summary.assetProfile;
-      const income = toIncomeYears(summary);
-      const cashFlowYears = toCashFlowYears(cashFlowRows as FundamentalsTimeSeriesCashFlowResult[]);
+      const income = toIncomeYears(summary, symbol);
+      const cashFlowYears = toCashFlowYears(cashFlowRows as FundamentalsTimeSeriesCashFlowResult[], symbol);
       // Best-effort enrichment — no-op unless FMP_API_KEY is set (see
       // enrichCashFlowWithFmp doc comment and providers/fmp.ts).
       const cashFlow = await enrichCashFlowWithFmp(symbol, cashFlowYears);
@@ -645,7 +682,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         },
         metrics: toMetrics(summary),
         income,
-        balance: toBalanceYears(balanceRows as FundamentalsTimeSeriesBalanceSheetResult[]),
+        balance: toBalanceYears(balanceRows as FundamentalsTimeSeriesBalanceSheetResult[], symbol),
         cashFlow,
         estimates: toEstimates(summary, income, quarterlyRevenueRows as FundamentalsTimeSeriesFinancialsResult[]),
         history: toPricePoints(chartResult),

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { BarChart3, Maximize2, Minimize2 } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE } from "@/lib/format/chart";
@@ -55,97 +56,110 @@ export function AssetAllocationChart({ holdings, totalCashUsd }: AssetAllocation
 
   const total = slices.reduce((sum, s) => sum + s.value, 0);
 
-  return (
+  // QA fix (modal positioning/sizing bug — same root cause as ChartCard's,
+  // see that file's doc comment): this card's own `.glass-card` class sets
+  // `backdrop-filter`, which creates a new containing block for `position:
+  // fixed` DESCENDANTS — irrelevant to this element's own fixed positioning
+  // (that's resolved by *ancestors*), but this component isn't always used
+  // at the page's top level, so a future ancestor blur would silently break
+  // it the same way. Portaling to document.body sidesteps the whole class
+  // of bug regardless of where this card ends up being nested.
+  const cardBody = (
     <>
-      {fullscreen && (
-        <div
-          className="fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm"
-          onClick={() => setFullscreen(false)}
-          aria-hidden="true"
-        />
-      )}
-      <div
-        className={
-          fullscreen
-            ? "glass-card fixed inset-4 z-[60] flex flex-col overflow-hidden rounded-xl p-3 shadow-2xl sm:inset-x-[8%] sm:inset-y-[6%] sm:p-4"
-            : "glass-card min-w-0 rounded-xl p-3 sm:p-4"
-        }
-      >
-        <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-400">
-              <BarChart3 className="h-3.5 w-3.5" />
-            </span>
-            <h3 className="text-sm font-semibold text-foreground">Asset Allocation</h3>
-          </div>
-          <button
-            type="button"
-            onClick={() => setFullscreen((v) => !v)}
-            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            title={fullscreen ? "Collapse" : "Expand"}
-          >
-            {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-          </button>
+      <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-400">
+            <BarChart3 className="h-3.5 w-3.5" />
+          </span>
+          <h3 className="text-sm font-semibold text-foreground">Asset Allocation</h3>
         </div>
-        <div className={fullscreen ? "min-h-0 flex-1 overflow-auto" : ""}>
-      {total === 0 ? (
-        <div className="flex h-56 items-center justify-center text-sm text-muted-foreground sm:h-64">
-          No holdings to allocate yet.
-        </div>
-      ) : (
-        <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
-          <div className={fullscreen ? "h-64 w-64 shrink-0 sm:h-72 sm:w-72" : "h-48 w-48 shrink-0"}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={slices}
-                  dataKey="value"
-                  nameKey="label"
-                  innerRadius="60%"
-                  outerRadius="90%"
-                  paddingAngle={2}
-                  animationDuration={500}
-                >
-                  {slices.map((s) => (
-                    <Cell key={s.key} fill={s.color} stroke="transparent" />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={CHART_TOOLTIP_STYLE}
-                  wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
-                  formatter={(value, _name, entry) => [
-                    `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 0 })} (${(
-                      (Number(value) / total) *
-                      100
-                    ).toFixed(1)}%)`,
-                    entry?.payload?.label ?? "",
-                  ]}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+        <button
+          type="button"
+          onClick={() => setFullscreen((v) => !v)}
+          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title={fullscreen ? "Collapse" : "Expand"}
+        >
+          {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+        </button>
+      </div>
+      <div className={fullscreen ? "min-h-0 flex-1 overflow-auto" : ""}>
+        {total === 0 ? (
+          <div className="flex h-56 items-center justify-center text-sm text-muted-foreground sm:h-64">
+            No holdings to allocate yet.
           </div>
-          <ul className="w-full min-w-0 flex-1 space-y-1.5">
-            {slices
-              .slice()
-              .sort((a, b) => b.value - a.value)
-              .map((s) => (
-                <li key={s.key} className="flex items-center gap-2 text-xs">
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: s.color }}
-                    aria-hidden="true"
+        ) : (
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
+            <div className={fullscreen ? "h-64 w-64 shrink-0 sm:h-72 sm:w-72" : "h-48 w-48 shrink-0"}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={slices}
+                    dataKey="value"
+                    nameKey="label"
+                    innerRadius="60%"
+                    outerRadius="90%"
+                    paddingAngle={2}
+                    animationDuration={500}
+                  >
+                    {slices.map((s) => (
+                      <Cell key={s.key} fill={s.color} stroke="transparent" />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={CHART_TOOLTIP_STYLE}
+                    wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
+                    formatter={(value, _name, entry) => [
+                      `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 0 })} (${(
+                        (Number(value) / total) *
+                        100
+                      ).toFixed(1)}%)`,
+                      entry?.payload?.label ?? "",
+                    ]}
                   />
-                  <span className="min-w-0 flex-1 truncate text-foreground">{s.label}</span>
-                  <span className="shrink-0 font-mono text-muted-foreground">
-                    {((s.value / total) * 100).toFixed(1)}%
-                  </span>
-                </li>
-              ))}
-          </ul>
-        </div>
-      )}
-        </div>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <ul className="w-full min-w-0 flex-1 space-y-1.5">
+              {slices
+                .slice()
+                .sort((a, b) => b.value - a.value)
+                .map((s) => (
+                  <li key={s.key} className="flex items-center gap-2 text-xs">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: s.color }}
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-foreground">{s.label}</span>
+                    <span className="shrink-0 font-mono text-muted-foreground">
+                      {((s.value / total) * 100).toFixed(1)}%
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
       </div>
     </>
+  );
+
+  if (!fullscreen) {
+    return <div className="glass-card min-w-0 rounded-xl p-3 sm:p-4">{cardBody}</div>;
+  }
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm"
+        onClick={() => setFullscreen(false)}
+        aria-hidden="true"
+      />
+      <div className="glass-card fixed inset-4 z-[60] flex flex-col overflow-hidden rounded-xl p-3 shadow-2xl sm:inset-x-[8%] sm:inset-y-[6%] sm:p-4">
+        {cardBody}
+      </div>
+    </>,
+    document.body
   );
 }

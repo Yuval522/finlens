@@ -22,7 +22,9 @@ export function IndexCard({ className }: { className?: string }) {
         <Skeleton className="h-3.5 w-24" />
         <Skeleton className="h-3 w-14" />
       </div>
-      <div className="flex flex-col items-end gap-2">
+      {/* Mirrors MarketQuoteCard's pr-6/pt-0.5 badge-clearance fix so the
+          skeleton-to-loaded swap doesn't reflow. */}
+      <div className="flex flex-col items-end gap-2 pr-6 pt-0.5">
         <Skeleton className="h-4 w-16" />
         <Skeleton className="h-3 w-12" />
       </div>

@@ -9,8 +9,17 @@ import { cn } from "@/lib/utils";
 
 type SortKey = "symbol" | "price" | "changePercent" | "marketCapB" | "peRatio" | "dividendYieldPercent";
 
+// QA fix (Market Cap column data-bleed bug): this used to include a
+// standalone {key:"symbol", label:"Ticker"} entry, giving the header row 7
+// <th> cells (hardcoded "Name" + 6 here) while every body <tr> only ever
+// rendered 6 <td> cells (the ticker is shown *inside* the combined
+// logo/name/symbol cell, not as its own column) — so every data column
+// rendered one slot left of its header. That's why P/E values like "40.3x"
+// visually landed under the "Market Cap" header: Market Cap's header sat
+// over the P/E column's data, and P/E's header sat over Div Yield's data.
+// Removing the redundant Ticker column brings both counts back to 6/6; the
+// "Name" header below is now the sort trigger for symbol instead.
 const COLUMNS: { key: SortKey; label: string }[] = [
-  { key: "symbol", label: "Ticker" },
   { key: "price", label: "Price" },
   { key: "changePercent", label: "Change %" },
   { key: "marketCapB", label: "Market Cap" },
@@ -197,7 +206,24 @@ export default function ScreenerPage() {
               <table className="w-full min-w-[640px] border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-slate-700/80 text-left text-muted-foreground">
-                    <th className="px-2 py-2 font-medium">Name</th>
+                    <th className="px-2 py-2 font-medium">
+                      <button
+                        type="button"
+                        onClick={() => handleSort("symbol")}
+                        className="inline-flex items-center gap-1 transition-colors hover:text-foreground"
+                      >
+                        Name
+                        {sortKey === "symbol" ? (
+                          sortDir === "asc" ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : (
+                            <ChevronDown className="h-3 w-3" />
+                          )
+                        ) : (
+                          <ChevronDown className="h-3 w-3 opacity-0" />
+                        )}
+                      </button>
+                    </th>
                     {COLUMNS.map((col) => (
                       <th key={col.key} className="px-2 py-2 text-right font-medium">
                         <button

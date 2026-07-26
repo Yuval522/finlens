@@ -60,7 +60,8 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
             barCategoryGap="20%"
           >
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
-            <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+            {/* QA fix: explicit type="category" — see IncomeStatementPanel.tsx's matching comment. */}
+            <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
@@ -114,7 +115,8 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
             barCategoryGap="20%"
           >
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
-            <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+            {/* QA fix: explicit type="category" — see IncomeStatementPanel.tsx's matching comment. */}
+            <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
@@ -160,7 +162,8 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
             barCategoryGap="20%"
           >
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
-            <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+            {/* QA fix: explicit type="category" — see IncomeStatementPanel.tsx's matching comment. */}
+            <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
