@@ -21,7 +21,49 @@
 
 import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear } from "../types";
 
-const USER_AGENT = process.env.SEC_EDGAR_CONTACT || "FinLens/1.0 (contact: set SEC_EDGAR_CONTACT env var)";
+/**
+ * QA fix (bug report: "5Y/10Y range still only shows ~3-4 years despite the
+ * multi-source pipeline"): root-caused via SEC's own Developer FAQ
+ * (sec.gov/os/webmaster-faq#developers) — EDGAR doesn't just want a
+ * non-empty User-Agent string, it specifically checks for a *declared*
+ * contact in the form "Company Name AdminContact@domain.com" and returns
+ * 403 ("Undeclared Automated Tool") for anything that doesn't look like
+ * that, including the previous default here
+ * ("FinLens/1.0 (contact: set SEC_EDGAR_CONTACT env var)" — no @ sign, no
+ * real domain). Every request silently failed with `status: "unavailable"`
+ * as a result (fetchSecFinancials never throws — see below), so the app
+ * fell all the way through to Yahoo for every single ticker, and Yahoo's
+ * fundamentalsTimeSeries endpoint has an undocumented-by-Yahoo but
+ * extensively-reported hard backend cap of ~4 annual periods / ~5 quarters
+ * *regardless of period1* (confirmed against yfinance's own scraper source
+ * and multiple independent reports — this isn't something any period1/
+ * lookback-window tuning on our side can work around). That combination —
+ * SEC EDGAR silently 403ing + Yahoo's hard 4-year cap — is exactly the "3-4
+ * years no matter what I select" symptom, and it was invisible in server
+ * logs because neither failure path logged anything.
+ *
+ * Two changes address this: a properly SEC-shaped default User-Agent
+ * (still a placeholder — there is no substitute for setting
+ * SEC_EDGAR_CONTACT to a real contact per SEC's request, see
+ * .env.local.example) and, in every fetch function below, an actual
+ * console.warn on non-ok responses/thrown errors including the status
+ * code, so a 403 here shows up in server logs instead of silently
+ * degrading to "no SEC data for any ticker" with zero trace.
+ */
+const USER_AGENT =
+  process.env.SEC_EDGAR_CONTACT || "FinLens research contact-not-configured@finlens.invalid";
+
+if (!process.env.SEC_EDGAR_CONTACT) {
+  console.warn(
+    "[FinLens] SEC_EDGAR_CONTACT is not set — SEC EDGAR requests are using a placeholder " +
+      'User-Agent ("Company Name email@domain.com" is the format SEC\'s Developer FAQ asks ' +
+      "for) and SEC may return 403 Forbidden / \"Undeclared Automated Tool\" for every " +
+      "request. Without SEC EDGAR, financial history silently falls back to Yahoo Finance, " +
+      "which caps annual data at ~4 fiscal years no matter what range is selected. Set " +
+      "SEC_EDGAR_CONTACT in .env.local to a real 'Your App Name you@yourdomain.com' string " +
+      "to fix this."
+  );
+}
 
 let tickerMapPromise: Promise<Map<string, { cik: number; name: string }> | null> | null = null;
 
@@ -38,7 +80,15 @@ async function getTickerMap(): Promise<Map<string, { cik: number; name: string }
           headers: { "User-Agent": USER_AGENT },
           next: { revalidate: 86400 }, // filers list changes rarely — daily is plenty
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+          console.warn(
+            `[FinLens] SEC EDGAR ticker map fetch failed: HTTP ${res.status} ${res.statusText}. ` +
+              (res.status === 403
+                ? "This is almost always a rejected/undeclared User-Agent — see SEC_EDGAR_CONTACT in .env.local.example."
+                : "Every symbol will fall back to Yahoo-only history until this resolves.")
+          );
+          return null;
+        }
         const raw = (await res.json()) as Record<
           string,
           { cik_str: number; ticker: string; title: string }
@@ -48,7 +98,8 @@ async function getTickerMap(): Promise<Map<string, { cik: number; name: string }
           map.set(entry.ticker.toUpperCase(), { cik: entry.cik_str, name: entry.title });
         }
         return map;
-      } catch {
+      } catch (err) {
+        console.warn("[FinLens] SEC EDGAR ticker map fetch threw:", err instanceof Error ? err.message : err);
         return null;
       }
     })();
@@ -117,7 +168,10 @@ export async function fetchRecentFilings(symbol: string, limit = 12): Promise<Fi
       headers: { "User-Agent": USER_AGENT },
       next: { revalidate: 3600 },
     });
-    if (!res.ok) return { status: "unavailable" };
+    if (!res.ok) {
+      console.warn(`[FinLens] SEC EDGAR submissions fetch failed for ${symbol} (CIK ${match.cik}): HTTP ${res.status} ${res.statusText}`);
+      return { status: "unavailable" };
+    }
     const data = await res.json();
 
     const recent = data?.filings?.recent;
@@ -148,7 +202,8 @@ export async function fetchRecentFilings(symbol: string, limit = 12): Promise<Fi
     // successfully identify and query the company; it's not a lookup or
     // network failure.
     return { status: "ok", cik: match.cik, companyName: match.name, filings };
-  } catch {
+  } catch (err) {
+    console.warn(`[FinLens] SEC EDGAR submissions fetch threw for ${symbol}:`, err instanceof Error ? err.message : err);
     return { status: "unavailable" };
   }
 }
@@ -156,12 +211,17 @@ export async function fetchRecentFilings(symbol: string, limit = 12): Promise<Fi
 // ---------------------------------------------------------------------------
 // XBRL company facts — deep (often 10-20 year) audited historical financial
 // statements, straight from each filer's own 10-K/20-F XBRL tagging. This is
-// the "multi-source aggregation" architecture's primary deep-history source
-// (see lib/finance/aggregate.ts): Yahoo Finance's fundamentalsTimeSeries
-// typically only returns ~5-11 years even when explicitly asked for more
-// (Yahoo's own backend limit, not something this app controls), so for any
-// SEC-registered filer, real 10-year-and-deeper history has to come from
-// here instead. Genuinely free and keyless, same as fetchRecentFilings above.
+// the "multi-source aggregation" architecture's primary — and, in practice,
+// *only* — deep-history source (see lib/finance/aggregate.ts): Yahoo
+// Finance's fundamentalsTimeSeries has a hard backend cap of roughly 4
+// annual periods / 5 quarters *regardless of period1* (confirmed against
+// yfinance's own scraper source and multiple independent reports — not
+// something any lookback-window tuning on our side can widen), so for any
+// SEC-registered filer, real 5/10-year-and-deeper history has to come from
+// here instead — this file being unreachable/misconfigured (see the
+// USER_AGENT doc comment above) is functionally equivalent to capping every
+// range selector above ~4 years at the same ~4 years of data. Genuinely
+// free and keyless, same as fetchRecentFilings above.
 //
 // IMPORTANT — same "unverified live" caveat as the rest of this file: this
 // sandbox blocks outbound access to data.sec.gov, so the XBRL tag names
@@ -441,15 +501,30 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
       headers: { "User-Agent": USER_AGENT },
       next: { revalidate: 86_400 }, // annual filings — daily revalidation is plenty
     });
-    if (!res.ok) return { status: "unavailable", ...empty };
+    if (!res.ok) {
+      // This is the single most important line in this file for diagnosing
+      // "why is history only ~4 years" reports — a non-ok response here
+      // means the deep-history layer contributed zero rows and everything
+      // downstream silently fell back to Yahoo's ~4-year-capped data. See
+      // the USER_AGENT doc comment above for the likely cause of a 403.
+      console.warn(
+        `[FinLens] SEC EDGAR company-facts fetch failed for ${symbol} (CIK ${match.cik}): ` +
+          `HTTP ${res.status} ${res.statusText}. Falling back to Yahoo/FMP for this ticker's ` +
+          `history (Yahoo alone typically caps out around 4 fiscal years).`
+      );
+      return { status: "unavailable", ...empty };
+    }
 
     const data = (await res.json()) as XbrlCompanyFacts;
     const facts = data.facts?.["us-gaap"];
-    if (!facts) return { status: "unavailable", ...empty };
+    if (!facts) {
+      console.warn(`[FinLens] SEC EDGAR company-facts response for ${symbol} (CIK ${match.cik}) had no us-gaap facts.`);
+      return { status: "unavailable", ...empty };
+    }
 
     // Same XBRL payload backs both — no extra network round trip needed for
     // the quarterly (10-Q) series alongside the annual (10-K/20-F) one.
-    return {
+    const result: SecFinancials = {
       status: "ok",
       income: toSecIncomeRows(facts, annualSeries),
       balance: toSecBalanceRows(facts, annualSeries),
@@ -458,7 +533,20 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
       balanceQuarterly: toSecBalanceRows(facts, quarterlySeries),
       cashFlowQuarterly: toSecCashFlowRows(facts, quarterlySeries),
     };
-  } catch {
+    // A 200 response with zero extracted rows is a different failure mode
+    // than a 403 (the tag lists in toSecIncomeRows/etc. not matching this
+    // filer's chosen XBRL tags) — worth its own log line since it wouldn't
+    // otherwise be distinguishable from "SEC EDGAR is fine, this ticker
+    // just doesn't have annual data" from the outside.
+    if (result.income.length === 0 && result.balance.length === 0 && result.cashFlow.length === 0) {
+      console.warn(
+        `[FinLens] SEC EDGAR company-facts for ${symbol} (CIK ${match.cik}) fetched OK but yielded ` +
+          `0 fiscal years — likely an XBRL tag mismatch (see toSecIncomeRows/toSecBalanceRows tag lists).`
+      );
+    }
+    return result;
+  } catch (err) {
+    console.warn(`[FinLens] SEC EDGAR company-facts fetch threw for ${symbol}:`, err instanceof Error ? err.message : err);
     return { status: "unavailable", ...empty };
   }
 }

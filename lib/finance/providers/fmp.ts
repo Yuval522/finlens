@@ -47,12 +47,24 @@ async function fmpGet<T>(path: string, params: Record<string, string> = {}): Pro
     // Revalidate hourly — fundamentals move slowly, no need to hit FMP's
     // rate-limited free tier on every request.
     const res = await fetch(url.toString(), { next: { revalidate: 3600 } });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Only worth logging once a key IS configured — an unset key already
+      // short-circuits above and that's expected, silent behavior. A
+      // configured key that's failing (bad key, exhausted free-tier quota,
+      // rate limit) is a real, previously-invisible reason this fallback
+      // layer contributes nothing — see the matching diagnostic logging in
+      // providers/sec-edgar.ts for why this matters for the "range
+      // selector doesn't show more history" class of report.
+      console.warn(`[FinLens] FMP request failed: ${path} — HTTP ${res.status} ${res.statusText}`);
+      return null;
+    }
     return (await res.json()) as T;
-  } catch {
-    // Network failure, rate limit, malformed response, etc. — enrichment is
-    // best-effort by design, so any failure here degrades to "no extra
-    // data" rather than breaking the primary Yahoo-sourced bundle.
+  } catch (err) {
+    // Network failure, malformed response, etc. — enrichment is best-effort
+    // by design, so any failure here degrades to "no extra data" rather
+    // than breaking the primary Yahoo-sourced bundle, but still worth a log
+    // line for the same reason as the res.ok branch above.
+    console.warn(`[FinLens] FMP request threw: ${path} —`, err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -73,10 +85,16 @@ export interface FmpCashFlowStatement {
  * Annual cash flow statements — used to backfill stock-based compensation
  * and capex for fiscal years where Yahoo's fundamentalsTimeSeries module
  * comes back thin or missing those specific fields.
+ *
+ * QA fix: this used to default to `limit = 6`, while the sibling income/
+ * balance-sheet fetchers below default to 10 — an unintentional asymmetry
+ * that made cash flow the shallowest of the three FMP layers for no real
+ * reason (FMP's free tier already caps history around ~5 years regardless,
+ * so there was no benefit to asking for even less). Aligned to 10 to match.
  */
 export async function fetchFmpCashFlowStatements(
   symbol: string,
-  limit = 6
+  limit = 10
 ): Promise<FmpCashFlowStatement[] | null> {
   return fmpGet<FmpCashFlowStatement[]>(`/cash-flow-statement/${encodeURIComponent(symbol)}`, {
     period: "annual",

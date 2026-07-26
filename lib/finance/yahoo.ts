@@ -730,6 +730,18 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       // ChartControls' CHART_RANGES), so "10 Years"/"All Available" can
       // genuinely differ from "5 Years" whenever the ticker's real history
       // goes back that far.
+      //
+      // IMPORTANT caveat (root-caused in a later pass, see the USER_AGENT
+      // doc comment in providers/sec-edgar.ts): this period1 window only
+      // matters for how far back *Yahoo* is willing to look — it does NOT
+      // mean Yahoo will actually return that much. Yahoo's
+      // fundamentalsTimeSeries endpoint has a hard backend cap of roughly 4
+      // annual periods / 5 quarters regardless of period1 (confirmed
+      // against yfinance's own scraper source and multiple independent
+      // reports), so real 5/10-year depth depends entirely on SEC EDGAR
+      // (providers/sec-edgar.ts) actually succeeding — which itself
+      // requires SEC_EDGAR_CONTACT to be set (see .env.local.example) or
+      // SEC returns 403 and this whole layer silently contributes nothing.
       const balancePeriod1 = new Date();
       balancePeriod1.setFullYear(balancePeriod1.getFullYear() - 11);
 
