@@ -341,6 +341,19 @@ export function PriceChart({
     <div
       ref={containerRef}
       className="relative h-[320px] w-full min-w-0 overflow-hidden sm:h-[400px]"
+      // QA fix (diagnostic: "stale hover tooltip persists after cursor
+      // moves away"): lightweight-charts fires subscribeCrosshairMove with
+      // an empty param (clearing the tooltip) when it detects the pointer
+      // leaving its own canvas via mousemove tracking — but a fast pointer
+      // exit, or the pointer leaving via a click on an element elsewhere on
+      // the page (e.g. a different DataExplorerTabs tab) rather than a
+      // continuous mousemove trail out through the container's edge, can
+      // land outside the chart without that internal handler ever firing.
+      // A plain onMouseLeave on the container is a guaranteed, library-
+      // independent safety net: the browser always fires it when the
+      // pointer's bounding-box exit happens, regardless of how it got
+      // there, so the tooltip can never outlive the cursor being over it.
+      onMouseLeave={() => setTooltip(null)}
     >
       {tooltip && (
         <div

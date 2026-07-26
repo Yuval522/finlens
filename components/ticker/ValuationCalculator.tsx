@@ -215,7 +215,22 @@ export function ValuationCalculator({
                             : "border-b border-slate-800/60 last:border-0"
                       }
                     >
-                      <td className="px-2 py-2 font-mono text-foreground">{row.year}</td>
+                      <td className="px-2 py-2 font-mono text-foreground">
+                        {row.year}
+                        {/* QA fix: diagnostic flagged "Forecast Years=5 produces 6
+                            rows" as an off-by-one bug. It's intentional — row 0 is
+                            today's baseline (0% growth applied) so the compounding
+                            is visible from a real starting point, then `forecastYears`
+                            more rows follow. That was previously only conveyed by a
+                            faint background tint, easy to miss — now labeled
+                            explicitly so it reads as designed, not broken. */}
+                        {isBase && (
+                          <span className="ml-1.5 text-[10px] font-sans font-medium text-blue-400">(Base)</span>
+                        )}
+                        {isTarget && !isBase && (
+                          <span className="ml-1.5 text-[10px] font-sans font-medium text-success">(Target)</span>
+                        )}
+                      </td>
                       <td className="px-2 py-2 text-right font-mono text-foreground">
                         {row.revenueB.toFixed(2)}
                       </td>

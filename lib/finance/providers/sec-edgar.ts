@@ -75,25 +75,39 @@ export interface FilingRecord {
   url: string;
 }
 
-export interface CompanyFilings {
-  cik: number;
-  companyName: string;
-  filings: FilingRecord[];
-}
-
 const REPORT_FORM_TYPES = new Set(["10-K", "10-Q", "20-F", "6-K", "10-K/A", "10-Q/A"]);
 
 /**
- * Recent 10-K/10-Q (or 20-F/6-K for foreign private issuers) filings for a
- * symbol, newest first. Returns null if the symbol can't be matched to a
- * CIK or the EDGAR request fails — callers should treat that as "reports
- * unavailable" rather than an error, same as every other optional
- * enrichment source in this app.
+ * QA fix (live report: Reports tab confidently told a user INTC — a major
+ * US-listed, SEC-registered company — has no SEC filings, "as expected for
+ * symbols that aren't US-listed or SEC-registered"). That's not possible
+ * for INTC to be true, which means the *real* failure was something else
+ * entirely — most likely the ticker-map or submissions fetch failing
+ * (network hiccup, SEC rate-limiting, a bad User-Agent) — but the old
+ * `Promise<CompanyFilings | null>` return type collapsed every failure
+ * mode into the same `null`, and the API route/UI then confidently
+ * reported the ONE specific, mostly-wrong explanation ("not registered")
+ * for all of them. This result type keeps them distinct so the UI can
+ * finally tell a real "SEC has never heard of this ticker" (true for,
+ * say, most non-US small-caps) apart from "we couldn't reach SEC EDGAR
+ * just now" (true for network blips, and honestly the more likely
+ * explanation for any well-known US ticker showing up empty).
  */
-export async function fetchRecentFilings(symbol: string, limit = 12): Promise<CompanyFilings | null> {
+export type FilingsResult =
+  | { status: "ok"; cik: number; companyName: string; filings: FilingRecord[] }
+  | { status: "not-registered" }
+  | { status: "unavailable" };
+
+/**
+ * Recent 10-K/10-Q (or 20-F/6-K for foreign private issuers) filings for a
+ * symbol, newest first.
+ */
+export async function fetchRecentFilings(symbol: string, limit = 12): Promise<FilingsResult> {
   const map = await getTickerMap();
-  const match = map?.get(bareSymbol(symbol));
-  if (!match) return null;
+  if (!map) return { status: "unavailable" };
+
+  const match = map.get(bareSymbol(symbol));
+  if (!match) return { status: "not-registered" };
 
   const cikPadded = String(match.cik).padStart(10, "0");
   try {
@@ -101,11 +115,11 @@ export async function fetchRecentFilings(symbol: string, limit = 12): Promise<Co
       headers: { "User-Agent": USER_AGENT },
       next: { revalidate: 3600 },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { status: "unavailable" };
     const data = await res.json();
 
     const recent = data?.filings?.recent;
-    if (!recent?.form) return null;
+    if (!recent?.form) return { status: "unavailable" };
 
     const filings: FilingRecord[] = [];
     for (let i = 0; i < recent.form.length && filings.length < limit; i++) {
@@ -126,8 +140,13 @@ export async function fetchRecentFilings(symbol: string, limit = 12): Promise<Co
       });
     }
 
-    return { cik: match.cik, companyName: match.name, filings };
+    // A real CIK with zero matching report-type filings on record is
+    // genuinely rare but not impossible (a brand-new registrant) — "ok"
+    // with an empty array is still the honest status here, since we DID
+    // successfully identify and query the company; it's not a lookup or
+    // network failure.
+    return { status: "ok", cik: match.cik, companyName: match.name, filings };
   } catch {
-    return null;
+    return { status: "unavailable" };
   }
 }

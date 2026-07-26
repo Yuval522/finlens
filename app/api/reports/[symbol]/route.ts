@@ -15,13 +15,10 @@ export async function GET(
     return NextResponse.json({ error: "No symbol provided" }, { status: 400 });
   }
 
+  // QA fix: previously collapsed "not registered" and "fetch failed" into
+  // the same {filings: []} shape — see FilingsResult's doc comment in
+  // sec-edgar.ts for why that was actively misleading. Pass the real
+  // status through so ReportsPanel can show the right message for each.
   const result = await fetchRecentFilings(symbol);
-  if (!result) {
-    // Not an error state for the UI — just means SEC EDGAR has no match
-    // for this symbol (non-US-listed, not SEC-registered) or the request
-    // failed. ReportsPanel renders an empty/unavailable state either way.
-    return NextResponse.json({ filings: [], companyName: null, cik: null });
-  }
-
   return NextResponse.json(result);
 }

@@ -264,26 +264,6 @@ function toMetrics(summary: QuoteSummaryResult) {
 }
 
 /**
- * Maps up to ~4 years of classic incomeStatementHistory rows.
- *
- * QA hotfix (Phase 4): `operatingIncome` bars were rendering as a flat
- * zero line live. Root cause, confirmed against yahoo-finance2's own type
- * declarations: `IncomeStatementHistoryElement.operatingIncome` is
- * hard-typed as literal `null` — Yahoo's classic incomeStatementHistory
- * endpoint simply doesn't populate that field on the wire, for any ticker.
- * `ebit` was meant to be the fallback for exactly that reason, but in
- * practice `grossProfit`/`ebit` are also frequently null/0 for tickers
- * where Yahoo has trimmed this legacy module down. Rather than trust
- * either field blindly, fall back to deriving both from the TTM margins
- * we already fetch via `financialData` (same numbers already powering the
- * Margins accordion, which QA confirmed render correctly) applied to that
- * year's revenue. Approximate — margins drift year to year — but always a
- * realistic, non-zero bar instead of a flat line. EPS and dividends/share
- * aren't provided per-year at all here, so both are derived from the
- * current sharesOutstanding/dividendRate — likewise an approximation, not
- * a precise historical figure.
- */
-/**
  * QA investigation (chart bug report — "missing 2022", bars bunched left):
  * couldn't reproduce this against real Yahoo data in this environment
  * (network egress to Yahoo is blocked in this sandbox, same restriction
@@ -314,15 +294,32 @@ function warnIfFiscalYearGaps(label: string, symbol: string, fiscalYears: string
   }
 }
 
-function toIncomeYears(summary: QuoteSummaryResult, symbol: string): IncomeStatementYear[] {
-  const rows = summary.incomeStatementHistory?.incomeStatementHistory ?? [];
-  const sharesOutstanding = summary.defaultKeyStatistics?.sharesOutstanding ?? 0;
-  const dividendsPerShare = summary.summaryDetail?.dividendRate ?? 0;
+/**
+ * QA fix (Compare tab report: adding AMD left Revenue (TTM)/Revenue Growth/
+ * EPS Growth blank while margins and P/E populated fine). Root cause: this
+ * used to read `summary.incomeStatementHistory`, a legacy quoteSummary
+ * module — the exact same vintage as `balanceSheetHistory`, which this
+ * codebase's own toBalanceYears() doc comment already documents as having
+ * been stripped by Yahoo to just `{maxAge, endDate}` since Nov 2024. Yahoo
+ * applied the same deprecation to incomeStatementHistory, so it silently
+ * returns rows with every financial field undefined for many symbols —
+ * `income` would then default every field to 0 via `?? 0`, which is
+ * indistinguishable from "no data" in downstream consumers (Compare tab,
+ * Estimates tab's actualRevenue lookup) and just as easily ends up as an
+ * empty array. Migrated to the same reliable `fundamentalsTimeSeries`
+ * method (module: "financials", the income-statement equivalent) already
+ * used for the quarterly revenue backfill and proven live for balance
+ * sheet / cash flow.
+ */
+function toIncomeYears(rows: FundamentalsTimeSeriesFinancialsResult[], summary: QuoteSummaryResult, symbol: string): IncomeStatementYear[] {
+  const sharesOutstandingFallback = summary.defaultKeyStatistics?.sharesOutstanding ?? 0;
+  const dividendsPerShareFallback = summary.summaryDetail?.dividendRate ?? 0;
   const grossMarginFallback = summary.financialData?.grossMargins ?? null;
   const operatingMarginFallback = summary.financialData?.operatingMargins ?? null;
 
   const years = [...rows]
-    .sort((a, b) => a.endDate.getTime() - b.endDate.getTime())
+    .filter((row) => row.date instanceof Date)
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
     .map((row) => {
       const netIncome = row.netIncome ?? 0;
       const totalRevenue = row.totalRevenue ?? 0;
@@ -330,19 +327,26 @@ function toIncomeYears(summary: QuoteSummaryResult, symbol: string): IncomeState
         row.grossProfit ||
         (grossMarginFallback != null ? Math.round(totalRevenue * grossMarginFallback) : 0);
       const operatingIncome =
-        row.ebit ||
+        row.operatingIncome ||
+        row.EBIT ||
         (operatingMarginFallback != null ? Math.round(totalRevenue * operatingMarginFallback) : 0);
+      const sharesOutstanding = row.dilutedAverageShares || sharesOutstandingFallback;
       return {
-        fiscalYear: String(row.endDate.getFullYear()),
+        fiscalYear: String(row.date.getFullYear()),
         totalRevenue,
         grossProfit,
         operatingIncome,
         netIncome,
-        eps: sharesOutstanding > 0 ? Number((netIncome / sharesOutstanding).toFixed(2)) : 0,
+        eps: row.dilutedEPS ?? (sharesOutstanding > 0 ? Number((netIncome / sharesOutstanding).toFixed(2)) : 0),
         sharesOutstandingDiluted: sharesOutstanding,
-        dividendsPerShare,
+        dividendsPerShare: row.dividendPerShare ?? dividendsPerShareFallback,
       };
-    });
+    })
+    // Same "phantom zero-height bar" fix as toBalanceYears/toCashFlowYears —
+    // a row with a valid date but every financial field missing shouldn't
+    // contribute an empty year to the chart/table.
+    .filter((y) => y.totalRevenue !== 0 || y.netIncome !== 0 || y.grossProfit !== 0);
+
   warnIfFiscalYearGaps("toIncomeYears", symbol, years.map((y) => y.fiscalYear));
   return years;
 }
@@ -375,7 +379,30 @@ function toBalanceYears(rows: FundamentalsTimeSeriesBalanceSheetResult[], symbol
       totalStockholdersEquity: row.stockholdersEquity ?? row.totalEquityGrossMinorityInterest ?? 0,
       totalCash: row.cashAndCashEquivalents ?? 0,
       totalDebt: row.totalDebt ?? 0,
-    }));
+    }))
+    // QA fix (live report: a "2021" axis label rendered with no visible bar
+    // on Balance/Cash Flow charts, while every other year rendered fine).
+    // Root cause: `row.date instanceof Date` only confirms Yahoo tagged a
+    // fiscal year for that row — it says nothing about whether that row
+    // actually carries data. For the oldest period in a fundamentalsTimeSeries
+    // response, Yahoo not infrequently returns a row with a real date but
+    // every financial field genuinely absent (predates a schema field being
+    // reported, or the filing just isn't fully indexed) — every `?? 0`
+    // fallback above then kicks in, producing a row that's structurally
+    // valid but numerically all-zero. That row still contributes its
+    // fiscalYear to the array, so Recharts' category axis draws a tick for
+    // it — but a bar whose value is 0 renders at zero height, i.e.
+    // invisible, which is exactly "a label with no bar." Dropping rows
+    // where every meaningful field is 0 removes the phantom tick instead of
+    // just hiding the (already-invisible) bar.
+    .filter(
+      (y) =>
+        y.totalAssets !== 0 ||
+        y.totalLiabilities !== 0 ||
+        y.totalCurrentAssets !== 0 ||
+        y.totalCurrentLiabilities !== 0 ||
+        y.cashAndShortTermInvestments !== 0
+    );
   warnIfFiscalYearGaps("toBalanceYears", symbol, years.map((y) => y.fiscalYear));
   return years;
 }
@@ -407,7 +434,11 @@ function toCashFlowYears(rows: FundamentalsTimeSeriesCashFlowResult[], symbol: s
       stockBasedCompensation: row.stockBasedCompensation ?? 0,
       capitalExpenditures: row.capitalExpenditure ?? 0,
       netIncome: row.netIncomeFromContinuingOperations ?? 0,
-    }));
+    }))
+    // QA fix — same root cause as toBalanceYears' matching filter above:
+    // a dated-but-otherwise-empty row for the oldest period renders as an
+    // axis label with an invisible zero-height bar. Drop it instead.
+    .filter((y) => y.operatingCashFlow !== 0 || y.freeCashFlow !== 0 || y.netIncome !== 0);
   warnIfFiscalYearGaps("toCashFlowYears", symbol, years.map((y) => y.fiscalYear));
   return years;
 }
@@ -613,7 +644,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       const quarterlyPeriod1 = new Date();
       quarterlyPeriod1.setFullYear(quarterlyPeriod1.getFullYear() - 2);
 
-      const [quotes, summary, chartResult, balanceRows, cashFlowRows, quarterlyRevenueRows] = await Promise.all([
+      const [quotes, summary, chartResult, balanceRows, cashFlowRows, incomeRows, quarterlyRevenueRows] = await Promise.all([
         getQuotes([symbol]),
         yahooFinance.quoteSummary(symbol, {
           modules: [
@@ -621,7 +652,6 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             "summaryDetail",
             "defaultKeyStatistics",
             "financialData",
-            "incomeStatementHistory",
             // Analyst consensus (Phase 5: Estimates tab). Not on Yahoo's
             // deprecated-module list and has no hardcoded-null fields —
             // see toEstimates() doc comment for the real-world caveat that
@@ -653,6 +683,17 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             module: "cash-flow",
           })
           .catch(() => [] as FundamentalsTimeSeriesCashFlowResult[]),
+        // Annual income-statement data — see toIncomeYears() doc comment
+        // for why this replaced quoteSummary's deprecated
+        // `incomeStatementHistory` module (dropped from the modules list
+        // above entirely now that nothing reads it).
+        yahooFinance
+          .fundamentalsTimeSeries(symbol, {
+            period1: balancePeriod1,
+            type: "annual",
+            module: "financials",
+          })
+          .catch(() => [] as FundamentalsTimeSeriesFinancialsResult[]),
         // Real quarterly actual revenue, used only to backfill the
         // "Actual" figure next to earningsHistory's historical EPS rows —
         // see findNearestQuarterlyRevenue().
@@ -671,7 +712,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       }
 
       const assetProfile = summary.assetProfile;
-      const income = toIncomeYears(summary, symbol);
+      const income = toIncomeYears(incomeRows as FundamentalsTimeSeriesFinancialsResult[], summary, symbol);
       const cashFlowYears = toCashFlowYears(cashFlowRows as FundamentalsTimeSeriesCashFlowResult[], symbol);
       // Best-effort enrichment — no-op unless FMP_API_KEY is set (see
       // enrichCashFlowWithFmp doc comment and providers/fmp.ts).

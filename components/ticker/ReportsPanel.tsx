@@ -31,10 +31,20 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
+// QA fix (INTC false-negative report): the API used to collapse "SEC EDGAR
+// fetch failed" and "ticker genuinely not SEC-registered" into one empty
+// shape, so this panel always rendered the same confident-but-often-wrong
+// "not US-listed or SEC-registered" message. Now mirrors the API's
+// FilingsResult status field with a distinct state per case, plus a
+// separate "network-error" for a fetch()-level throw (offline, CORS, etc.)
+// vs "unavailable" for a request that reached our API but SEC EDGAR itself
+// didn't cooperate (rate-limit, timeout, bad response).
 type LoadState =
   | { status: "loading" }
   | { status: "ready"; filings: FilingRecord[]; companyName: string | null }
-  | { status: "error" };
+  | { status: "not-registered" }
+  | { status: "unavailable" }
+  | { status: "network-error" };
 
 export function ReportsPanel({ symbol }: ReportsPanelProps) {
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -46,12 +56,17 @@ export function ReportsPanel({ symbol }: ReportsPanelProps) {
       .then(async (res) => {
         if (!res.ok) throw new Error("request failed");
         const data = await res.json();
-        if (!cancelled) {
+        if (cancelled) return;
+        if (data.status === "ok") {
           setState({ status: "ready", filings: data.filings ?? [], companyName: data.companyName ?? null });
+        } else if (data.status === "not-registered") {
+          setState({ status: "not-registered" });
+        } else {
+          setState({ status: "unavailable" });
         }
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error" });
+        if (!cancelled) setState({ status: "network-error" });
       });
     return () => {
       cancelled = true;
@@ -76,10 +91,23 @@ export function ReportsPanel({ symbol }: ReportsPanelProps) {
         </div>
       )}
 
-      {state.status === "error" && (
+      {(state.status === "network-error" || state.status === "unavailable") && (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
           <FileText className="h-6 w-6 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">Couldn&apos;t reach SEC EDGAR right now.</p>
+          <p className="text-sm text-muted-foreground">
+            Couldn&apos;t reach SEC EDGAR right now. This is usually a temporary network or rate-limit issue —
+            try again in a moment.
+          </p>
+        </div>
+      )}
+
+      {state.status === "not-registered" && (
+        <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+          <FileText className="h-6 w-6 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">
+            No SEC filings found for {symbol}. This is expected for symbols that aren&apos;t US-listed or
+            SEC-registered (SEC EDGAR only covers filers registered with the SEC).
+          </p>
         </div>
       )}
 
@@ -87,8 +115,7 @@ export function ReportsPanel({ symbol }: ReportsPanelProps) {
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
           <FileText className="h-6 w-6 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
-            No SEC filings found for {symbol}. This is expected for symbols that aren&apos;t US-listed or
-            SEC-registered (SEC EDGAR only covers filers registered with the SEC).
+            {state.companyName ?? symbol} is SEC-registered, but no matching 10-K/10-Q filings are on record.
           </p>
         </div>
       )}
