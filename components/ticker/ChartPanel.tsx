@@ -80,7 +80,16 @@ export function ChartPanel({ history, currency, symbol, exchange }: ChartPanelPr
 
   return (
     <div className="glass-card rounded-2xl p-4 sm:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {/* QA fix (toolbar-squeeze audit): at intermediate desktop widths this
+          row used to force the TimeRangeSelector (1D/5D/.../Max) and the
+          shrink-0 SMA/grid/color/mode controls group onto a single line —
+          the controls group refuses to shrink, so the range selector (which
+          CAN shrink, since it's wrapped in an overflow-x-auto scroller) got
+          squeezed down to as little as ~46px, hiding all but one range
+          button behind invisible horizontal scroll. sm:flex-wrap lets the
+          two groups drop onto their own line once they don't both fit,
+          instead of crushing the range selector to make room. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <TimeRangeSelector value={range} onChange={setRange} />
 
         <div className="flex shrink-0 flex-wrap items-center gap-3 self-end sm:self-auto">

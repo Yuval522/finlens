@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { BarChart3, Maximize2, Minimize2 } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { CHART_TOOLTIP_STYLE } from "@/lib/format/chart";
+import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE } from "@/lib/format/chart";
 import type { PortfolioHolding } from "@/lib/portfolio/store";
 
 interface AssetAllocationChartProps {
@@ -112,6 +112,7 @@ export function AssetAllocationChart({ holdings, totalCashUsd }: AssetAllocation
                 </Pie>
                 <Tooltip
                   contentStyle={CHART_TOOLTIP_STYLE}
+                  wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
                   formatter={(value, _name, entry) => [
                     `$${Number(value).toLocaleString("en-US", { maximumFractionDigits: 0 })} (${(
                       (Number(value) / total) *

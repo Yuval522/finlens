@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear, IncomeStatementYear } from "@/lib/finance/types";
-import { CHART_COLORS, CHART_TOOLTIP_STYLE, compactAxis } from "@/lib/format/chart";
+import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
 import { filterByRange, toYoY, type ChartRange, type ChartView } from "@/lib/finance/chart-transform";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
@@ -50,7 +50,7 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
 
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+      <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
         <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
         <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
         <YAxis
@@ -62,14 +62,27 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
         />
         <Tooltip
           contentStyle={CHART_TOOLTIP_STYLE}
+          wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
           formatter={(value) => [effectiveFormat(Number(value)), effectiveLabel]}
           allowEscapeViewBox={{ x: true, y: true }}
         />
         {/* Recharts' TypedDataKey inference can't resolve a plain `keyof T`
             string against an abstract, unconstrained generic T inside this
             wrapper (works fine for concrete types, breaks for generics) —
-            passing an accessor function sidesteps that branch entirely. */}
-        <Bar dataKey={(row: T) => Number(row[dataKey])} radius={[4, 4, 0, 0]} animationDuration={600} fill={color}>
+            passing an accessor function sidesteps that branch entirely.
+            QA fix (bar-width audit): no barSize cap meant bars scaled up to
+            fill the available category band, which balloons to 100px+ when
+            few categories are shown (e.g. a 3-year YoY slice) — barSize/
+            maxBarSize keeps bars a sane, consistent width regardless of how
+            many fiscal years are plotted. */}
+        <Bar
+          dataKey={(row: T) => Number(row[dataKey])}
+          radius={[4, 4, 0, 0]}
+          animationDuration={600}
+          fill={color}
+          barSize={48}
+          maxBarSize={60}
+        >
           {effectiveColorByValue &&
             data.map((row, idx) => (
               <Cell key={idx} fill={Number(row[dataKey]) >= 0 ? SUCCESS : DESTRUCTIVE} />
@@ -220,20 +233,21 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
       >
         {ruleOf40Data.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={ruleOf40Data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+            <BarChart data={ruleOf40Data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
               <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
               <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
               <ReferenceLine y={40} stroke={AMBER} strokeDasharray="4 4" />
               <Tooltip
                 contentStyle={CHART_TOOLTIP_STYLE}
+                wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
                 formatter={(value, _name, item) => [
                   `${Number(value).toFixed(1)}%${item?.payload?.usedFcf ? "" : " (op. margin proxy)"}`,
                   "Rule of 40",
                 ]}
                 allowEscapeViewBox={{ x: true, y: true }}
               />
-              <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600}>
+              <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600} barSize={48} maxBarSize={60}>
                 {ruleOf40Data.map((row) => (
                   <Cell key={row.fiscalYear} fill={row.ruleOf40 >= 40 ? SUCCESS : DESTRUCTIVE} />
                 ))}

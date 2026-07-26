@@ -22,7 +22,7 @@ interface TimeRangeSelectorProps {
 
 export function TimeRangeSelector({ value, onChange }: TimeRangeSelectorProps) {
   return (
-    <div className="tab-scroll flex gap-1.5 py-1" role="tablist" aria-label="Chart time range">
+    <div className="tab-scroll flex min-w-0 gap-1.5 py-1" role="tablist" aria-label="Chart time range">
       {TIME_RANGES.map((range) => {
         const active = range === value;
         return (

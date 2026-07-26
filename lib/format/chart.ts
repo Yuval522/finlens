@@ -32,6 +32,23 @@ export const CHART_TOOLTIP_STYLE = {
   boxSizing: "border-box" as const,
 };
 
+// QA fix (root-caused via grep audit): confirmed there is no CSS
+// `overflow: hidden` anywhere in a chart card's ancestor chain in normal
+// (non-fullscreen) mode — so a tooltip rendering "cut off near a card's
+// edge" isn't literally being clipped by a container boundary. Recharts'
+// tooltip wrapper is a plain `position: absolute` div with no explicit
+// z-index by default, so when it's positioned near/over a *neighboring*
+// grid card (e.g. hovering the rightmost bar of a card, where the
+// tooltip's default cursor-following offset pushes it past that card's
+// own edge), it can render *behind* the next card in DOM/stacking order
+// instead of on top of it — which looks identical to "getting clipped"
+// but is actually a z-index stacking bug. Pass this as `wrapperStyle` (the
+// outer positioned wrapper), not `contentStyle` (the inner box) — every
+// chart's <Tooltip> should spread this in.
+export const CHART_TOOLTIP_WRAPPER_STYLE = {
+  zIndex: 50,
+};
+
 export const CHART_COLORS = {
   primary: "#6366F1",
   success: "#10B981",

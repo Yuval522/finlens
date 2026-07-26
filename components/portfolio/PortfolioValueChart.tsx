@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { CHART_COLORS, CHART_TOOLTIP_STYLE, compactAxis } from "@/lib/format/chart";
+import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
 import { buildPortfolioHistory, PORTFOLIO_RANGES, type PortfolioRange } from "@/lib/portfolio/mock-history";
 
 interface PortfolioValueChartProps {
@@ -86,6 +86,7 @@ export function PortfolioValueChart({ startValue, endValue }: PortfolioValueChar
             />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
+              wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
               labelFormatter={(d) => {
                 const raw = String(d);
                 const date = new Date(raw);

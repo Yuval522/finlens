@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { BalanceSheetYear } from "@/lib/finance/types";
-import { CHART_COLORS, CHART_TOOLTIP_STYLE, compactAxis } from "@/lib/format/chart";
+import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
 import { filterByRange, toYoY, type ChartRange, type ChartView } from "@/lib/finance/chart-transform";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
@@ -57,12 +57,14 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
           <BarChart
             data={chartData(["cashAndShortTermInvestments", "totalCurrentAssets", "totalCurrentLiabilities"])}
             margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+            barCategoryGap="20%"
           >
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
+              wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
               formatter={tooltipFormatter}
               allowEscapeViewBox={{ x: true, y: true }}
             />
@@ -73,6 +75,8 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
               fill={SUCCESS}
               radius={[4, 4, 0, 0]}
               animationDuration={600}
+              barSize={28}
+              maxBarSize={36}
             />
             <Bar
               dataKey="totalCurrentAssets"
@@ -80,6 +84,8 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
               fill={SKY}
               radius={[4, 4, 0, 0]}
               animationDuration={600}
+              barSize={28}
+              maxBarSize={36}
             />
             <Bar
               dataKey="totalCurrentLiabilities"
@@ -87,6 +93,8 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
               fill={DESTRUCTIVE}
               radius={[4, 4, 0, 0]}
               animationDuration={600}
+              barSize={28}
+              maxBarSize={36}
             />
           </BarChart>
         </ResponsiveContainer>
@@ -103,23 +111,27 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
           <BarChart
             data={chartData(["totalAssets", "totalLiabilities", "totalStockholdersEquity"])}
             margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+            barCategoryGap="20%"
           >
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
+              wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
               formatter={tooltipFormatter}
               allowEscapeViewBox={{ x: true, y: true }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="totalAssets" name="Total Assets" fill={SKY} radius={[4, 4, 0, 0]} animationDuration={600} />
+            <Bar dataKey="totalAssets" name="Total Assets" fill={SKY} radius={[4, 4, 0, 0]} animationDuration={600} barSize={28} maxBarSize={36} />
             <Bar
               dataKey="totalLiabilities"
               name="Total Liabilities"
               fill={DESTRUCTIVE}
               radius={[4, 4, 0, 0]}
               animationDuration={600}
+              barSize={28}
+              maxBarSize={36}
             />
             <Bar
               dataKey="totalStockholdersEquity"
@@ -127,6 +139,8 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
               fill={PRIMARY}
               radius={[4, 4, 0, 0]}
               animationDuration={600}
+              barSize={28}
+              maxBarSize={36}
             />
           </BarChart>
         </ResponsiveContainer>
@@ -143,23 +157,27 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
           <BarChart
             data={chartData(["totalDebt", "cashAndShortTermInvestments"])}
             margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+            barCategoryGap="20%"
           >
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
+              wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
               formatter={tooltipFormatter}
               allowEscapeViewBox={{ x: true, y: true }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="totalDebt" name="Total Debt" fill={DESTRUCTIVE} radius={[4, 4, 0, 0]} animationDuration={600} />
+            <Bar dataKey="totalDebt" name="Total Debt" fill={DESTRUCTIVE} radius={[4, 4, 0, 0]} animationDuration={600} barSize={36} maxBarSize={48} />
             <Bar
               dataKey="cashAndShortTermInvestments"
               name="Cash & ST Investments"
               fill={SUCCESS}
               radius={[4, 4, 0, 0]}
               animationDuration={600}
+              barSize={36}
+              maxBarSize={48}
             />
           </BarChart>
         </ResponsiveContainer>

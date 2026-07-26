@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { MACRO_RANGES, sliceMacroRange, type MacroRange, type MacroSeries } from "@/lib/macro/data";
-import { CHART_TOOLTIP_STYLE } from "@/lib/format/chart";
+import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE } from "@/lib/format/chart";
 
 /**
  * Single macro-indicator summary card: current value + a compact trend
@@ -68,6 +68,7 @@ export function MacroIndicatorCard({ series }: { series: MacroSeries }) {
             <YAxis hide domain={["auto", "auto"]} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
+              wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
               labelFormatter={(d) => new Date(String(d)).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
               formatter={(value) => [`${Number(value).toFixed(2)}${series.unit}`, series.label]}
             />
