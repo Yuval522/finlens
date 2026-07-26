@@ -48,6 +48,13 @@ function SectionCard({
   );
 }
 
+// QA fix (screenshot flagged the previous version as "too thick/awkward
+// pill shapes"): rebuilt to the standard iOS/terminal-style switch
+// proportions — an 11x6 (44x24px) track with 2px inset padding so the
+// thumb has even breathing room on both sides, and a flex layout instead
+// of absolute positioning for the thumb so the translate distance is
+// exactly track-width minus thumb-width minus insets, not a hand-tuned
+// magic number.
 function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button
@@ -57,14 +64,14 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: 
       aria-label={label}
       onClick={() => onChange(!checked)}
       className={cn(
-        "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-        checked ? "bg-primary" : "bg-accent"
+        "relative flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors",
+        checked ? "bg-primary" : "bg-zinc-700"
       )}
     >
       <span
         className={cn(
-          "absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform",
-          checked ? "translate-x-4" : "translate-x-0.5"
+          "h-5 w-5 rounded-full bg-white shadow-md transition-transform",
+          checked ? "translate-x-5" : "translate-x-0"
         )}
       />
     </button>

@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear, IncomeStatementYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, compactAxis } from "@/lib/format/chart";
+import { filterByRange, toYoY, type ChartRange, type ChartView } from "@/lib/finance/chart-transform";
 import { ChartCard } from "./ChartCard";
+import { ChartControls } from "./ChartControls";
 
 interface IncomeStatementPanelProps {
   income: IncomeStatementYear[];
@@ -26,6 +28,7 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
   valueLabel,
   formatValue,
   colorByValue,
+  view = "absolute",
 }: {
   data: T[];
   dataKey: keyof T & string;
@@ -34,16 +37,32 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
   formatValue: (value: number) => string;
   /** When set, bars render green/red by sign instead of a flat color. */
   colorByValue?: boolean;
+  /** QA feature (fullscreen chart controls): in YoY mode the underlying
+   *  `data` has already been converted to % change by the caller — this
+   *  only controls display (percent formatting + always color-by-sign,
+   *  since a "how much did this grow" chart reads better colored by
+   *  growth direction regardless of what the caller normally does). */
+  view?: ChartView;
 }) {
+  const effectiveFormat = view === "yoy" ? (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%` : formatValue;
+  const effectiveLabel = view === "yoy" ? `${valueLabel} (YoY)` : valueLabel;
+  const effectiveColorByValue = view === "yoy" ? true : colorByValue;
+
   return (
     <ResponsiveContainer width="100%" height="100%">
       <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
         <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-        <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
+        <YAxis
+          stroke="#64748b"
+          fontSize={11}
+          tickLine={false}
+          axisLine={false}
+          tickFormatter={view === "yoy" ? (v: number) => `${v}%` : compactAxis}
+        />
         <Tooltip
           contentStyle={CHART_TOOLTIP_STYLE}
-          formatter={(value) => [formatValue(Number(value)), valueLabel]}
+          formatter={(value) => [effectiveFormat(Number(value)), effectiveLabel]}
           allowEscapeViewBox={{ x: true, y: true }}
         />
         {/* Recharts' TypedDataKey inference can't resolve a plain `keyof T`
@@ -51,7 +70,7 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
             wrapper (works fine for concrete types, breaks for generics) —
             passing an accessor function sidesteps that branch entirely. */}
         <Bar dataKey={(row: T) => Number(row[dataKey])} radius={[4, 4, 0, 0]} animationDuration={600} fill={color}>
-          {colorByValue &&
+          {effectiveColorByValue &&
             data.map((row, idx) => (
               <Cell key={idx} fill={Number(row[dataKey]) >= 0 ? SUCCESS : DESTRUCTIVE} />
             ))}
@@ -65,10 +84,26 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
   const [expanded, setExpanded] = useState<string | null>(null);
   const toggle = (key: string) => setExpanded((cur) => (cur === key ? null : key));
 
+  // QA feature (fullscreen chart modal controls, shared across every card
+  // in this panel): Select Range slices the trailing N years; View toggles
+  // each single-metric chart between its absolute figure and YoY % change.
+  // Real transforms over the real dataset (lib/finance/chart-transform.ts)
+  // — see ChartControls' doc comment for why "Chart Type" only offers
+  // Annually.
+  const [range, setRange] = useState<ChartRange>(5);
+  const [view, setView] = useState<ChartView>("absolute");
+
   const money = (v: number) => `${compactAxis(v)} ${currency}`;
   const perShare = (v: number) => `${v.toFixed(2)} ${currency}`;
 
-  const cashFlowByYear = new Map(cashFlow.map((c) => [c.fiscalYear, c]));
+  const rangedIncome = useMemo(() => filterByRange(income, range), [income, range]);
+  const rangedCashFlow = useMemo(() => filterByRange(cashFlow, range), [cashFlow, range]);
+
+  function chartData(dataKey: keyof IncomeStatementYear) {
+    return view === "yoy" ? toYoY(rangedIncome, [dataKey]) : rangedIncome;
+  }
+
+  const cashFlowByYear = new Map(rangedCashFlow.map((c) => [c.fiscalYear, c]));
 
   /**
    * Rule of 40 = YoY Revenue Growth % + FCF Margin % (per the Phase 5
@@ -76,10 +111,14 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
    * matching cash-flow row (e.g. a "TTM" row that fundamentalsTimeSeries
    * doesn't cover) — an EBITDA-margin proxy, since D&A isn't broken out
    * separately in this data model. First fiscal year is dropped: YoY
-   * growth is undefined without a prior-year revenue figure.
+   * growth is undefined without a prior-year revenue figure. Built from
+   * the range-filtered income, not the raw prop — Select Range applies
+   * here too. The View toggle deliberately does NOT apply to this card
+   * (it's already an intrinsically YoY-flavored composite metric — see
+   * showView={false} below).
    */
-  const ruleOf40Data = income.slice(1).map((year, idx) => {
-    const prevRevenue = income[idx].totalRevenue;
+  const ruleOf40Data = rangedIncome.slice(1).map((year, idx) => {
+    const prevRevenue = rangedIncome[idx].totalRevenue;
     const revenueGrowthPct = prevRevenue > 0 ? ((year.totalRevenue - prevRevenue) / prevRevenue) * 100 : 0;
     const cf = cashFlowByYear.get(year.fiscalYear);
     const marginPct =
@@ -95,6 +134,10 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
     };
   });
 
+  const controls = (showView = true) => (
+    <ChartControls range={range} onRangeChange={setRange} view={view} onViewChange={setView} showView={showView} />
+  );
+
   return (
     // QA fix (root-caused via DOM inspection against the reference
     // terminal): this used to be viewport-width breakpoints
@@ -107,37 +150,64 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
     // width instead, so it self-adapts correctly regardless of the split
     // — no viewport breakpoints, no container-query plugin needed.
     <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
-      <ChartCard title="Total Revenues" fullscreen={expanded === "revenue"} onToggleFullscreen={() => toggle("revenue")}>
-        <SingleMetricChart data={income} dataKey="totalRevenue" color={PRIMARY} valueLabel="Revenue" formatValue={money} />
+      <ChartCard
+        title="Total Revenues"
+        fullscreen={expanded === "revenue"}
+        onToggleFullscreen={() => toggle("revenue")}
+        controls={controls()}
+      >
+        <SingleMetricChart data={chartData("totalRevenue")} dataKey="totalRevenue" color={PRIMARY} valueLabel="Revenue" formatValue={money} view={view} />
       </ChartCard>
 
-      <ChartCard title="Gross Profit" fullscreen={expanded === "grossprofit"} onToggleFullscreen={() => toggle("grossprofit")}>
-        <SingleMetricChart data={income} dataKey="grossProfit" color={SUCCESS} valueLabel="Gross Profit" formatValue={money} />
+      <ChartCard
+        title="Gross Profit"
+        fullscreen={expanded === "grossprofit"}
+        onToggleFullscreen={() => toggle("grossprofit")}
+        controls={controls()}
+      >
+        <SingleMetricChart data={chartData("grossProfit")} dataKey="grossProfit" color={SUCCESS} valueLabel="Gross Profit" formatValue={money} view={view} />
       </ChartCard>
 
-      <ChartCard title="Operating Income" fullscreen={expanded === "opincome"} onToggleFullscreen={() => toggle("opincome")}>
-        <SingleMetricChart data={income} dataKey="operatingIncome" color={AMBER} valueLabel="Operating Income" formatValue={money} />
+      <ChartCard
+        title="Operating Income"
+        fullscreen={expanded === "opincome"}
+        onToggleFullscreen={() => toggle("opincome")}
+        controls={controls()}
+      >
+        <SingleMetricChart data={chartData("operatingIncome")} dataKey="operatingIncome" color={AMBER} valueLabel="Operating Income" formatValue={money} view={view} />
       </ChartCard>
 
-      <ChartCard title="Net Income" fullscreen={expanded === "netincome"} onToggleFullscreen={() => toggle("netincome")}>
-        <SingleMetricChart data={income} dataKey="netIncome" color={SKY} valueLabel="Net Income" formatValue={money} />
+      <ChartCard
+        title="Net Income"
+        fullscreen={expanded === "netincome"}
+        onToggleFullscreen={() => toggle("netincome")}
+        controls={controls()}
+      >
+        <SingleMetricChart data={chartData("netIncome")} dataKey="netIncome" color={SKY} valueLabel="Net Income" formatValue={money} view={view} />
       </ChartCard>
 
-      <ChartCard title="EPS (Diluted)" fullscreen={expanded === "eps"} onToggleFullscreen={() => toggle("eps")}>
-        <SingleMetricChart data={income} dataKey="eps" color={SUCCESS} valueLabel="EPS" formatValue={perShare} />
+      <ChartCard
+        title="EPS (Diluted)"
+        fullscreen={expanded === "eps"}
+        onToggleFullscreen={() => toggle("eps")}
+        controls={controls()}
+      >
+        <SingleMetricChart data={chartData("eps")} dataKey="eps" color={SUCCESS} valueLabel="EPS" formatValue={perShare} view={view} />
       </ChartCard>
 
       <ChartCard
         title="Shares Outstanding (Diluted)"
         fullscreen={expanded === "shares"}
         onToggleFullscreen={() => toggle("shares")}
+        controls={controls()}
       >
         <SingleMetricChart
-          data={income}
+          data={chartData("sharesOutstandingDiluted")}
           dataKey="sharesOutstandingDiluted"
           color={SLATE}
           valueLabel="Diluted Shares"
           formatValue={compactAxis}
+          view={view}
         />
       </ChartCard>
 
@@ -146,6 +216,7 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
         subtitle="Revenue growth % + FCF margin %"
         fullscreen={expanded === "ruleof40"}
         onToggleFullscreen={() => toggle("ruleof40")}
+        controls={controls(false)}
       >
         {ruleOf40Data.length > 0 ? (
           <ResponsiveContainer width="100%" height="100%">
@@ -180,13 +251,15 @@ export function IncomeStatementPanel({ income, cashFlow, currency }: IncomeState
         title="Dividends Per Share"
         fullscreen={expanded === "dividends"}
         onToggleFullscreen={() => toggle("dividends")}
+        controls={controls()}
       >
         <SingleMetricChart
-          data={income}
+          data={chartData("dividendsPerShare")}
           dataKey="dividendsPerShare"
           color={AMBER}
           valueLabel="Dividends / Share"
           formatValue={perShare}
+          view={view}
         />
       </ChartCard>
     </div>

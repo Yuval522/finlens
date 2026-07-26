@@ -1,6 +1,6 @@
 "use client";
 
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, X } from "lucide-react";
 
 /**
  * Shared single-chart glass card used across the Income/Balance/Cash Flow
@@ -16,6 +16,7 @@ export function ChartCard({
   onToggleFullscreen,
   className = "",
   height = "h-64",
+  controls,
 }: {
   title: string;
   subtitle?: string;
@@ -24,6 +25,16 @@ export function ChartCard({
   onToggleFullscreen: () => void;
   className?: string;
   height?: string;
+  /**
+   * QA fix (screenshot comparison against the reference terminal's
+   * expanded-chart modal): fullscreen used to show nothing but a title and
+   * a collapse icon, missing the reference's Select Range / View / Chart
+   * Type dropdowns. Rendered only in fullscreen, directly below the title
+   * row — callers pass whatever real, data-backed controls apply to their
+   * specific dataset (see IncomeStatementPanel/BalanceSheetPanel/
+   * CashFlowPanel for the shared <ChartControls> they build these from).
+   */
+  controls?: React.ReactNode;
 }) {
   return (
     <>
@@ -65,6 +76,7 @@ export function ChartCard({
             {fullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </button>
         </div>
+        {fullscreen && controls && <div className="mb-3 shrink-0">{controls}</div>}
         {/*
           QA fix (confirmed live via the comparison audit): fullscreen used
           to give the outer card a viewport-percentage size (inset-x-[8%]/
@@ -78,6 +90,21 @@ export function ChartCard({
           prop, e.g. h-64).
         */}
         <div className={fullscreen ? "min-h-0 w-full flex-1" : `${height} w-full`}>{children}</div>
+        {/* QA fix: reference terminal has a prominent explicit Close button
+            in addition to the top-right icon — the icon alone wasn't
+            obvious enough on first glance per the screenshot comparison. */}
+        {fullscreen && (
+          <div className="mt-3 flex shrink-0 justify-end">
+            <button
+              type="button"
+              onClick={onToggleFullscreen}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-accent/60 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+            >
+              <X className="h-3.5 w-3.5" />
+              Close
+            </button>
+          </div>
+        )}
       </div>
     </>
   );

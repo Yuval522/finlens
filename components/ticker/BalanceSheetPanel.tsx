@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { BalanceSheetYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, compactAxis } from "@/lib/format/chart";
+import { filterByRange, toYoY, type ChartRange, type ChartView } from "@/lib/finance/chart-transform";
 import { ChartCard } from "./ChartCard";
+import { ChartControls } from "./ChartControls";
 
 interface BalanceSheetPanelProps {
   balance: BalanceSheetYear[];
@@ -17,7 +19,24 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
   const [expanded, setExpanded] = useState<string | null>(null);
   const toggle = (key: string) => setExpanded((cur) => (cur === key ? null : key));
 
-  const moneyTooltip = (value: unknown) => `${compactAxis(Number(value))} ${currency}`;
+  // QA feature (fullscreen chart modal controls) — same shared Range/View
+  // pattern as IncomeStatementPanel; see that file's doc comment. Balance
+  // Sheet's charts are multi-series, so `toYoY` is called per-chart with
+  // that chart's specific keys rather than once globally.
+  const [range, setRange] = useState<ChartRange>(5);
+  const [view, setView] = useState<ChartView>("absolute");
+
+  const rangedBalance = useMemo(() => filterByRange(balance, range), [balance, range]);
+
+  function chartData(keys: (keyof BalanceSheetYear)[]) {
+    return view === "yoy" ? toYoY(rangedBalance, keys) : rangedBalance;
+  }
+
+  const axisFormatter = view === "yoy" ? (v: number) => `${v}%` : compactAxis;
+  const tooltipFormatter = (value: unknown) =>
+    view === "yoy" ? `${Number(value) >= 0 ? "+" : ""}${Number(value).toFixed(1)}%` : `${compactAxis(Number(value))} ${currency}`;
+
+  const controls = <ChartControls range={range} onRangeChange={setRange} view={view} onViewChange={setView} />;
 
   return (
     // Phase 5: 3-column breakdown (Short-Term Position / Total Structure /
@@ -32,15 +51,19 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
         subtitle="Cash & ST Investments vs Current Assets vs Current Liabilities"
         fullscreen={expanded === "short-term"}
         onToggleFullscreen={() => toggle("short-term")}
+        controls={controls}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={balance} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <BarChart
+            data={chartData(["cashAndShortTermInvestments", "totalCurrentAssets", "totalCurrentLiabilities"])}
+            margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+          >
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-            <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
+            <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
-              formatter={moneyTooltip}
+              formatter={tooltipFormatter}
               allowEscapeViewBox={{ x: true, y: true }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -74,15 +97,19 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
         subtitle="Assets vs Liabilities vs Equity"
         fullscreen={expanded === "structure"}
         onToggleFullscreen={() => toggle("structure")}
+        controls={controls}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={balance} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <BarChart
+            data={chartData(["totalAssets", "totalLiabilities", "totalStockholdersEquity"])}
+            margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+          >
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-            <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
+            <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
-              formatter={moneyTooltip}
+              formatter={tooltipFormatter}
               allowEscapeViewBox={{ x: true, y: true }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -110,15 +137,19 @@ export function BalanceSheetPanel({ balance, currency }: BalanceSheetPanelProps)
         subtitle="Total Debt vs Cash & ST Investments"
         fullscreen={expanded === "debt-liquidity"}
         onToggleFullscreen={() => toggle("debt-liquidity")}
+        controls={controls}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={balance} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <BarChart
+            data={chartData(["totalDebt", "cashAndShortTermInvestments"])}
+            margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+          >
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-            <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={compactAxis} />
+            <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
             <Tooltip
               contentStyle={CHART_TOOLTIP_STYLE}
-              formatter={moneyTooltip}
+              formatter={tooltipFormatter}
               allowEscapeViewBox={{ x: true, y: true }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
