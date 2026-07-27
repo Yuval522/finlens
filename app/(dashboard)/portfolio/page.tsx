@@ -6,6 +6,7 @@ import { usePortfolio } from "@/lib/portfolio/store";
 import { computePortfolioTotals, USD_TO_ILS_RATE } from "@/lib/portfolio/derive";
 import { formatPercent } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
+import { useBackgroundRefresh } from "@/lib/finance/useBackgroundRefresh";
 import { CurrencyToggle } from "@/components/portfolio/CurrencyToggle";
 import { AddStockModal } from "@/components/portfolio/AddStockModal";
 import { PortfolioValueChart } from "@/components/portfolio/PortfolioValueChart";
@@ -32,6 +33,14 @@ export default function PortfolioPage() {
     refreshLivePrices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Freshness fix ("prices go stale if you leave the tab open"): the
+  // mount-only refresh above meant a portfolio left open all day kept
+  // showing whatever prices happened to be current at the moment it
+  // loaded. Re-runs the same refreshLivePrices() quietly on window focus,
+  // tab visibility, and a gentle 60s interval — see useBackgroundRefresh's
+  // doc comment. Disabled entirely when there are no holdings to refresh.
+  useBackgroundRefresh(refreshLivePrices, { intervalMs: 60_000, enabled: holdings.length > 0 });
 
   const totals = computePortfolioTotals(holdings, cash);
   const hasHoldings = holdings.length > 0;

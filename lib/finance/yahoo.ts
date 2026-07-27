@@ -48,7 +48,10 @@ const quoteCache = new TtlCache<MarketQuote[]>(CACHE_TTL_MS);
 const searchCache = new TtlCache<SearchResultItem[]>(CACHE_TTL_MS);
 const mostActiveCache = new TtlCache<MarketQuote[]>(CACHE_TTL_MS);
 // Fundamentals change slowly and historical bars are heavier to fetch —
-// cache them longer than live quotes.
+// cache them longer than live quotes. The live `quote` embedded in a
+// cached bundle is NOT left to go stale for the full 5 minutes, though —
+// see the getQuotes() re-fetch at the end of getFundamentals(), which
+// decouples the price specifically onto quoteCache's faster 20s cadence.
 const fundamentalsCache = new TtlCache<FundamentalsBundle>(CACHE_TTL_MS * 15);
 
 const KNOWN_MARKET_STATES: MarketState[] = [
@@ -777,7 +780,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
   const symbol = symbolRaw.trim();
   if (!symbol) throw new MarketDataError("No symbol provided");
 
-  return fundamentalsCache.getOrSet(`fundamentals:${symbol.toUpperCase()}`, async () => {
+  const bundle = await fundamentalsCache.getOrSet(`fundamentals:${symbol.toUpperCase()}`, async () => {
     try {
       const period1 = new Date();
       period1.setFullYear(period1.getFullYear() - 10);
@@ -1088,4 +1091,39 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         : new MarketDataError(`Unable to load fundamentals for ${symbol}`, err);
     }
   });
+
+  // Perf/freshness fix ("ticker page price can be up to 5 minutes stale"):
+  // the quote embedded in `bundle` above was fetched (and then frozen) at
+  // whatever moment the *whole* fundamentals bundle was last computed —
+  // income statements, balance sheets, 10 years of price history, and all
+  // — which is deliberately cached for CACHE_TTL_MS * 15 (5 minutes; see
+  // fundamentalsCache above) since that heavier data genuinely doesn't
+  // need to be any fresher. But that meant the live price rode along on
+  // the same 5-minute cache, even though getQuotes() (used by the
+  // dashboard/watchlist) already has its own, much faster 20-second cache
+  // (quoteCache). Two requests for the same symbol a minute apart could
+  // legitimately show two different prices depending on whether they hit
+  // the home dashboard or the ticker page.
+  //
+  // Re-fetching here, *outside* fundamentalsCache.getOrSet, decouples the
+  // two: this call goes through getQuotes()'s own 20s cache, so the price
+  // shown on /analysis/[symbol] now refreshes on the same cadence as
+  // everywhere else in the app, independent of whether the heavier
+  // fundamentals bundle happens to still be cache-fresh. Only applied to
+  // live bundles — overlaying a real-time quote onto mock/demo data would
+  // produce a confusing hybrid (mock fundamentals, live price) for a
+  // symbol whose real fundamentals genuinely couldn't be fetched.
+  if (bundle.source !== "live") return bundle;
+  try {
+    const [freshQuote] = await getQuotes([symbol]);
+    if (freshQuote && freshQuote.price != null) {
+      return { ...bundle, quote: freshQuote };
+    }
+  } catch {
+    // Best-effort: getQuotes() failing here shouldn't take down the whole
+    // fundamentals bundle when everything else loaded fine — fall through
+    // to whatever quote is already embedded in `bundle` (fresh as of that
+    // bundle's own fetch, just not guaranteed 20s-fresh).
+  }
+  return bundle;
 }

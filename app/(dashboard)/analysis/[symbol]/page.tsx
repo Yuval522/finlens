@@ -4,7 +4,7 @@ import { MarketDataError } from "@/lib/finance/types";
 import { isNonFundamentalQuote } from "@/lib/finance/exchange";
 import { CompanyProfileHeader } from "@/components/ticker/CompanyProfileHeader";
 import { CompanyMetricsAccordions } from "@/components/ticker/CompanyMetricsAccordions";
-import { PriceHeaderBlock } from "@/components/ticker/PriceHeaderBlock";
+import { LivePriceHeader } from "@/components/ticker/LivePriceHeader";
 import { ChartPanel } from "@/components/ticker/ChartPanel";
 import { DataExplorerTabs } from "@/components/ticker/DataExplorerTabs";
 
@@ -103,7 +103,7 @@ export default async function AnalysisPage({
       </div>
 
       <div className="order-1 min-w-0 flex-1 space-y-6 lg:order-2">
-        <PriceHeaderBlock quote={quote} />
+        <LivePriceHeader symbol={quote.symbol} initialQuote={quote} />
 
         <ChartPanel
           history={history}
