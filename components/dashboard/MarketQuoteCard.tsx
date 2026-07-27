@@ -48,8 +48,21 @@ export function MarketQuoteCard({ quote, showWatchlistToggle = false, flash }: M
       // two mid-cascade.
       className="glass-card relative flex items-center gap-3 rounded-lg p-5 transition-[transform,border-color,box-shadow] duration-200 hover:scale-[1.02] hover:shadow-lg"
     >
-      <div className="absolute right-3 top-3 flex items-center gap-1">
-        {showWatchlistToggle && <WatchlistButton symbol={quote.symbol} size={15} />}
+      {/*
+        QA fix (screenshot report: watchlist star and the trend-direction
+        badge crowd together / nearly touch in the top-right corner). The
+        two were gap-1 (4px) apart, and the star's own clickable hit target
+        (WatchlistButton's p-1.5) visually reads as part of the star glyph,
+        so 4px of true whitespace between two circular shapes read as
+        almost none. Widened to gap-2.5 for a clearly visible gap, and gave
+        the star its own faint pill background (bg-accent/40) so it reads
+        as a distinct control rather than a shape floating right next to
+        the trend badge's own colored pill.
+      */}
+      <div className="absolute right-3 top-3 flex items-center gap-2.5">
+        {showWatchlistToggle && (
+          <WatchlistButton symbol={quote.symbol} size={15} className="rounded-full bg-accent/40 hover:bg-accent" />
+        )}
         <span
           className={cn(
             "flex h-6 w-6 items-center justify-center rounded-full",
