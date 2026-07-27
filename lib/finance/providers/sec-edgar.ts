@@ -415,6 +415,92 @@ function quarterlySeries(
 
 type SeriesFn = (facts: Record<string, XbrlConceptFacts> | undefined, tags: string[], unitKey?: string) => Map<string, number>;
 
+// ---------------------------------------------------------------------------
+// Retroactive stock-split adjustment
+// ---------------------------------------------------------------------------
+
+export interface StockSplitEvent {
+  /** ISO date the split became effective. */
+  date: string;
+  /** Shares-per-old-share multiplier — 20 for AMZN's June 2022 20-for-1 split, 0.1 for a 1-for-10 reverse split. */
+  ratio: number;
+}
+
+/**
+ * Bug fix (reported: "Amazon's June 2022 20-for-1 split creates an
+ * artificial ~11x cliff in the EPS chart" — diluted shares correctly jump
+ * ~504M -> ~10.2B between FY2021 and FY2022, but EPS drops from ~$23 to
+ * ~$2 with no adjustment, instead of both series reading as a smooth
+ * continuation of the same underlying business performance). Root cause:
+ * `eps`/`sharesOutstandingDiluted`/`dividendsPerShare` were taken directly
+ * from each fiscal year's *as-filed* XBRL facts with no retroactive
+ * adjustment — correct for the post-split period, but every pre-split
+ * historical period is still denominated in pre-split share counts, so the
+ * two halves of the series aren't on the same scale.
+ *
+ * Detects splits via XBRL's purpose-built `StockholdersEquityNoteStockSplitConversionRatio`
+ * concept — deliberately NOT by inferring one from a large jump in
+ * reported shares outstanding between periods. That heuristic is a
+ * well-known false-positive trap: a large primary share issuance, a
+ * follow-on offering, or an all-stock acquisition can produce a
+ * similar-looking jump, and misclassifying one as a split would silently
+ * corrupt real historical data — worse than the original bug. A ticker
+ * without this specific XBRL fact simply gets no adjustment rather than a
+ * guessed, possibly-wrong one; unverified live in this sandbox (same
+ * network-blocked caveat as the rest of this file), so treat this as the
+ * documented, reasoned design rather than something spot-checked against a
+ * real payload — confirm the exact tag/unit shape against AMZN's real
+ * company-facts response before shipping.
+ */
+function detectStockSplits(facts: Record<string, XbrlConceptFacts> | undefined): StockSplitEvent[] {
+  const entries = facts?.["StockholdersEquityNoteStockSplitConversionRatio"]?.units?.pure ?? [];
+  const byDate = new Map<string, { ratio: number; filed: string }>();
+  for (const entry of entries) {
+    // A ratio of exactly 1 (or anything non-finite/non-positive) isn't a
+    // real split — skip rather than apply a no-op/corrupting adjustment.
+    if (typeof entry.val !== "number" || !Number.isFinite(entry.val) || entry.val <= 0 || entry.val === 1) continue;
+    const existing = byDate.get(entry.end);
+    // Same "most recently filed wins" convention as periodSeries above —
+    // if multiple filings disclose the same split event, prefer whichever
+    // was filed last.
+    if (!existing || entry.filed > existing.filed) {
+      byDate.set(entry.end, { ratio: entry.val, filed: entry.filed });
+    }
+  }
+  return [...byDate.entries()]
+    .map(([date, v]) => ({ date, ratio: v.ratio }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Approximates a fiscal-period label ("2022" or "2022-Q3") as its calendar
+ * period-end date, purely for ordering against a split's exact XBRL date —
+ * "did this reporting period end before or after the split." A ~1-2 month
+ * slack for fiscal years that don't align to the calendar (uncommon among
+ * the tickers this app targets) is acceptable here since it only affects
+ * which side of a split boundary a period lands on, not any actual
+ * financial figure.
+ */
+function periodEndDateFromLabel(fiscalYear: string): Date {
+  const quarterMatch = /^(\d{4})-Q([1-4])$/.exec(fiscalYear);
+  if (quarterMatch) {
+    const year = Number(quarterMatch[1]);
+    const quarter = Number(quarterMatch[2]);
+    return new Date(year, quarter * 3, 0); // last day of that calendar quarter's final month
+  }
+  const year = Number(fiscalYear);
+  return Number.isFinite(year) ? new Date(year, 11, 31) : new Date(0);
+}
+
+/** Product of every split's ratio whose effective date falls after `periodEnd` — the multiplier needed to restate that period's share-denominated figures onto today's post-split share count. */
+function cumulativeSplitRatioAfter(periodEnd: Date, splits: StockSplitEvent[]): number {
+  let ratio = 1;
+  for (const split of splits) {
+    if (new Date(split.date).getTime() > periodEnd.getTime()) ratio *= split.ratio;
+  }
+  return ratio;
+}
+
 /**
  * Builds either the annual or quarterly Income Statement series, depending
  * on which `series` function (annualSeries/quarterlySeries) is passed —
@@ -452,7 +538,11 @@ type SeriesFn = (facts: Record<string, XbrlConceptFacts> | undefined, tags: stri
  * the rarer filer that doesn't even tag that subtotal, per the same
  * "comprehensive fallbacks so no core chart silently zeroes out" goal.
  */
-function toSecIncomeRows(facts: Record<string, XbrlConceptFacts> | undefined, series: SeriesFn): IncomeStatementYear[] {
+function toSecIncomeRows(
+  facts: Record<string, XbrlConceptFacts> | undefined,
+  series: SeriesFn,
+  splits: StockSplitEvent[] = []
+): IncomeStatementYear[] {
   const revenue = series(facts, [
     "Revenues",
     "RevenueFromContractWithCustomerExcludingAssessedTax",
@@ -515,15 +605,26 @@ function toSecIncomeRows(facts: Record<string, XbrlConceptFacts> | undefined, se
         ? totalRevenue - costsAndExpenses.get(fiscalYear)!
         : undefined);
 
+    // Retroactive split adjustment (see detectStockSplits doc comment):
+    // ratio is 1 for any period that's already post-every-split, so this
+    // is a no-op everywhere except genuinely pre-split historical periods.
+    const splitRatio = splits.length > 0 ? cumulativeSplitRatioAfter(periodEndDateFromLabel(fiscalYear), splits) : 1;
+
     rows.push({
       fiscalYear,
       totalRevenue: totalRevenue ?? 0,
       grossProfit: grossProfitVal ?? 0,
       operatingIncome: operatingIncomeVal ?? 0,
       netIncome: netIncomeVal ?? 0,
-      eps: eps.get(fiscalYear) ?? 0,
-      sharesOutstandingDiluted: shares.get(fiscalYear) ?? 0,
-      dividendsPerShare: dividends.get(fiscalYear) ?? 0,
+      // Per-share figures scale with shares outstanding — multiply share
+      // counts and divide per-share dollar amounts by the same cumulative
+      // ratio, so a pre-split period reads as if the split had always been
+      // in effect (matching how every post-split period is already
+      // reported) instead of creating an artificial cliff at the split
+      // date.
+      eps: (eps.get(fiscalYear) ?? 0) / splitRatio,
+      sharesOutstandingDiluted: (shares.get(fiscalYear) ?? 0) * splitRatio,
+      dividendsPerShare: (dividends.get(fiscalYear) ?? 0) / splitRatio,
       dataSource: "sec-edgar",
     });
   }
@@ -643,6 +744,21 @@ export interface SecFinancials {
  * "true 10-year history" source in the multi-source aggregation pipeline.
  * See lib/finance/aggregate.ts for how this is merged with Yahoo/FMP data.
  */
+// Historical-depth note (checked against an iCharts-vs-FinLens audit that
+// flagged FinLens' SEC-sourced history for a filer stopping around 2009 vs.
+// iCharts reaching back to 1997): this file has no hardcoded start-year
+// cutoff anywhere — periodEndDateFromLabel/annualSeries/quarterlySeries all
+// walk whatever fiscal years exist in the companyfacts payload with no
+// floor. The ~2009 wall is a property of the *source data*, not this
+// integration: SEC's structured-XBRL mandate only took effect for large
+// accelerated filers' fiscal periods ending after June 15, 2009 (phased in
+// for smaller filers afterward), and the companyfacts API is built
+// entirely from structured XBRL — so data.sec.gov genuinely has nothing
+// machine-readable before that for almost any filer, regardless of how far
+// back its actual 10-K filings go. A pre-2009 chart (like iCharts showing
+// 1997) has to come from a different source (e.g. a vendor that hand-parses
+// older plain-text/HTML filings) — there's no additional EDGAR request
+// shape or tag that unlocks it here.
 export async function fetchSecFinancials(symbol: string): Promise<SecFinancials> {
   const empty = { income: [], balance: [], cashFlow: [], incomeQuarterly: [], balanceQuarterly: [], cashFlowQuarterly: [] };
   const map = await getTickerMap();
@@ -681,12 +797,18 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
 
     // Same XBRL payload backs both — no extra network round trip needed for
     // the quarterly (10-Q) series alongside the annual (10-K/20-F) one.
+    //
+    // Stock splits apply once, from the full facts payload, and get threaded
+    // into both the annual and quarterly income builders below so a split
+    // that lands mid-year still retroactively adjusts every prior quarter
+    // and fiscal year's per-share figures consistently.
+    const splits = detectStockSplits(facts);
     const result: SecFinancials = {
       status: "ok",
-      income: toSecIncomeRows(facts, annualSeries),
+      income: toSecIncomeRows(facts, annualSeries, splits),
       balance: toSecBalanceRows(facts, annualSeries),
       cashFlow: toSecCashFlowRows(facts, annualSeries),
-      incomeQuarterly: toSecIncomeRows(facts, quarterlySeries),
+      incomeQuarterly: toSecIncomeRows(facts, quarterlySeries, splits),
       balanceQuarterly: toSecBalanceRows(facts, quarterlySeries),
       cashFlowQuarterly: toSecCashFlowRows(facts, quarterlySeries),
     };
