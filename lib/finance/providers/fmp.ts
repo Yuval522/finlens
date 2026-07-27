@@ -45,8 +45,12 @@ async function fmpGet<T>(path: string, params: Record<string, string> = {}): Pro
 
   try {
     // Revalidate hourly — fundamentals move slowly, no need to hit FMP's
-    // rate-limited free tier on every request.
-    const res = await fetch(url.toString(), { next: { revalidate: 3600 } });
+    // rate-limited free tier on every request. AbortSignal.timeout: same
+    // reasoning as sec-edgar.ts's FETCH_TIMEOUT_MS — this is awaited inside
+    // a Promise.all in getFundamentals() (yahoo.ts), so a hung FMP request
+    // would otherwise block the entire fundamentals fetch, not just this
+    // opt-in enrichment layer.
+    const res = await fetch(url.toString(), { next: { revalidate: 3600 }, signal: AbortSignal.timeout(10_000) });
     if (!res.ok) {
       // Only worth logging once a key IS configured — an unset key already
       // short-circuits above and that's expected, silent behavior. A
@@ -60,11 +64,16 @@ async function fmpGet<T>(path: string, params: Record<string, string> = {}): Pro
     }
     return (await res.json()) as T;
   } catch (err) {
-    // Network failure, malformed response, etc. — enrichment is best-effort
-    // by design, so any failure here degrades to "no extra data" rather
-    // than breaking the primary Yahoo-sourced bundle, but still worth a log
-    // line for the same reason as the res.ok branch above.
-    console.warn(`[FinLens] FMP request threw: ${path} —`, err instanceof Error ? err.message : err);
+    // Network failure, timeout, malformed response, etc. — enrichment is
+    // best-effort by design, so any failure here degrades to "no extra
+    // data" rather than breaking the primary Yahoo-sourced bundle, but
+    // still worth a log line for the same reason as the res.ok branch
+    // above.
+    if (err instanceof Error && err.name === "AbortError") {
+      console.warn(`[FinLens] FMP request timed out: ${path}`);
+    } else {
+      console.warn(`[FinLens] FMP request threw: ${path} —`, err instanceof Error ? err.message : err);
+    }
     return null;
   }
 }

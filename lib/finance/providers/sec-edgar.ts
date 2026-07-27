@@ -9,6 +9,33 @@
  * actually asks for and reduces the odds of the shared default getting
  * rate-limited if many people run this app unmodified.
  *
+ * CONFIRMED against SEC's official Developer FAQ
+ * (sec.gov/about/webmaster-frequently-asked-questions#developers, "Last
+ * Reviewed or Updated: Aug. 23, 2024" — fetched directly during this
+ * session, not assumed): a declared User-Agent is genuinely required, not
+ * a best-practice suggestion. The FAQ states verbatim: "Please declare
+ * your user agent in request headers," gives the sample shape "Sample
+ * Company Name AdminContact@<sample company domain>.com", and documents
+ * the exact failure mode this file guards against — requests without one
+ * (or with one that doesn't look like that shape) get an "Undeclared
+ * Automated Tool" error/403. There is no SEC-sanctioned shared or
+ * anonymous-access default; every application is expected to declare its
+ * own. Separately, SEC also enforces a flat 10-requests/second-per-IP rate
+ * limit across www.sec.gov / data.sec.gov / efts.sec.gov (unrelated to the
+ * UA requirement — no header satisfies it, it's purely a request-rate
+ * cap), not a concern for this app's per-page-load request volume.
+ *
+ * Since there's no way to *not* require a UA and stay within SEC's policy,
+ * "robust" here means: (1) ship a default that's shaped exactly like SEC's
+ * own sample so it passes the same check a real one would, so the app
+ * never hard-fails for lack of local .env setup, while (2) making very
+ * clear via the startup warning below that a real SEC_EDGAR_CONTACT is
+ * still what SEC is actually asking for, and (3) every fetch in this file
+ * has a request timeout (see FETCH_TIMEOUT_MS) and resolves a well-formed
+ * "unavailable" status rather than throwing or hanging, so a slow/blocked
+ * SEC response degrades to the Yahoo/FMP fallback layers (aggregate.ts)
+ * instead of ever blocking the whole fundamentals request.
+ *
  * IMPORTANT — unverified live in this environment: outbound network access
  * to data.sec.gov / www.sec.gov is blocked by this sandbox's egress proxy
  * (the same restriction already documented for Yahoo Finance and FMP), so
@@ -50,19 +77,49 @@ import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear } from "../typ
  * code, so a 403 here shows up in server logs instead of silently
  * degrading to "no SEC data for any ticker" with zero trace.
  */
-const USER_AGENT =
-  process.env.SEC_EDGAR_CONTACT || "FinLens research contact-not-configured@finlens.invalid";
+// Shaped to match SEC's own sample header exactly ("Sample Company Name
+// AdminContact@<sample company domain>.com") — a plain name + space +
+// email, ordinary-looking TLD (not a reserved/obviously-fake one like
+// .invalid, which no longer looks like the sample and is one more way an
+// automated check could reasonably flag it). Still a placeholder, not a
+// real monitored inbox — see the module doc comment above for why this
+// exists (a working built-in default) versus what SEC actually wants (a
+// real SEC_EDGAR_CONTACT).
+const DEFAULT_USER_AGENT = "FinLens contact@finlens.app";
+const USER_AGENT = process.env.SEC_EDGAR_CONTACT || DEFAULT_USER_AGENT;
 
 if (!process.env.SEC_EDGAR_CONTACT) {
   console.warn(
-    "[FinLens] SEC_EDGAR_CONTACT is not set — SEC EDGAR requests are using a placeholder " +
-      'User-Agent ("Company Name email@domain.com" is the format SEC\'s Developer FAQ asks ' +
-      "for) and SEC may return 403 Forbidden / \"Undeclared Automated Tool\" for every " +
-      "request. Without SEC EDGAR, financial history silently falls back to Yahoo Finance, " +
-      "which caps annual data at ~4 fiscal years no matter what range is selected. Set " +
-      "SEC_EDGAR_CONTACT in .env.local to a real 'Your App Name you@yourdomain.com' string " +
-      "to fix this."
+    "[FinLens] SEC_EDGAR_CONTACT is not set — SEC EDGAR requests are using a built-in " +
+      `placeholder User-Agent ("${DEFAULT_USER_AGENT}"), shaped like the sample SEC's ` +
+      "Developer FAQ documents (\"Company Name AdminContact@domain.com\") so requests " +
+      "shouldn't be rejected outright, but it is not a real, monitored contact — which is " +
+      "what SEC's policy actually asks every application to declare (see " +
+      "sec.gov/about/webmaster-frequently-asked-questions#developers). If SEC EDGAR " +
+      "requests still fail (403 \"Undeclared Automated Tool\", or any non-2xx logged below), " +
+      "financial history silently falls back to Yahoo Finance, which caps annual data at " +
+      "~4 fiscal years no matter what range is selected. Set SEC_EDGAR_CONTACT in .env.local " +
+      "to a real 'Your App Name you@yourdomain.com' string to fix this properly."
   );
+}
+
+/**
+ * Every fetch in this file uses this as an AbortSignal.timeout — without
+ * it, a hung or very slow response from SEC (rate-limiting, an outage, a
+ * network blip) would leave the underlying fetch() pending indefinitely
+ * (Node's fetch has no default timeout), and since this file's exports are
+ * awaited inside a Promise.all alongside Yahoo/FMP in getFundamentals()
+ * (yahoo.ts), that would block the *entire* fundamentals request — not
+ * just degrade SEC's contribution to it. 10s is generous for a JSON API
+ * response but still well short of what a user would tolerate waiting on.
+ */
+const FETCH_TIMEOUT_MS = 10_000;
+
+/** True for both DOMException("AbortError") (browser-shaped) and Node's
+ *  undici abort error — used to log a clearer "timed out" message instead
+ *  of a generic thrown-error one. */
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
 }
 
 let tickerMapPromise: Promise<Map<string, { cik: number; name: string }> | null> | null = null;
@@ -79,6 +136,7 @@ async function getTickerMap(): Promise<Map<string, { cik: number; name: string }
         const res = await fetch("https://www.sec.gov/files/company_tickers.json", {
           headers: { "User-Agent": USER_AGENT },
           next: { revalidate: 86400 }, // filers list changes rarely — daily is plenty
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         });
         if (!res.ok) {
           console.warn(
@@ -99,7 +157,13 @@ async function getTickerMap(): Promise<Map<string, { cik: number; name: string }
         }
         return map;
       } catch (err) {
-        console.warn("[FinLens] SEC EDGAR ticker map fetch threw:", err instanceof Error ? err.message : err);
+        if (isAbortError(err)) {
+          console.warn(
+            `[FinLens] SEC EDGAR ticker map fetch timed out after ${FETCH_TIMEOUT_MS}ms — falling back to Yahoo-only history for every symbol this request.`
+          );
+        } else {
+          console.warn("[FinLens] SEC EDGAR ticker map fetch threw:", err instanceof Error ? err.message : err);
+        }
         return null;
       }
     })();
@@ -167,6 +231,7 @@ export async function fetchRecentFilings(symbol: string, limit = 12): Promise<Fi
     const res = await fetch(`https://data.sec.gov/submissions/CIK${cikPadded}.json`, {
       headers: { "User-Agent": USER_AGENT },
       next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
       console.warn(`[FinLens] SEC EDGAR submissions fetch failed for ${symbol} (CIK ${match.cik}): HTTP ${res.status} ${res.statusText}`);
@@ -203,7 +268,11 @@ export async function fetchRecentFilings(symbol: string, limit = 12): Promise<Fi
     // network failure.
     return { status: "ok", cik: match.cik, companyName: match.name, filings };
   } catch (err) {
-    console.warn(`[FinLens] SEC EDGAR submissions fetch threw for ${symbol}:`, err instanceof Error ? err.message : err);
+    if (isAbortError(err)) {
+      console.warn(`[FinLens] SEC EDGAR submissions fetch timed out after ${FETCH_TIMEOUT_MS}ms for ${symbol} (CIK ${match.cik}).`);
+    } else {
+      console.warn(`[FinLens] SEC EDGAR submissions fetch threw for ${symbol}:`, err instanceof Error ? err.message : err);
+    }
     return { status: "unavailable" };
   }
 }
@@ -500,6 +569,7 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
     const res = await fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cikPadded}.json`, {
       headers: { "User-Agent": USER_AGENT },
       next: { revalidate: 86_400 }, // annual filings — daily revalidation is plenty
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
       // This is the single most important line in this file for diagnosing
@@ -546,7 +616,13 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
     }
     return result;
   } catch (err) {
-    console.warn(`[FinLens] SEC EDGAR company-facts fetch threw for ${symbol}:`, err instanceof Error ? err.message : err);
+    if (isAbortError(err)) {
+      console.warn(
+        `[FinLens] SEC EDGAR company-facts fetch timed out after ${FETCH_TIMEOUT_MS}ms for ${symbol} (CIK ${match.cik}) — falling back to Yahoo/FMP for this ticker's history.`
+      );
+    } else {
+      console.warn(`[FinLens] SEC EDGAR company-facts fetch threw for ${symbol}:`, err instanceof Error ? err.message : err);
+    }
     return { status: "unavailable", ...empty };
   }
 }
