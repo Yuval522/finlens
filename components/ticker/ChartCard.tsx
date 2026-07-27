@@ -103,7 +103,28 @@ export function ChartCard({
   );
 
   if (!fullscreen) {
-    return <div className={`glass-card min-w-0 rounded-xl p-3 sm:p-4 ${className}`}>{cardBody}</div>;
+    // QA fix (screenshot report: hovering a bar near a card's right edge —
+    // e.g. the newest year in "Total Revenues" — shows the tooltip get cut
+    // off exactly at the card's boundary, on the REGULAR grid card, not the
+    // fullscreen modal). Root cause is different from the fullscreen bug
+    // above: nothing here has `overflow: hidden` — the tooltip genuinely is
+    // NOT clipped. The real cause is `.glass-card`'s `backdrop-filter`,
+    // which (per the CSS spec, same trigger as `filter`/`transform`/
+    // `opacity < 1`) forces this div into its OWN stacking context. Every
+    // chart card in a grid row is a sibling, each with its own such
+    // context at the default stack level ("auto") — within the same level,
+    // siblings paint in DOM order, so a tooltip that visually overflows
+    // this card's box into the NEXT card's box still gets painted
+    // *underneath* that next card's own opaque backdrop-blurred
+    // background, regardless of the tooltip's own `overflow: visible`
+    // ancestors. `hover:z-10` (grid items respect z-index even at the
+    // default `position: static` — no `relative` needed here since this
+    // div is always a direct CSS Grid child in every caller) lifts
+    // whichever card is currently being hovered above ALL of its siblings
+    // in the grid's paint order, so its tooltip — the only one that can be
+    // showing while hovered — renders on top instead of being covered by
+    // whichever neighbor happens to sit later in the DOM.
+    return <div className={`glass-card min-w-0 rounded-xl p-3 hover:z-10 sm:p-4 ${className}`}>{cardBody}</div>;
   }
 
   // fullscreen is only ever flipped true by a client click handler (every
