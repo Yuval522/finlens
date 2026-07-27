@@ -1,12 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
-import { filterByRange, toYoY, type ChartRange, type ChartType, type ChartView } from "@/lib/finance/chart-transform";
+import {
+  filterByRange,
+  splitTrailingRow,
+  toYoY,
+  type ChartRange,
+  type ChartType,
+  type ChartView,
+} from "@/lib/finance/chart-transform";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
+import { MetricFilterControl, type MetricFilterOption } from "./MetricFilterControl";
 import { SourceAttributionBadge } from "./SourceAttributionBadge";
 
 interface CashFlowPanelProps {
@@ -83,32 +91,74 @@ export function CashFlowPanel({ cashFlow, cashFlowQuarterly = [], currency }: Ca
   const [range, setRange] = useState<ChartRange>("All");
   const [view, setView] = useState<ChartView>("absolute");
 
-  const rangedCashFlow = useMemo(
-    () => filterByRange(activeCashFlow, range, periodsPerYear),
-    [activeCashFlow, range, periodsPerYear]
+  // TTM appendix (trailing twelve months — a rolling flow figure, matching
+  // Income Statement's convention, unlike Balance Sheet's point-in-time
+  // MRQ) — see splitTrailingRow's doc comment and the derivation in
+  // getFundamentals() (yahoo.ts). Pulled out before Select Range filtering
+  // and always re-appended, so it's never sliced away as one of the
+  // "N years".
+  const { historical: cashFlowHistorical, trailing: cashFlowTrailing } = useMemo(
+    () => splitTrailingRow(activeCashFlow),
+    [activeCashFlow]
   );
+  const rangedCashFlow = useMemo(() => {
+    const base = filterByRange(cashFlowHistorical, range, periodsPerYear);
+    return cashFlowTrailing ? [...base, cashFlowTrailing] : base;
+  }, [cashFlowHistorical, cashFlowTrailing, range, periodsPerYear]);
 
   function chartData(keys: (keyof CashFlowYear)[]) {
     return view === "yoy" ? toYoY(rangedCashFlow, keys) : rangedCashFlow;
   }
 
   const axisFormatter = view === "yoy" ? (v: number) => `${v}%` : compactAxis;
-  const controls = (
+  const controls = (filterMetrics?: ReactNode) => (
     <ChartControls
       range={range}
       onRangeChange={setRange}
       view={view}
       onViewChange={setView}
-      totalYears={chartType === "quarterly" ? Math.floor(activeCashFlow.length / 4) : activeCashFlow.length}
+      totalYears={chartType === "quarterly" ? Math.floor(cashFlowHistorical.length / 4) : cashFlowHistorical.length}
       chartType={chartType}
       onChartTypeChange={setChartType}
       quarterlyAvailable={quarterlyAvailable}
+      filterMetrics={filterMetrics}
     />
   );
 
+  // Filter Metrics (per-chart multi-select — see MetricFilterControl.tsx).
+  const BREAKDOWN_OPTIONS: MetricFilterOption[] = [
+    { key: "operatingCashFlow", label: "Operating Cash Flow", color: PRIMARY },
+    { key: "freeCashFlow", label: "Free Cash Flow", color: SUCCESS },
+    { key: "stockBasedCompensation", label: "Stock-Based Comp", color: AMBER },
+    { key: "capitalExpenditures", label: "CapEx", color: DESTRUCTIVE },
+  ];
+  const [breakdownVisible, setBreakdownVisible] = useState<Set<string>>(
+    () => new Set(BREAKDOWN_OPTIONS.map((o) => o.key))
+  );
+  const toggleBreakdown = (key: string) =>
+    setBreakdownVisible((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const QUALITY_OPTIONS: MetricFilterOption[] = [
+    { key: "operatingCashFlow", label: "Operating Cash Flow", color: SKY },
+    { key: "netIncome", label: "Net Income", color: PRIMARY },
+  ];
+  const [qualityVisible, setQualityVisible] = useState<Set<string>>(() => new Set(QUALITY_OPTIONS.map((o) => o.key)));
+  const toggleQuality = (key: string) =>
+    setQualityVisible((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   return (
     <div className="space-y-2">
-      <SourceAttributionBadge years={activeCashFlow} />
+      <SourceAttributionBadge years={cashFlowHistorical} />
       {/* QA fix: auto-fit/minmax instead of a viewport breakpoint — see the
           matching comment in IncomeStatementPanel.tsx for the root cause. */}
       <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
@@ -118,7 +168,9 @@ export function CashFlowPanel({ cashFlow, cashFlowQuarterly = [], currency }: Ca
         fullscreen={expanded === "breakdown"}
         onToggleFullscreen={() => toggle("breakdown")}
         className="xl:col-span-2"
-        controls={controls}
+        controls={controls(
+          <MetricFilterControl options={BREAKDOWN_OPTIONS} visible={breakdownVisible} onToggle={toggleBreakdown} />
+        )}
       >
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
@@ -137,10 +189,18 @@ export function CashFlowPanel({ cashFlow, cashFlowQuarterly = [], currency }: Ca
               allowEscapeViewBox={{ x: true, y: true }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="operatingCashFlow" name="Operating Cash Flow" fill={PRIMARY} radius={[4, 4, 0, 0]} animationDuration={600} barSize={22} maxBarSize={30} />
-            <Bar dataKey="freeCashFlow" name="Free Cash Flow" fill={SUCCESS} radius={[4, 4, 0, 0]} animationDuration={600} barSize={22} maxBarSize={30} />
-            <Bar dataKey="stockBasedCompensation" name="Stock-Based Comp" fill={AMBER} radius={[4, 4, 0, 0]} animationDuration={600} barSize={22} maxBarSize={30} />
-            <Bar dataKey="capitalExpenditures" name="CapEx" fill={DESTRUCTIVE} radius={[4, 4, 0, 0]} animationDuration={600} barSize={22} maxBarSize={30} />
+            {breakdownVisible.has("operatingCashFlow") && (
+              <Bar dataKey="operatingCashFlow" name="Operating Cash Flow" fill={PRIMARY} radius={[4, 4, 0, 0]} animationDuration={600} barSize={22} maxBarSize={30} />
+            )}
+            {breakdownVisible.has("freeCashFlow") && (
+              <Bar dataKey="freeCashFlow" name="Free Cash Flow" fill={SUCCESS} radius={[4, 4, 0, 0]} animationDuration={600} barSize={22} maxBarSize={30} />
+            )}
+            {breakdownVisible.has("stockBasedCompensation") && (
+              <Bar dataKey="stockBasedCompensation" name="Stock-Based Comp" fill={AMBER} radius={[4, 4, 0, 0]} animationDuration={600} barSize={22} maxBarSize={30} />
+            )}
+            {breakdownVisible.has("capitalExpenditures") && (
+              <Bar dataKey="capitalExpenditures" name="CapEx" fill={DESTRUCTIVE} radius={[4, 4, 0, 0]} animationDuration={600} barSize={22} maxBarSize={30} />
+            )}
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -150,7 +210,9 @@ export function CashFlowPanel({ cashFlow, cashFlowQuarterly = [], currency }: Ca
         subtitle="Operating Cash Flow vs Net Income"
         fullscreen={expanded === "quality"}
         onToggleFullscreen={() => toggle("quality")}
-        controls={controls}
+        controls={controls(
+          <MetricFilterControl options={QUALITY_OPTIONS} visible={qualityVisible} onToggle={toggleQuality} />
+        )}
       >
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData(["operatingCashFlow", "netIncome"])} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
@@ -165,8 +227,12 @@ export function CashFlowPanel({ cashFlow, cashFlowQuarterly = [], currency }: Ca
               allowEscapeViewBox={{ x: true, y: true }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="operatingCashFlow" name="Operating Cash Flow" fill={SKY} radius={[4, 4, 0, 0]} animationDuration={600} barSize={36} maxBarSize={48} />
-            <Bar dataKey="netIncome" name="Net Income" fill={PRIMARY} radius={[4, 4, 0, 0]} animationDuration={600} barSize={36} maxBarSize={48} />
+            {qualityVisible.has("operatingCashFlow") && (
+              <Bar dataKey="operatingCashFlow" name="Operating Cash Flow" fill={SKY} radius={[4, 4, 0, 0]} animationDuration={600} barSize={36} maxBarSize={48} />
+            )}
+            {qualityVisible.has("netIncome") && (
+              <Bar dataKey="netIncome" name="Net Income" fill={PRIMARY} radius={[4, 4, 0, 0]} animationDuration={600} barSize={36} maxBarSize={48} />
+            )}
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>

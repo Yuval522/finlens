@@ -4,7 +4,15 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear, IncomeStatementYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
-import { filterByRange, toYoY, type ChartRange, type ChartType, type ChartView } from "@/lib/finance/chart-transform";
+import {
+  filterByRange,
+  splitTrailingRow,
+  toPctOfRevenue,
+  toYoY,
+  type ChartRange,
+  type ChartType,
+  type ChartView,
+} from "@/lib/finance/chart-transform";
 import { SourceAttributionBadge } from "./SourceAttributionBadge";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
@@ -50,8 +58,10 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
    *  growth direction regardless of what the caller normally does). */
   view?: ChartView;
 }) {
-  const effectiveFormat = view === "yoy" ? (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%` : formatValue;
-  const effectiveLabel = view === "yoy" ? `${valueLabel} (YoY)` : valueLabel;
+  const isPercentView = view === "yoy" || view === "pctOfRevenue";
+  const effectiveFormat = isPercentView ? (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%` : formatValue;
+  const effectiveLabel =
+    view === "yoy" ? `${valueLabel} (YoY)` : view === "pctOfRevenue" ? `${valueLabel} (% of Revenue)` : valueLabel;
   const effectiveColorByValue = view === "yoy" ? true : colorByValue;
 
   return (
@@ -69,7 +79,7 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
           fontSize={11}
           tickLine={false}
           axisLine={false}
-          tickFormatter={view === "yoy" ? (v: number) => `${v}%` : compactAxis}
+          tickFormatter={isPercentView ? (v: number) => `${v}%` : compactAxis}
         />
         <Tooltip
           contentStyle={CHART_TOOLTIP_STYLE}
@@ -112,7 +122,6 @@ export function IncomeStatementPanel({
   currency,
 }: IncomeStatementPanelProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const toggle = (key: string) => setExpanded((cur) => (cur === key ? null : key));
 
   // Chart Type: Annually/Quarterly — see ChartControls' doc comment. Only
   // real when incomeQuarterly actually has rows (SEC EDGAR 10-Qs / Yahoo /
@@ -141,20 +150,47 @@ export function IncomeStatementPanel({
   const [range, setRange] = useState<ChartRange>("All");
   const [view, setView] = useState<ChartView>("absolute");
 
+  // "As a % of Revenue" only makes sense for margin-style metrics — opening
+  // a chart that doesn't support it while it's active falls back to
+  // Absolute rather than leaving the dropdown on an option it doesn't
+  // offer (see the ChartControls showPctOfRevenue prop). YoY intentionally
+  // isn't reset here — it's a valid view for every chart in this panel, so
+  // it's allowed to persist across cards, unlike this narrower mode.
+  const PCT_OF_REVENUE_CARDS = new Set(["grossprofit", "opincome", "netincome"]);
+  const toggle = (key: string) =>
+    setExpanded((cur) => {
+      const next = cur === key ? null : key;
+      if (next && view === "pctOfRevenue" && !PCT_OF_REVENUE_CARDS.has(next)) setView("absolute");
+      return next;
+    });
+
   const money = (v: number) => `${compactAxis(v)} ${currency}`;
   const perShare = (v: number) => `${v.toFixed(2)} ${currency}`;
 
-  const rangedIncome = useMemo(
-    () => filterByRange(activeIncome, range, periodsPerYear),
-    [activeIncome, range, periodsPerYear]
+  // Trailing appendix ("TTM") — pulled out before Select Range filtering so
+  // it's never sliced away as one of the "N years", then always re-appended
+  // after. See splitTrailingRow's doc comment in chart-transform.ts.
+  const { historical: incomeHistorical, trailing: incomeTrailing } = useMemo(
+    () => splitTrailingRow(activeIncome),
+    [activeIncome]
   );
-  const rangedCashFlow = useMemo(
-    () => filterByRange(activeCashFlow, range, periodsPerYear),
-    [activeCashFlow, range, periodsPerYear]
+  const { historical: cashFlowHistorical, trailing: cashFlowTrailing } = useMemo(
+    () => splitTrailingRow(activeCashFlow),
+    [activeCashFlow]
   );
+  const rangedIncome = useMemo(() => {
+    const base = filterByRange(incomeHistorical, range, periodsPerYear);
+    return incomeTrailing ? [...base, incomeTrailing] : base;
+  }, [incomeHistorical, incomeTrailing, range, periodsPerYear]);
+  const rangedCashFlow = useMemo(() => {
+    const base = filterByRange(cashFlowHistorical, range, periodsPerYear);
+    return cashFlowTrailing ? [...base, cashFlowTrailing] : base;
+  }, [cashFlowHistorical, cashFlowTrailing, range, periodsPerYear]);
 
-  function chartData(dataKey: keyof IncomeStatementYear) {
-    return view === "yoy" ? toYoY(rangedIncome, [dataKey]) : rangedIncome;
+  function chartData(dataKey: keyof IncomeStatementYear, allowPctOfRevenue = false) {
+    if (view === "yoy") return toYoY(rangedIncome, [dataKey]);
+    if (view === "pctOfRevenue" && allowPctOfRevenue) return toPctOfRevenue(rangedIncome, [dataKey], "totalRevenue");
+    return rangedIncome;
   }
 
   const cashFlowByYear = new Map(rangedCashFlow.map((c) => [c.fiscalYear, c]));
@@ -188,14 +224,15 @@ export function IncomeStatementPanel({
     };
   });
 
-  const controls = (showView = true) => (
+  const controls = (showView = true, showPctOfRevenue = false) => (
     <ChartControls
       range={range}
       onRangeChange={setRange}
       view={view}
       onViewChange={setView}
       showView={showView}
-      totalYears={chartType === "quarterly" ? Math.floor(activeIncome.length / 4) : activeIncome.length}
+      showPctOfRevenue={showPctOfRevenue}
+      totalYears={chartType === "quarterly" ? Math.floor(incomeHistorical.length / 4) : incomeHistorical.length}
       chartType={chartType}
       onChartTypeChange={setChartType}
       quarterlyAvailable={quarterlyAvailable}
@@ -204,7 +241,7 @@ export function IncomeStatementPanel({
 
   return (
     <div className="space-y-2">
-      <SourceAttributionBadge years={activeIncome} />
+      <SourceAttributionBadge years={incomeHistorical} />
       {/* QA fix (root-caused via DOM inspection against the reference
           terminal): this used to be viewport-width breakpoints
           (sm:grid-cols-2 xl:grid-cols-4), sized off the *window's* width. But
@@ -229,27 +266,27 @@ export function IncomeStatementPanel({
         title="Gross Profit"
         fullscreen={expanded === "grossprofit"}
         onToggleFullscreen={() => toggle("grossprofit")}
-        controls={controls()}
+        controls={controls(true, true)}
       >
-        <SingleMetricChart data={chartData("grossProfit")} dataKey="grossProfit" color={SUCCESS} valueLabel="Gross Profit" formatValue={money} view={view} />
+        <SingleMetricChart data={chartData("grossProfit", true)} dataKey="grossProfit" color={SUCCESS} valueLabel="Gross Profit" formatValue={money} view={view} />
       </ChartCard>
 
       <ChartCard
         title="Operating Income"
         fullscreen={expanded === "opincome"}
         onToggleFullscreen={() => toggle("opincome")}
-        controls={controls()}
+        controls={controls(true, true)}
       >
-        <SingleMetricChart data={chartData("operatingIncome")} dataKey="operatingIncome" color={AMBER} valueLabel="Operating Income" formatValue={money} view={view} />
+        <SingleMetricChart data={chartData("operatingIncome", true)} dataKey="operatingIncome" color={AMBER} valueLabel="Operating Income" formatValue={money} view={view} />
       </ChartCard>
 
       <ChartCard
         title="Net Income"
         fullscreen={expanded === "netincome"}
         onToggleFullscreen={() => toggle("netincome")}
-        controls={controls()}
+        controls={controls(true, true)}
       >
-        <SingleMetricChart data={chartData("netIncome")} dataKey="netIncome" color={SKY} valueLabel="Net Income" formatValue={money} view={view} />
+        <SingleMetricChart data={chartData("netIncome", true)} dataKey="netIncome" color={SKY} valueLabel="Net Income" formatValue={money} view={view} />
       </ChartCard>
 
       <ChartCard

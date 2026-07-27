@@ -332,6 +332,44 @@ const annualLabel: PeriodLabelFn = (date) => String(date.getFullYear());
  *  uses (see providers/sec-edgar.ts), so both sources merge cleanly. */
 const quarterLabel: PeriodLabelFn = (date) => `${date.getFullYear()}-Q${Math.floor(date.getMonth() / 3) + 1}`;
 
+/**
+ * Maps a single fundamentalsTimeSeries "financials" row into our
+ * IncomeStatementYear shape (minus the fiscalYear label, which differs
+ * between the annual/quarterly array mapper below and the single-row TTM
+ * mapper — see toTrailingIncomeRow). Pulled out into its own function so
+ * both call sites share identical field-extraction/fallback logic instead
+ * of drifting apart over time.
+ */
+function mapIncomeRow(
+  row: FundamentalsTimeSeriesFinancialsResult,
+  summary: QuoteSummaryResult
+): Omit<IncomeStatementYear, "fiscalYear"> {
+  const sharesOutstandingFallback = summary.defaultKeyStatistics?.sharesOutstanding ?? 0;
+  const dividendsPerShareFallback = summary.summaryDetail?.dividendRate ?? 0;
+  const grossMarginFallback = summary.financialData?.grossMargins ?? null;
+  const operatingMarginFallback = summary.financialData?.operatingMargins ?? null;
+
+  const netIncome = row.netIncome ?? 0;
+  const totalRevenue = row.totalRevenue ?? 0;
+  const grossProfit =
+    row.grossProfit || (grossMarginFallback != null ? Math.round(totalRevenue * grossMarginFallback) : 0);
+  const operatingIncome =
+    row.operatingIncome ||
+    row.EBIT ||
+    (operatingMarginFallback != null ? Math.round(totalRevenue * operatingMarginFallback) : 0);
+  const sharesOutstanding = row.dilutedAverageShares || sharesOutstandingFallback;
+  return {
+    totalRevenue,
+    grossProfit,
+    operatingIncome,
+    netIncome,
+    eps: row.dilutedEPS ?? (sharesOutstanding > 0 ? Number((netIncome / sharesOutstanding).toFixed(2)) : 0),
+    sharesOutstandingDiluted: sharesOutstanding,
+    dividendsPerShare: row.dividendPerShare ?? dividendsPerShareFallback,
+    dataSource: "yahoo" as const,
+  };
+}
+
 function toIncomeRows(
   rows: FundamentalsTimeSeriesFinancialsResult[],
   summary: QuoteSummaryResult,
@@ -339,37 +377,10 @@ function toIncomeRows(
   labelFn: PeriodLabelFn,
   label: string
 ): IncomeStatementYear[] {
-  const sharesOutstandingFallback = summary.defaultKeyStatistics?.sharesOutstanding ?? 0;
-  const dividendsPerShareFallback = summary.summaryDetail?.dividendRate ?? 0;
-  const grossMarginFallback = summary.financialData?.grossMargins ?? null;
-  const operatingMarginFallback = summary.financialData?.operatingMargins ?? null;
-
   const periods = [...rows]
     .filter((row) => row.date instanceof Date)
     .sort((a, b) => a.date.getTime() - b.date.getTime())
-    .map((row) => {
-      const netIncome = row.netIncome ?? 0;
-      const totalRevenue = row.totalRevenue ?? 0;
-      const grossProfit =
-        row.grossProfit ||
-        (grossMarginFallback != null ? Math.round(totalRevenue * grossMarginFallback) : 0);
-      const operatingIncome =
-        row.operatingIncome ||
-        row.EBIT ||
-        (operatingMarginFallback != null ? Math.round(totalRevenue * operatingMarginFallback) : 0);
-      const sharesOutstanding = row.dilutedAverageShares || sharesOutstandingFallback;
-      return {
-        fiscalYear: labelFn(row.date),
-        totalRevenue,
-        grossProfit,
-        operatingIncome,
-        netIncome,
-        eps: row.dilutedEPS ?? (sharesOutstanding > 0 ? Number((netIncome / sharesOutstanding).toFixed(2)) : 0),
-        sharesOutstandingDiluted: sharesOutstanding,
-        dividendsPerShare: row.dividendPerShare ?? dividendsPerShareFallback,
-        dataSource: "yahoo" as const,
-      };
-    })
+    .map((row) => ({ fiscalYear: labelFn(row.date), ...mapIncomeRow(row, summary) }))
     // Same "phantom zero-height bar" fix as toBalanceRows/toCashFlowRows —
     // a row with a valid date but every financial field missing shouldn't
     // contribute an empty period to the chart/table.
@@ -377,6 +388,32 @@ function toIncomeRows(
 
   warnIfFiscalYearGaps(label, symbol, periods.map((y) => y.fiscalYear));
   return periods;
+}
+
+/**
+ * Rolling-twelve-month row from `fundamentalsTimeSeries({type: "trailing",
+ * module: "financials"})` — Yahoo strips the "trailing" prefix the same way
+ * it strips "annual"/"quarterly" (confirmed against the installed
+ * yahoo-finance2 package's own processResponse() transform), so the row
+ * shape is identical to an annual row. Appended as a synthetic "TTM" row
+ * onto the end of the merged annual `income` array (see getFundamentals()),
+ * matching the reference terminal's behavior of always showing a trailing
+ * bar after the fiscal-year history regardless of which Select Range is
+ * active — see splitTrailingRow() in chart-transform.ts for how panels pull
+ * it back out before range-filtering so it never gets sliced away as one of
+ * the "N years".
+ */
+function toTrailingIncomeRow(
+  rows: FundamentalsTimeSeriesFinancialsResult[],
+  summary: QuoteSummaryResult
+): IncomeStatementYear | null {
+  const latest = [...rows]
+    .filter((row) => row.date instanceof Date)
+    .sort((a, b) => b.date.getTime() - a.date.getTime())[0];
+  if (!latest) return null;
+  const mapped = mapIncomeRow(latest, summary);
+  if (mapped.totalRevenue === 0 && mapped.netIncome === 0 && mapped.grossProfit === 0) return null;
+  return { fiscalYear: "TTM", ...mapped };
 }
 
 /**
@@ -392,6 +429,21 @@ function toIncomeRows(
  * (e.g. `totalAssets`, not `annualTotalAssets` — verified against the
  * module's transform code, not just its stale doc-comment examples).
  */
+/** Per-row field extraction shared by toBalanceRows and the MRQ derivation in getFundamentals(). */
+function mapBalanceRow(row: FundamentalsTimeSeriesBalanceSheetResult): Omit<BalanceSheetYear, "fiscalYear"> {
+  return {
+    cashAndShortTermInvestments: row.cashCashEquivalentsAndShortTermInvestments ?? row.cashAndCashEquivalents ?? 0,
+    totalCurrentAssets: row.currentAssets ?? 0,
+    totalCurrentLiabilities: row.currentLiabilities ?? 0,
+    totalAssets: row.totalAssets ?? 0,
+    totalLiabilities: row.totalLiabilitiesNetMinorityInterest ?? 0,
+    totalStockholdersEquity: row.stockholdersEquity ?? row.totalEquityGrossMinorityInterest ?? 0,
+    totalCash: row.cashAndCashEquivalents ?? 0,
+    totalDebt: row.totalDebt ?? 0,
+    dataSource: "yahoo" as const,
+  };
+}
+
 function toBalanceRows(
   rows: FundamentalsTimeSeriesBalanceSheetResult[],
   symbol: string,
@@ -401,19 +453,7 @@ function toBalanceRows(
   const periods = [...rows]
     .filter((row) => row.date instanceof Date)
     .sort((a, b) => a.date.getTime() - b.date.getTime())
-    .map((row) => ({
-      fiscalYear: labelFn(row.date),
-      cashAndShortTermInvestments:
-        row.cashCashEquivalentsAndShortTermInvestments ?? row.cashAndCashEquivalents ?? 0,
-      totalCurrentAssets: row.currentAssets ?? 0,
-      totalCurrentLiabilities: row.currentLiabilities ?? 0,
-      totalAssets: row.totalAssets ?? 0,
-      totalLiabilities: row.totalLiabilitiesNetMinorityInterest ?? 0,
-      totalStockholdersEquity: row.stockholdersEquity ?? row.totalEquityGrossMinorityInterest ?? 0,
-      totalCash: row.cashAndCashEquivalents ?? 0,
-      totalDebt: row.totalDebt ?? 0,
-      dataSource: "yahoo" as const,
-    }))
+    .map((row) => ({ fiscalYear: labelFn(row.date), ...mapBalanceRow(row) }))
     // QA fix (live report: a "2021" axis label rendered with no visible bar
     // on Balance/Cash Flow charts, while every other year rendered fine).
     // Root cause: `row.date instanceof Date` only confirms Yahoo tagged a
@@ -457,6 +497,18 @@ function toBalanceRows(
  * balance-sheet/financials modules) — its closest equivalent is
  * `netIncomeFromContinuingOperations`, confirmed against the same .d.ts.
  */
+/** Per-row field extraction shared by toCashFlowRows and toTrailingCashFlowRow below. */
+function mapCashFlowRow(row: FundamentalsTimeSeriesCashFlowResult): Omit<CashFlowYear, "fiscalYear"> {
+  return {
+    operatingCashFlow: row.operatingCashFlow ?? 0,
+    freeCashFlow: row.freeCashFlow ?? 0,
+    stockBasedCompensation: row.stockBasedCompensation ?? 0,
+    capitalExpenditures: row.capitalExpenditure ?? 0,
+    netIncome: row.netIncomeFromContinuingOperations ?? 0,
+    dataSource: "yahoo" as const,
+  };
+}
+
 function toCashFlowRows(
   rows: FundamentalsTimeSeriesCashFlowResult[],
   symbol: string,
@@ -466,21 +518,29 @@ function toCashFlowRows(
   const periods = [...rows]
     .filter((row) => row.date instanceof Date)
     .sort((a, b) => a.date.getTime() - b.date.getTime())
-    .map((row) => ({
-      fiscalYear: labelFn(row.date),
-      operatingCashFlow: row.operatingCashFlow ?? 0,
-      freeCashFlow: row.freeCashFlow ?? 0,
-      stockBasedCompensation: row.stockBasedCompensation ?? 0,
-      capitalExpenditures: row.capitalExpenditure ?? 0,
-      netIncome: row.netIncomeFromContinuingOperations ?? 0,
-      dataSource: "yahoo" as const,
-    }))
+    .map((row) => ({ fiscalYear: labelFn(row.date), ...mapCashFlowRow(row) }))
     // QA fix — same root cause as toBalanceYears' matching filter above:
     // a dated-but-otherwise-empty row for the oldest period renders as an
     // axis label with an invisible zero-height bar. Drop it instead.
     .filter((y) => y.operatingCashFlow !== 0 || y.freeCashFlow !== 0 || y.netIncome !== 0);
   warnIfFiscalYearGaps(label, symbol, periods.map((y) => y.fiscalYear));
   return periods;
+}
+
+/**
+ * Rolling-twelve-month row from `fundamentalsTimeSeries({type: "trailing",
+ * module: "cash-flow"})` — same rationale/appending strategy as
+ * toTrailingIncomeRow above, labeled "TTM" since cash flow (like income) is
+ * a flow statement over a period, not a point-in-time snapshot.
+ */
+function toTrailingCashFlowRow(rows: FundamentalsTimeSeriesCashFlowResult[]): CashFlowYear | null {
+  const latest = [...rows]
+    .filter((row) => row.date instanceof Date)
+    .sort((a, b) => b.date.getTime() - a.date.getTime())[0];
+  if (!latest) return null;
+  const mapped = mapCashFlowRow(latest);
+  if (mapped.operatingCashFlow === 0 && mapped.freeCashFlow === 0 && mapped.netIncome === 0) return null;
+  return { fiscalYear: "TTM", ...mapped };
 }
 
 /**
@@ -761,6 +821,8 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         quarterlyRevenueRows,
         balanceRowsQuarterly,
         cashFlowRowsQuarterly,
+        trailingIncomeRows,
+        trailingCashFlowRows,
         secFinancials,
         fmpIncomeRows,
         fmpBalanceRows,
@@ -845,6 +907,26 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             module: "cash-flow",
           })
           .catch(() => [] as FundamentalsTimeSeriesCashFlowResult[]),
+        // Trailing-twelve-month (TTM) rows — appended as a synthetic "TTM"
+        // row after the real fiscal-year history (see toTrailingIncomeRow/
+        // toTrailingCashFlowRow above and splitTrailingRow() in
+        // chart-transform.ts). Same period1 window as the quarterly fetches
+        // above is plenty since Yahoo only ever returns the single latest
+        // trailing period regardless of how far back period1 goes.
+        yahooFinance
+          .fundamentalsTimeSeries(symbol, {
+            period1: quarterlyPeriod1,
+            type: "trailing",
+            module: "financials",
+          })
+          .catch(() => [] as FundamentalsTimeSeriesFinancialsResult[]),
+        yahooFinance
+          .fundamentalsTimeSeries(symbol, {
+            period1: quarterlyPeriod1,
+            type: "trailing",
+            module: "cash-flow",
+          })
+          .catch(() => [] as FundamentalsTimeSeriesCashFlowResult[]),
         // Multi-source aggregation, primary deep-history layer (see
         // aggregate.ts / providers/sec-edgar.ts doc comments) — audited
         // XBRL data straight from 10-K/20-F filings, the only source that
@@ -907,6 +989,20 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRows) },
       ]);
 
+      // Trailing-twelve-month appendix — appended directly onto the merged
+      // annual arrays as a final "TTM" row (same convention mock-data.ts
+      // already uses for its illustrative fixtures), NOT merged through
+      // mergeYearsBySource since TTM is a Yahoo-only rolling computation,
+      // not a fiscal year any source "has" or "is missing". Panels split it
+      // back out before Select Range filtering (see splitTrailingRow() in
+      // chart-transform.ts) so it's always shown regardless of range,
+      // matching the reference terminal's behavior. SEC EDGAR has no TTM
+      // concept (audited filings only), so this is deliberately Yahoo-only.
+      const incomeTrailing = toTrailingIncomeRow(trailingIncomeRows as FundamentalsTimeSeriesFinancialsResult[], summary);
+      if (incomeTrailing) income.push(incomeTrailing);
+      const cashFlowTrailing = toTrailingCashFlowRow(trailingCashFlowRows as FundamentalsTimeSeriesCashFlowResult[]);
+      if (cashFlowTrailing) cashFlow.push(cashFlowTrailing);
+
       // Quarterly counterparts — Chart Type: Quarterly view. Same merge
       // priority (SEC EDGAR 10-Qs > Yahoo > FMP), keyed "fiscalYear-Qn"
       // instead of a bare year (see quarterLabel()/quarterlySeries()).
@@ -947,6 +1043,20 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         { source: "yahoo", years: yahooCashFlowQuarterly },
         { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRowsQuarterly) },
       ]);
+
+      // Most Recent Quarter (MRQ) appendix for the Balance Sheet panel —
+      // unlike income/cash flow (flow statements, where "trailing twelve
+      // months" is the natural rolling figure), a balance sheet is a
+      // point-in-time snapshot, so its trailing appendix is simply the
+      // latest quarter already fetched above, relabeled "MRQ" rather than
+      // re-fetched. `balanceQuarterly` is lexicographically sorted by
+      // "fiscalYear-Qn" (see mergeYearsBySource), so the last entry is the
+      // most recent quarter. Appended the same way as income/cashFlow's TTM
+      // row — see splitTrailingRow() in chart-transform.ts.
+      const latestQuarter = balanceQuarterly[balanceQuarterly.length - 1];
+      if (latestQuarter) {
+        balance.push({ ...latestQuarter, fiscalYear: "MRQ" });
+      }
 
       const bundle: FundamentalsBundle = {
         source: "live",

@@ -19,8 +19,36 @@
 export type ChartRange = 3 | 5 | 10 | "All";
 export const CHART_RANGES: ChartRange[] = [3, 5, 10, "All"];
 
-export type ChartView = "absolute" | "yoy";
+export type ChartView = "absolute" | "yoy" | "pctOfRevenue";
 export type ChartType = "annually" | "quarterly";
+
+/**
+ * Trailing-appendix fiscal-year labels: "TTM" (trailing twelve months —
+ * Income Statement, Cash Flow) and "MRQ" (most recent quarter — Balance
+ * Sheet, a point-in-time snapshot rather than a rolling flow figure). See
+ * toTrailingIncomeRow/toTrailingCashFlowRow and the MRQ derivation in
+ * getFundamentals() (yahoo.ts), and mock-data.ts's illustrative fixtures,
+ * which use the same "TTM" convention by hand.
+ */
+const TRAILING_LABELS = new Set(["TTM", "MRQ"]);
+
+/**
+ * Splits a fiscal-year array into its real historical rows and the
+ * trailing TTM/MRQ appendix row, if present. Exists so Select Range can
+ * filter *only* the historical portion — appended directly, the trailing
+ * row would otherwise get sliced away as one of the "N years" whenever a
+ * narrow range is selected (e.g. "3 Years" would show only 2 real years +
+ * TTM instead of 3 real years + TTM), which doesn't match how the
+ * appendix is meant to behave: always present, on top of whichever range
+ * is selected, the same way professional charting terminals show it.
+ */
+export function splitTrailingRow<T extends { fiscalYear: string }>(
+  data: T[]
+): { historical: T[]; trailing: T | null } {
+  const trailing = data.find((row) => TRAILING_LABELS.has(row.fiscalYear)) ?? null;
+  const historical = trailing ? data.filter((row) => row !== trailing) : data;
+  return { historical, trailing };
+}
 
 export function filterByRange<T extends { fiscalYear: string }>(
   data: T[],
@@ -75,4 +103,28 @@ export function toYoY<T extends { fiscalYear: string }>(data: T[], keys: (keyof 
     return out;
   });
   return rows;
+}
+
+/**
+ * Converts the given numeric keys to a percent of that same row's revenue
+ * figure (e.g. Gross Profit -> Gross Margin %). Unlike toYoY, this doesn't
+ * drop any rows — every row (including an appended TTM) has its own
+ * revenue figure to divide by, no prior-period comparison needed. Revenue
+ * values of 0 or missing pass through as 0 rather than dividing by zero.
+ */
+export function toPctOfRevenue<T extends { fiscalYear: string }>(
+  data: T[],
+  keys: (keyof T)[],
+  revenueKey: keyof T
+): T[] {
+  return data.map((row) => {
+    const revenue = Number(row[revenueKey]);
+    const out = { ...row } as T;
+    for (const key of keys) {
+      const val = Number(row[key]);
+      const pct = Number.isFinite(val) && Number.isFinite(revenue) && revenue !== 0 ? (val / revenue) * 100 : 0;
+      (out as Record<string, unknown>)[key as string] = Number(pct.toFixed(1));
+    }
+    return out;
+  });
 }

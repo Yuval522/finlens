@@ -205,7 +205,15 @@ export interface FundamentalsBundle {
   quote: MarketQuote;
   profile: CompanyProfile;
   metrics: TickerMetrics;
-  /** Annual, oldest first — depth varies by source (see aggregate.ts), typically 10+ years for SEC-registered filers. */
+  /**
+   * Annual, oldest first — depth varies by source (see aggregate.ts),
+   * typically 10+ years for SEC-registered filers. May end with one
+   * trailing-appendix row: `fiscalYear: "TTM"` (trailing twelve months) on
+   * `income`/`cashFlow`, or `fiscalYear: "MRQ"` (most recent quarter) on
+   * `balance` — see splitTrailingRow() in chart-transform.ts, which panels
+   * use to pull it out before Select Range filtering and always re-append
+   * it afterward, so it's never sliced away as one of the "N years".
+   */
   income: IncomeStatementYear[];
   balance: BalanceSheetYear[];
   cashFlow: CashFlowYear[];

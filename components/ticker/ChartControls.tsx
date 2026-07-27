@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { getAvailableRanges, type ChartRange, type ChartType, type ChartView } from "@/lib/finance/chart-transform";
 
 interface ChartControlsProps {
@@ -10,6 +11,15 @@ interface ChartControlsProps {
   /** Hidden for metrics already denominated in %, where a further "YoY %
    *  change of a %" reading would be confusing rather than useful. */
   showView?: boolean;
+  /**
+   * Offers "As a % of Revenue" as a third View option, alongside Absolute
+   * and YoY % Change — only meaningful for metrics that are naturally a
+   * portion of revenue (Gross Profit, Operating Income, Net Income; see
+   * toPctOfRevenue in chart-transform.ts). Off by default since it's not a
+   * sensible reading for most charts (e.g. Shares Outstanding, Total
+   * Assets) — same opt-in pattern as showView.
+   */
+  showPctOfRevenue?: boolean;
   /**
    * QA fix ("Select Range does nothing" report): total fiscal periods the
    * *currently displayed* dataset (annual or quarterly, per `chartType`)
@@ -37,6 +47,14 @@ interface ChartControlsProps {
    * silent no-op.
    */
   quarterlyAvailable?: boolean;
+  /**
+   * Optional "Filter Metrics" control, rendered as the last item in the
+   * row. Left as a slot (rather than ChartControls owning the metric list
+   * itself) since which series exist — and their labels/colors — varies
+   * per chart; see MetricFilterControl.tsx, which panels build and pass in
+   * here for their multi-series charts.
+   */
+  filterMetrics?: ReactNode;
 }
 
 const SELECT_CLASS =
@@ -58,10 +76,12 @@ export function ChartControls({
   view,
   onViewChange,
   showView = true,
+  showPctOfRevenue = false,
   totalYears,
   chartType,
   onChartTypeChange,
   quarterlyAvailable = false,
+  filterMetrics,
 }: ChartControlsProps) {
   const availableRanges = getAvailableRanges(totalYears);
   const chartTypeEnabled = Boolean(chartType && onChartTypeChange && quarterlyAvailable);
@@ -87,7 +107,8 @@ export function ChartControls({
           <label className="block text-[11px] font-medium text-muted-foreground">View</label>
           <select value={view} onChange={(e) => onViewChange(e.target.value as ChartView)} className={SELECT_CLASS}>
             <option value="absolute">Absolute</option>
-            <option value="yoy">YoY % Change</option>
+            <option value="yoy">YoY Growth</option>
+            {showPctOfRevenue && <option value="pctOfRevenue">As a % of Revenue</option>}
           </select>
         </div>
       )}
@@ -118,6 +139,8 @@ export function ChartControls({
           </select>
         )}
       </div>
+
+      {filterMetrics}
     </div>
   );
 }
