@@ -22,7 +22,7 @@ import {
   type FmpIncomeStatement,
 } from "./providers/fmp";
 import { fetchSecFinancials } from "./providers/sec-edgar";
-import { MARKET_SUMMARY_SYMBOLS, TASE_SEED_SYMBOLS, US_FALLBACK_SYMBOLS } from "./symbols";
+import { BIG_SEVEN_SYMBOLS, MARKET_SUMMARY_SYMBOLS, TASE_SEED_SYMBOLS, US_FALLBACK_SYMBOLS } from "./symbols";
 import {
   MarketDataError,
   type AnalystPriceTargets,
@@ -185,6 +185,15 @@ export async function getMarketSummary(): Promise<MarketQuote[]> {
     .map((symbol) => bySymbol.get(symbol))
     .filter((q): q is MarketQuote => Boolean(q))
     .map((q) => ({ ...q, name: labelBySymbol.get(q.symbol) ?? q.name }));
+}
+
+/** Big 7 / "Magnificent Seven": fixed set of mega-cap tech quotes, Home page section. */
+export async function getBigSeven(): Promise<MarketQuote[]> {
+  const quotes = await getQuotes(BIG_SEVEN_SYMBOLS);
+  const bySymbol = new Map(quotes.map((q) => [q.symbol, q]));
+  // Preserve the configured order regardless of what the provider returns —
+  // same rationale as getMarketSummary() above.
+  return BIG_SEVEN_SYMBOLS.map((s) => bySymbol.get(s)).filter((q): q is MarketQuote => Boolean(q));
 }
 
 /** Most Active: live US "most actives" screener blended with a curated TASE seed list. */

@@ -3,6 +3,8 @@ import { MarketSummaryGrid } from "@/components/dashboard/MarketSummaryGrid";
 import { MarketSummarySection } from "@/components/dashboard/MarketSummarySection";
 import { MostActiveGrid } from "@/components/dashboard/MostActiveGrid";
 import { MostActiveSection } from "@/components/dashboard/MostActiveSection";
+import { BigSevenGrid } from "@/components/dashboard/BigSevenGrid";
+import { BigSevenSection } from "@/components/dashboard/BigSevenSection";
 
 // Live quotes — fetch fresh on every request rather than baking prices in
 // at build time.
@@ -16,6 +18,9 @@ export default function HomePage() {
       </Suspense>
       <Suspense fallback={<MostActiveGrid />}>
         <MostActiveSection />
+      </Suspense>
+      <Suspense fallback={<BigSevenGrid />}>
+        <BigSevenSection />
       </Suspense>
     </div>
   );

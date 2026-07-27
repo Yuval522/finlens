@@ -66,6 +66,7 @@ export function mergeYearsBySource<T extends YearRow>(
   // prefix dominates and Q1 < Q2 < Q3 < Q4 as characters.
   const merged = [...byYear.values()].sort((a, b) => a.fiscalYear.localeCompare(b.fiscalYear));
   logSourceBreakdown(label, symbol, merged);
+  warnIfYearsLookStale(label, symbol, merged);
   return merged;
 }
 
@@ -123,4 +124,56 @@ function logSourceBreakdown<T extends YearRow>(label: string, symbol: string, ro
   }
   const summary = formatSourceSummary(summarizeYearSources(rows));
   console.info(`[FinLens] ${label}(${symbol}): ${rows.length} year(s) — ${summary}`);
+}
+
+/**
+ * Cross-check added after an external audit report claimed a systemic
+ * "+2 year" fiscal-label shift across every ticker (e.g. GOOGL's real
+ * FY2021 revenue allegedly showing up labeled "2023"). Investigated and
+ * NOT reproduced against this codebase: every fiscal-year string in this
+ * pipeline is read directly from the row's own actual reported period —
+ * annualLabel()/quarterLabel() in yahoo.ts pull `date.getFullYear()` off
+ * the real Date each fundamentalsTimeSeries row carries, and
+ * annualSeries()/quarterlySeries() in providers/sec-edgar.ts key off each
+ * XBRL fact's own `fy` field (falling back to its `end` date) — there is
+ * no "currentYear - N" anchor-arithmetic anywhere in this file or those
+ * two, which is what the report's root-cause hypothesis would require.
+ * Cross-referencing the report's own worked AAPL example against this
+ * repo's mock-data.ts (the one payload fully inspectable here) also
+ * contradicts it: "2023" already holds Apple's real FY2023 revenue
+ * ($383.285B), not FY2025's.
+ *
+ * Kept as a standing safeguard regardless — a genuinely stale/misconfigured
+ * deployment (e.g. SEC_EDGAR_CONTACT unset *and* Yahoo rate-limited) could
+ * still produce the surface symptom the report described: real, correctly
+ * labeled, but old data silently presented as current. A gap this large is
+ * worth surfacing loudly during development rather than only being caught
+ * by an ad hoc diff against a live provider payload. Dev-only, like the
+ * neighboring warnIfFiscalYearGaps() in yahoo.ts — this is a diagnostic
+ * for catching data-freshness regressions during development, not a
+ * user-facing signal.
+ */
+function warnIfYearsLookStale<T extends YearRow>(label: string, symbol: string, rows: T[]): void {
+  if (process.env.NODE_ENV === "production") return;
+  // Bare year strings only ("2023") — quarterly ("2023-Q2") and trailing
+  // ("TTM"/"MRQ") labels correctly fall out of Number.isFinite here, same
+  // filter convention as warnIfFiscalYearGaps in yahoo.ts.
+  const numericYears = rows.map((r) => Number(r.fiscalYear)).filter((y) => Number.isFinite(y));
+  if (numericYears.length === 0) return;
+  const newest = Math.max(...numericYears);
+  const currentYear = new Date().getFullYear();
+  // A filer's most recent annual filing can legitimately lag the current
+  // calendar year by close to a year (e.g. a December-FY filer's 10-K for
+  // last year isn't on file until well into Q1/Q2 of this one) — 2+ years
+  // behind is the specific signature the external audit described, so
+  // that's the threshold flagged here rather than anything tighter.
+  if (currentYear - newest >= 2) {
+    console.warn(
+      `[FinLens] ${label}(${symbol}): newest fiscal year label is ${newest}, ` +
+        `${currentYear - newest} years behind the current calendar year (${currentYear}). ` +
+        `Could be a genuinely slow/incomplete data source, or a labeling bug — verify ` +
+        `against a raw provider payload (SEC EDGAR's companyfacts API, or Yahoo's ` +
+        `fundamentalsTimeSeries) before trusting it.`
+    );
+  }
 }

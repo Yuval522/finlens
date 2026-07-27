@@ -31,3 +31,14 @@ export const US_FALLBACK_SYMBOLS: string[] = [
   "GOOGL",
   "TSLA",
 ];
+
+/** The "Magnificent Seven" mega-cap tech names — Home page's Big 7 section. */
+export const BIG_SEVEN_SYMBOLS: string[] = [
+  "AAPL",
+  "MSFT",
+  "GOOGL",
+  "AMZN",
+  "NVDA",
+  "META",
+  "TSLA",
+];
