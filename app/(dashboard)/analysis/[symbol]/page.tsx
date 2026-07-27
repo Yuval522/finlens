@@ -4,6 +4,7 @@ import { MarketDataError } from "@/lib/finance/types";
 import { isNonFundamentalQuote } from "@/lib/finance/exchange";
 import { CompanyProfileHeader } from "@/components/ticker/CompanyProfileHeader";
 import { CompanyMetricsAccordions } from "@/components/ticker/CompanyMetricsAccordions";
+import { MobileTickerHeader } from "@/components/ticker/MobileTickerHeader";
 import { LivePriceHeader } from "@/components/ticker/LivePriceHeader";
 import { ChartPanel } from "@/components/ticker/ChartPanel";
 import { DataExplorerTabs } from "@/components/ticker/DataExplorerTabs";
@@ -93,42 +94,45 @@ export default async function AnalysisPage({
     // now gets `flex-1` — flexbox's default `align-items: stretch` gives it
     // the exact same full-row-height box the sticky fix above depends on,
     // so nothing about that fix needed to change.
-    <div className="analysis-grid flex flex-col gap-6 lg:flex-row">
-      <div className="order-2 w-full lg:order-1 lg:w-[22rem] lg:shrink-0">
-        <div className="area-profile space-y-4 lg:sticky lg:top-6">
-          <CompanyProfileHeader quote={quote} profile={profile} />
+    <>
+      <MobileTickerHeader quote={quote} />
+      <div className="analysis-grid flex flex-col gap-6 lg:flex-row">
+        <div className="order-2 w-full lg:order-1 lg:w-[22rem] lg:shrink-0">
+          <div className="area-profile space-y-4 lg:sticky lg:top-6">
+            <CompanyProfileHeader quote={quote} profile={profile} />
+            {!isNonFundamental && (
+              <CompanyMetricsAccordions metrics={metrics} reportingCurrency={reportingCurrency} />
+            )}
+          </div>
+        </div>
+
+        <div className="order-1 min-w-0 flex-1 space-y-6 lg:order-2">
+          <LivePriceHeader symbol={quote.symbol} initialQuote={quote} />
+
+          <ChartPanel
+            history={history}
+            currency={quote.currency}
+            symbol={quote.symbol}
+            exchange={quote.exchange}
+          />
+
           {!isNonFundamental && (
-            <CompanyMetricsAccordions metrics={metrics} reportingCurrency={reportingCurrency} />
+            <DataExplorerTabs
+              income={income}
+              balance={balance}
+              cashFlow={cashFlow}
+              incomeQuarterly={incomeQuarterly}
+              balanceQuarterly={balanceQuarterly}
+              cashFlowQuarterly={cashFlowQuarterly}
+              estimates={estimates}
+              priceTargets={priceTargets}
+              reportingCurrency={reportingCurrency}
+              quote={quote}
+              metrics={metrics}
+            />
           )}
         </div>
       </div>
-
-      <div className="order-1 min-w-0 flex-1 space-y-6 lg:order-2">
-        <LivePriceHeader symbol={quote.symbol} initialQuote={quote} />
-
-        <ChartPanel
-          history={history}
-          currency={quote.currency}
-          symbol={quote.symbol}
-          exchange={quote.exchange}
-        />
-
-        {!isNonFundamental && (
-          <DataExplorerTabs
-            income={income}
-            balance={balance}
-            cashFlow={cashFlow}
-            incomeQuarterly={incomeQuarterly}
-            balanceQuarterly={balanceQuarterly}
-            cashFlowQuarterly={cashFlowQuarterly}
-            estimates={estimates}
-            priceTargets={priceTargets}
-            reportingCurrency={reportingCurrency}
-            quote={quote}
-            metrics={metrics}
-          />
-        )}
-      </div>
-    </div>
+    </>
   );
 }

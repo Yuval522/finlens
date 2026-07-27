@@ -21,8 +21,7 @@ interface IncomeStatementPanelProps {
   currency: string;
 }
 
-const { success: SUCCESS, primary: PRIMARY, amber: AMBER, slate: SLATE, destructive: DESTRUCTIVE, sky: SKY } =
-  CHART_COLORS;
+const { success: SUCCESS, amber: AMBER, slate: SLATE, destructive: DESTRUCTIVE, sky: SKY } = CHART_COLORS;
 
 /** Single-series bar chart used for every card in this 8-chart grid — the
  * reference dashboard shows one metric per card rather than grouped pairs
@@ -59,7 +58,7 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
 
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
+      <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="12%">
         <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
         {/* QA fix: explicit type="category" — this was already Recharts'
             default for XAxis, but the reported "bars bunched left with
@@ -88,14 +87,18 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
             fill the available category band, which balloons to 100px+ when
             few categories are shown (e.g. a 3-year YoY slice) — barSize/
             maxBarSize keeps bars a sane, consistent width regardless of how
-            many fiscal years are plotted. */}
+            many fiscal years are plotted. Widened further (48/60 -> 64/84,
+            paired with barCategoryGap 20% -> 12% above) per a side-by-side
+            comparison against the reference terminal's single-metric charts,
+            whose bars fill noticeably more of each category band than ours
+            did. */}
         <Bar
           dataKey={(row: T) => Number(row[dataKey])}
           radius={[4, 4, 0, 0]}
           animationDuration={600}
           fill={color}
-          barSize={48}
-          maxBarSize={60}
+          barSize={64}
+          maxBarSize={84}
         >
           {effectiveColorByValue &&
             data.map((row, idx) => (
@@ -248,7 +251,7 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
     >
       {ruleOf40Data.length > 0 ? (
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={ruleOf40Data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
+          <BarChart data={ruleOf40Data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="12%">
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
@@ -262,7 +265,7 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
               ]}
               allowEscapeViewBox={{ x: true, y: true }}
             />
-            <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600} barSize={48} maxBarSize={60}>
+            <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600} barSize={64} maxBarSize={84}>
               {ruleOf40Data.map((row) => (
                 <Cell key={row.fiscalYear} fill={row.ruleOf40 >= 40 ? SUCCESS : DESTRUCTIVE} />
               ))}
@@ -320,7 +323,7 @@ export function IncomeStatementPanel({
           income={income}
           incomeQuarterly={incomeQuarterly}
           dataKey="totalRevenue"
-          color={PRIMARY}
+          color={DESTRUCTIVE}
           valueLabel="Revenue"
           formatValue={money}
           expanded={expanded}

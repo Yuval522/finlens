@@ -52,8 +52,8 @@ function MultiMetricCard({
   balanceQuarterly,
   options,
   currency,
-  barSize = 28,
-  maxBarSize = 36,
+  barSize = 34,
+  maxBarSize = 44,
   expanded,
   onToggle,
 }: MultiMetricCardProps) {
@@ -96,7 +96,7 @@ function MultiMetricCard({
       }
     >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
+        <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="14%">
           <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
           {/* QA fix: explicit type="category" — see IncomeStatementPanel.tsx's matching comment. */}
           <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
@@ -198,8 +198,8 @@ export function BalanceSheetPanel({ balance, balanceQuarterly = [], currency }: 
           balanceQuarterly={balanceQuarterly}
           options={DEBT_LIQUIDITY_OPTIONS}
           currency={currency}
-          barSize={36}
-          maxBarSize={48}
+          barSize={44}
+          maxBarSize={56}
           expanded={expanded}
           onToggle={toggle}
         />

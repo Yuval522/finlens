@@ -128,7 +128,22 @@ export function ChartCard({
         onClick={onToggleFullscreen}
         aria-hidden="true"
       />
-      <div className="glass-card fixed inset-4 z-[60] flex min-w-0 flex-col overflow-hidden rounded-xl p-3 shadow-2xl sm:inset-x-[8%] sm:inset-y-[6%] sm:p-4">
+      {/*
+        QA fix (tooltip cut off at the modal's right/bottom edge): this
+        wrapper used to be `overflow-hidden`, which — per the CSS spec —
+        clips ANY absolutely-positioned descendant whose box crosses this
+        element's edge, including Recharts' floating tooltip (it's an
+        absolutely-positioned sibling injected inside the chart's own
+        wrapper div, not a sibling of this element, but `overflow-hidden`
+        clips at whichever ancestor sets it, not just the immediate
+        parent). The non-fullscreen card variant above was never
+        `overflow-hidden` and never had this bug. `overflow-visible` here
+        matches that working case; rounded-xl still clips the flat card
+        background as normal; it just no longer clips a tooltip that
+        legitimately needs to render slightly outside this box near the
+        modal's edges.
+      */}
+      <div className="glass-card fixed inset-4 z-[60] flex min-w-0 flex-col overflow-visible rounded-xl p-3 shadow-2xl sm:inset-x-[8%] sm:inset-y-[6%] sm:p-4">
         {cardBody}
       </div>
     </>,

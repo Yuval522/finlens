@@ -67,6 +67,7 @@ export function mergeYearsBySource<T extends YearRow>(
   const merged = [...byYear.values()].sort((a, b) => a.fiscalYear.localeCompare(b.fiscalYear));
   logSourceBreakdown(label, symbol, merged);
   warnIfYearsLookStale(label, symbol, merged);
+  warnIfDuplicateValuesAcrossYears(label, symbol, merged);
   return merged;
 }
 
@@ -175,5 +176,59 @@ function warnIfYearsLookStale<T extends YearRow>(label: string, symbol: string, 
         `against a raw provider payload (SEC EDGAR's companyfacts API, or Yahoo's ` +
         `fundamentalsTimeSeries) before trusting it.`
     );
+  }
+}
+
+/**
+ * Dev-only fingerprint check added after a user-reported bug (NVDA's
+ * fullscreen Total Revenues chart showing "2026" = $61B, independently
+ * verified via web search to be wrong — NVIDIA's real FY2026 revenue was
+ * $215.9B, while $61B numerically matches NVIDIA's real FY2024 revenue of
+ * $60.922B almost exactly). The exact upstream root cause couldn't be
+ * pinned down without live network access to Yahoo/SEC EDGAR in this
+ * environment, and per this file's standing principle, guessing at a "fix"
+ * risks silently corrupting otherwise-correct data — worse than the
+ * original bug. This instead detects the specific fingerprint a
+ * label/merge collision of this kind would leave behind: two DIFFERENT,
+ * adjacent fiscal-year rows carrying the same (or near-identical) value
+ * for the same large-magnitude metric. Real companies essentially never
+ * report an unchanged dollar figure for revenue/income two years running,
+ * so a match here is far more likely to mean one row's fiscal-year label
+ * is wrong than a genuine flat year.
+ */
+function warnIfDuplicateValuesAcrossYears<T extends YearRow>(label: string, symbol: string, rows: T[]): void {
+  if (process.env.NODE_ENV === "production") return;
+  if (rows.length < 2) return;
+  // Compare only adjacent rows in the sorted timeline — a same-value
+  // collision between neighboring years is the specific signature of a
+  // labeling/merge bug; comparing every pair against every other pair
+  // would also flag distant, coincidentally-similar years far more often
+  // (e.g. a slow-growth company's revenue five years apart).
+  for (let i = 1; i < rows.length; i++) {
+    const prev = rows[i - 1];
+    const cur = rows[i];
+    if (prev.fiscalYear === cur.fiscalYear) continue;
+    for (const key of Object.keys(cur) as (keyof T)[]) {
+      if (key === "fiscalYear" || key === "dataSource") continue;
+      const a = prev[key];
+      const b = cur[key];
+      if (typeof a !== "number" || typeof b !== "number") continue;
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+      // Ignore sub-$1M values — many statement fields legitimately sit at
+      // (or near) zero across multiple years, e.g. a debt-free company's
+      // totalDebt. Only large-magnitude duplicates are statistically
+      // implausible enough by chance to be worth flagging.
+      if (Math.abs(a) < 1_000_000) continue;
+      const relDiff = Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b));
+      if (relDiff < 0.001) {
+        console.warn(
+          `[FinLens] ${label}(${symbol}): "${String(key)}" is nearly identical in ` +
+            `${prev.fiscalYear} (${a.toLocaleString("en-US")}) and ${cur.fiscalYear} ` +
+            `(${b.toLocaleString("en-US")}) — possible fiscal-year label/merge collision ` +
+            `rather than a genuine flat year-over-year figure. Verify against a raw ` +
+            `provider payload before trusting either row.`
+        );
+      }
+    }
   }
 }
