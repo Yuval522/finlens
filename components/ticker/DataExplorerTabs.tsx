@@ -111,6 +111,32 @@ export function DataExplorerTabs({
   const [tab, setTab] = useState<Tab>("Income");
   const latestIncome = income[income.length - 1];
 
+  // Bug fix (reported: chart Range/View/Filter settings "reset" when
+  // switching tabs and back): every panel below used to be gated purely by
+  // `tab === "X" && <Panel/>`, which *unmounts* the non-active panel
+  // entirely rather than just hiding it. Each panel's chart controls live
+  // in per-card `useState` (see useChartControls.ts) scoped to that
+  // component instance — unmounting destroys that state outright, so
+  // navigating Income -> Balance -> Income silently reset Income's cards
+  // back to their defaults. This looked like "another action overrode my
+  // setting" but was actually a mount/unmount lifecycle issue, not state
+  // leaking between cards.
+  //
+  // Fix: track which tabs have ever been opened and, once a tab has been
+  // visited, keep its panel mounted for the rest of this page's lifetime —
+  // only its visibility (via the `hidden` utility class, not conditional
+  // rendering) toggles when switching away. A panel still only mounts the
+  // *first* time its tab is opened, so tabs the user never visits (e.g. AI
+  // Insights, Reports) still incur zero cost until then, and nothing
+  // renders into a hidden container on its very first paint (avoids the
+  // classic "chart measures 0-width because it first rendered while
+  // display:none" failure mode some chart libraries have).
+  const [visitedTabs, setVisitedTabs] = useState<Set<Tab>>(() => new Set<Tab>(["Income"]));
+  function selectTab(t: Tab) {
+    setTab(t);
+    setVisitedTabs((prev) => (prev.has(t) ? prev : new Set(prev).add(t)));
+  }
+
   const tabStripRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -191,7 +217,7 @@ export function DataExplorerTabs({
               role="tab"
               aria-selected={active}
               onClick={(e) => {
-                setTab(t);
+                selectTab(t);
                 e.currentTarget.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
               }}
               // Design-audit fix: a saturated primary-blue fill on the active
@@ -216,49 +242,73 @@ export function DataExplorerTabs({
       </div>
 
       <div className="mt-4">
-        {tab === "Income" && (
-          <IncomeStatementPanel
-            income={income}
-            cashFlow={cashFlow}
-            incomeQuarterly={incomeQuarterly}
-            cashFlowQuarterly={cashFlowQuarterly}
-            currency={reportingCurrency}
-          />
+        {visitedTabs.has("Income") && (
+          <div className={tab === "Income" ? undefined : "hidden"}>
+            <IncomeStatementPanel
+              income={income}
+              cashFlow={cashFlow}
+              incomeQuarterly={incomeQuarterly}
+              cashFlowQuarterly={cashFlowQuarterly}
+              currency={reportingCurrency}
+            />
+          </div>
         )}
-        {tab === "Balance" && (
-          <BalanceSheetPanel balance={balance} balanceQuarterly={balanceQuarterly} currency={reportingCurrency} />
+        {visitedTabs.has("Balance") && (
+          <div className={tab === "Balance" ? undefined : "hidden"}>
+            <BalanceSheetPanel balance={balance} balanceQuarterly={balanceQuarterly} currency={reportingCurrency} />
+          </div>
         )}
-        {tab === "Cash Flow" && (
-          <CashFlowPanel cashFlow={cashFlow} cashFlowQuarterly={cashFlowQuarterly} currency={reportingCurrency} />
+        {visitedTabs.has("Cash Flow") && (
+          <div className={tab === "Cash Flow" ? undefined : "hidden"}>
+            <CashFlowPanel cashFlow={cashFlow} cashFlowQuarterly={cashFlowQuarterly} currency={reportingCurrency} />
+          </div>
         )}
-        {tab === "Estimates" && (
-          <EstimatesPanel estimates={estimates} currency={reportingCurrency} />
+        {visitedTabs.has("Estimates") && (
+          <div className={tab === "Estimates" ? undefined : "hidden"}>
+            <EstimatesPanel estimates={estimates} currency={reportingCurrency} />
+          </div>
         )}
-        {tab === "Compare" && <ComparePanel initialSymbol={quote.symbol} />}
-        {tab === "Valuation" && latestIncome && (
-          <ValuationCalculator
-            baseRevenue={latestIncome.totalRevenue}
-            sharesOutstanding={latestIncome.sharesOutstandingDiluted}
-            currentNetMargin={metrics.margins.netIncomeMargin}
-            currentPE={metrics.financials.peRatio}
-            currentPrice={quote.price != null ? toDisplayUnit(quote.price, quote.currency) : null}
-            marketCap={quote.marketCap != null ? toDisplayUnit(quote.marketCap, quote.currency) : null}
-            reportingCurrency={reportingCurrency}
-            quoteCurrency={quote.currency}
-          />
+        {visitedTabs.has("Compare") && (
+          <div className={tab === "Compare" ? undefined : "hidden"}>
+            <ComparePanel initialSymbol={quote.symbol} />
+          </div>
         )}
-        {tab === "AI Insights" && (
-          <AIInsightsPanel
-            income={income}
-            balance={balance}
-            cashFlow={cashFlow}
-            estimates={estimates}
-            metrics={metrics}
-            currency={reportingCurrency}
-          />
+        {visitedTabs.has("Valuation") && latestIncome && (
+          <div className={tab === "Valuation" ? undefined : "hidden"}>
+            <ValuationCalculator
+              baseRevenue={latestIncome.totalRevenue}
+              sharesOutstanding={latestIncome.sharesOutstandingDiluted}
+              currentNetMargin={metrics.margins.netIncomeMargin}
+              currentPE={metrics.financials.peRatio}
+              currentPrice={quote.price != null ? toDisplayUnit(quote.price, quote.currency) : null}
+              marketCap={quote.marketCap != null ? toDisplayUnit(quote.marketCap, quote.currency) : null}
+              reportingCurrency={reportingCurrency}
+              quoteCurrency={quote.currency}
+            />
+          </div>
         )}
-        {tab === "Reports" && <ReportsPanel symbol={quote.symbol} />}
-        {tab === "Ratios" && <RatiosPanel income={income} balance={balance} metrics={metrics} />}
+        {visitedTabs.has("AI Insights") && (
+          <div className={tab === "AI Insights" ? undefined : "hidden"}>
+            <AIInsightsPanel
+              income={income}
+              balance={balance}
+              cashFlow={cashFlow}
+              estimates={estimates}
+              metrics={metrics}
+              currency={reportingCurrency}
+            />
+          </div>
+        )}
+        {visitedTabs.has("Reports") && (
+          <div className={tab === "Reports" ? undefined : "hidden"}>
+            <ReportsPanel symbol={quote.symbol} />
+          </div>
+        )}
+        {visitedTabs.has("Ratios") && (
+          <div className={tab === "Ratios" ? undefined : "hidden"}>
+            <RatiosPanel income={income} balance={balance} metrics={metrics} />
+          </div>
+        )}
       </div>
     </div>
   );
