@@ -419,6 +419,38 @@ type SeriesFn = (facts: Record<string, XbrlConceptFacts> | undefined, tags: stri
  * Builds either the annual or quarterly Income Statement series, depending
  * on which `series` function (annualSeries/quarterlySeries) is passed —
  * same tag list and merge logic either way, just a different period filter.
+ *
+ * Bug fix (reported: "Gross Profit shows as 0/flat for Google/Alphabet
+ * while Total Revenues and Operating Income populate correctly"): root
+ * cause confirmed by re-reading how XBRL tagging actually works — unlike
+ * Revenues/OperatingIncomeLoss/NetIncomeLoss (all real line items on
+ * essentially every filer's income statement, so essentially every filer
+ * tags them), "Gross Profit" is only tagged by companies whose income
+ * statement actually presents a Gross Profit subtotal line. Alphabet's
+ * (like many tech/services companies') income statement is single-step —
+ * Revenues, then "Costs and expenses" broken into Cost of revenues / R&D /
+ * SG&A, then "Income from operations" — with no Gross Profit line at all,
+ * so `GrossProfit` is never instance-tagged in their XBRL, ever, for any
+ * year. The old code had no fallback for this: `grossProfit.get(fiscalYear)
+ * ?? 0` silently turned "this filer doesn't tag this concept" into a
+ * permanent, misleading zero on every chart.
+ *
+ * This is a single-tag problem with an outsized effect, too: because
+ * mergeYearsBySource (aggregate.ts) picks one source's *entire* row for a
+ * given fiscal year rather than blending fields across sources, a filer
+ * like this having Revenue/OperatingIncome/NetIncome tagged (so SEC EDGAR
+ * "wins" that year against Yahoo/FMP) means its flat-zero Gross Profit
+ * wins right along with it — Yahoo's data for that same year is never
+ * consulted to patch just that one field, even if Yahoo happens to have a
+ * usable number.
+ *
+ * Fix: derive Gross Profit = Revenue - Cost of Revenue whenever the direct
+ * `GrossProfit` tag is missing for a specific period (checked per-period,
+ * not just "does this filer ever tag it," since some filers change their
+ * statement presentation across years). Applied the identical fallback
+ * pattern one level up for Operating Income (via `CostsAndExpenses`) for
+ * the rarer filer that doesn't even tag that subtotal, per the same
+ * "comprehensive fallbacks so no core chart silently zeroes out" goal.
  */
 function toSecIncomeRows(facts: Record<string, XbrlConceptFacts> | undefined, series: SeriesFn): IncomeStatementYear[] {
   const revenue = series(facts, [
@@ -427,12 +459,36 @@ function toSecIncomeRows(facts: Record<string, XbrlConceptFacts> | undefined, se
     "RevenueFromContractWithCustomerIncludingAssessedTax",
     "SalesRevenueNet",
     "SalesRevenueGoodsNet",
+    "SalesRevenueServicesNet",
+    "RevenuesNetOfInterestExpense",
   ]);
-  const grossProfit = series(facts, ["GrossProfit"]);
-  const operatingIncome = series(facts, ["OperatingIncomeLoss"]);
+  const grossProfitTagged = series(facts, ["GrossProfit"]);
+  // Fallback derivation source for filers that never tag GrossProfit at
+  // all (see doc comment above) — checked in priority order, since a
+  // filer's chosen "cost" tag can vary by industry (goods vs. services vs.
+  // a blended cost-of-revenue line).
+  const costOfRevenue = series(facts, [
+    "CostOfRevenue",
+    "CostOfGoodsAndServicesSold",
+    "CostOfGoodsSold",
+    "CostOfServices",
+    "CostOfGoodsSoldExcludingDepreciationDepletionAndAmortization",
+  ]);
+  const operatingIncomeTagged = series(facts, ["OperatingIncomeLoss"]);
+  // Fallback derivation source for the rarer filer that doesn't tag an
+  // operating-income subtotal either — same rationale as Gross Profit.
+  const costsAndExpenses = series(facts, ["CostsAndExpenses"]);
   const netIncome = series(facts, ["NetIncomeLoss", "ProfitLoss"]);
-  const eps = series(facts, ["EarningsPerShareDiluted"], "USD/shares");
-  const shares = series(facts, ["WeightedAverageNumberOfDilutedSharesOutstanding"], "shares");
+  const eps = series(facts, ["EarningsPerShareDiluted", "EarningsPerShareBasicAndDiluted"], "USD/shares");
+  const shares = series(
+    facts,
+    [
+      "WeightedAverageNumberOfDilutedSharesOutstanding",
+      "WeightedAverageNumberOfDilutedAndBasicSharesOutstanding",
+      "WeightedAverageNumberOfSharesOutstandingBasic",
+    ],
+    "shares"
+  );
   const dividends = series(
     facts,
     ["CommonStockDividendsPerShareDeclared", "CommonStockDividendsPerShareCashPaid"],
@@ -447,11 +503,23 @@ function toSecIncomeRows(facts: Record<string, XbrlConceptFacts> | undefined, se
     // Require at least revenue or net income to exist — a period with
     // neither isn't a real data point, just noise from a stray tag.
     if (totalRevenue == null && netIncomeVal == null) continue;
+
+    const grossProfitVal =
+      grossProfitTagged.get(fiscalYear) ??
+      (totalRevenue != null && costOfRevenue.has(fiscalYear)
+        ? totalRevenue - costOfRevenue.get(fiscalYear)!
+        : undefined);
+    const operatingIncomeVal =
+      operatingIncomeTagged.get(fiscalYear) ??
+      (totalRevenue != null && costsAndExpenses.has(fiscalYear)
+        ? totalRevenue - costsAndExpenses.get(fiscalYear)!
+        : undefined);
+
     rows.push({
       fiscalYear,
       totalRevenue: totalRevenue ?? 0,
-      grossProfit: grossProfit.get(fiscalYear) ?? 0,
-      operatingIncome: operatingIncome.get(fiscalYear) ?? 0,
+      grossProfit: grossProfitVal ?? 0,
+      operatingIncome: operatingIncomeVal ?? 0,
       netIncome: netIncomeVal ?? 0,
       eps: eps.get(fiscalYear) ?? 0,
       sharesOutstandingDiluted: shares.get(fiscalYear) ?? 0,
@@ -462,6 +530,18 @@ function toSecIncomeRows(facts: Record<string, XbrlConceptFacts> | undefined, se
   return rows.sort((a, b) => a.fiscalYear.localeCompare(b.fiscalYear));
 }
 
+/**
+ * Note on the one gap here that isn't fixable with a tag fallback:
+ * `AssetsCurrent`/`LiabilitiesCurrent` (current assets/liabilities) are
+ * genuinely absent from the XBRL of filers that don't present a classified
+ * balance sheet at all — banks and other financial institutions, by
+ * standard industry convention, don't split assets/liabilities into
+ * current/noncurrent (a bank's balance sheet is ordered by liquidity
+ * instead). There is no alternate us-gaap tag that means the same thing
+ * for those filers; the 0 those fields fall back to for such a company
+ * reflects a genuine absence in the underlying filing, not a mapping bug.
+ * Every other field below has real fallback tag variants.
+ */
 function toSecBalanceRows(facts: Record<string, XbrlConceptFacts> | undefined, series: SeriesFn): BalanceSheetYear[] {
   const totalAssets = series(facts, ["Assets"]);
   const totalLiabilities = series(facts, ["Liabilities"]);
@@ -515,8 +595,15 @@ function toSecCashFlowRows(facts: Record<string, XbrlConceptFacts> | undefined, 
   // stores it negative, so it's negated below to stay consistent for every
   // consumer (charts, freeCashFlow math) regardless of which source a given
   // period came from.
-  const capex = series(facts, ["PaymentsToAcquirePropertyPlantAndEquipment", "PaymentsForCapitalImprovements"]);
-  const stockBasedComp = series(facts, ["ShareBasedCompensation"]);
+  const capex = series(facts, [
+    "PaymentsToAcquirePropertyPlantAndEquipment",
+    "PaymentsForCapitalImprovements",
+    "PaymentsToAcquireProductiveAssets",
+  ]);
+  // "ShareBasedCompensation" is the common tag, but a number of large
+  // filers (several under the same "big tech" umbrella as the Gross Profit
+  // fix above) file this concept under "AllocatedShareBasedCompensationExpense" instead.
+  const stockBasedComp = series(facts, ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense"]);
   const netIncome = series(facts, ["NetIncomeLoss", "ProfitLoss"]);
 
   const periods = new Set([...operatingCashFlow.keys(), ...netIncome.keys()]);
