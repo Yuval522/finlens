@@ -5,6 +5,13 @@ import type { MarketQuote } from "@/lib/finance/types";
 
 interface PriceHeaderBlockProps {
   quote: MarketQuote;
+  /**
+   * Live Trading Feed tick (see useLiveQuotes) — when present, the main
+   * price briefly flashes green/red on an actual poll-to-poll price
+   * movement. Omitted on static/non-live render paths (e.g. server-only
+   * previews), which simply show no flash.
+   */
+  flash?: { direction: "up" | "down" | "flat"; key: number };
 }
 
 const DIRECTION_GLYPH = { up: ArrowUp, down: ArrowDown, flat: Minus } as const;
@@ -23,7 +30,7 @@ function formatTimestamp(asOf: number | null, timezone: string | null): string |
   }
 }
 
-export function PriceHeaderBlock({ quote }: PriceHeaderBlockProps) {
+export function PriceHeaderBlock({ quote, flash }: PriceHeaderBlockProps) {
   const direction = changeDirection(quote.change);
   const DirectionIcon = DIRECTION_GLYPH[direction];
 
@@ -33,6 +40,17 @@ export function PriceHeaderBlock({ quote }: PriceHeaderBlockProps) {
     quote.postMarketPrice != null;
 
   const regularTimestamp = formatTimestamp(quote.asOf, quote.timezone);
+
+  const priceFlashClass =
+    flash?.direction === "up" ? "price-flash-up" : flash?.direction === "down" ? "price-flash-down" : undefined;
+
+  const showDayRange = quote.dayOpen != null || quote.dayHigh != null || quote.dayLow != null || quote.previousClose != null;
+  const DAY_RANGE_FIELDS: { label: string; value: number | null }[] = [
+    { label: "Open", value: quote.dayOpen },
+    { label: "Day High", value: quote.dayHigh },
+    { label: "Day Low", value: quote.dayLow },
+    { label: "Prev Close", value: quote.previousClose },
+  ];
 
   return (
     <div className="glass-card rounded-2xl p-4 sm:p-5">
@@ -48,7 +66,13 @@ export function PriceHeaderBlock({ quote }: PriceHeaderBlockProps) {
         string length, not just when wrapping happens to kick in.
       */}
       <div className="flex flex-col items-start gap-1">
-        <span className="font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+        <span
+          key={flash?.key ?? 0}
+          className={cn(
+            "font-mono text-3xl font-bold tracking-tight text-foreground sm:text-4xl",
+            priceFlashClass
+          )}
+        >
           {formatPrice(quote.price, quote.currency)}
         </span>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -118,6 +142,19 @@ export function PriceHeaderBlock({ quote }: PriceHeaderBlockProps) {
               · {formatTimestamp(quote.asOf, quote.timezone)}
             </span>
           )}
+        </div>
+      )}
+
+      {showDayRange && (
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-slate-800/80 pt-2 text-xs sm:grid-cols-4">
+          {DAY_RANGE_FIELDS.map((field) => (
+            <div key={field.label} className="flex items-baseline justify-between gap-2 sm:flex-col sm:items-start sm:gap-0.5">
+              <span className="text-muted-foreground">{field.label}</span>
+              <span className="font-mono font-medium text-foreground">
+                {formatPrice(field.value, quote.currency)}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -194,6 +194,41 @@ body {
   min-width: 0;
 }
 
+/* ---------------------------------------------------------------------- */
+/* Live Trading Feed — price tick flash animations                        */
+/* Fired by giving the flashing element a fresh `key` (see useLiveQuotes'  */
+/* flashKey) whenever a symbol's price actually changes between polls, so  */
+/* React mounts a brand-new node and the animation always replays — even   */
+/* on back-to-back ticks in the same direction, which a plain class toggle */
+/* wouldn't retrigger since the className string wouldn't change. Animates */
+/* background-color only (not layout-affecting properties), so it can't    */
+/* cause reflow/jank on a card that's re-flashing every few seconds.       */
+/* ---------------------------------------------------------------------- */
+@keyframes price-flash-up {
+  0% {
+    background-color: hsl(var(--success) / 0.32);
+  }
+  100% {
+    background-color: hsl(var(--success) / 0);
+  }
+}
+@keyframes price-flash-down {
+  0% {
+    background-color: hsl(var(--destructive) / 0.32);
+  }
+  100% {
+    background-color: hsl(var(--destructive) / 0);
+  }
+}
+.price-flash-up {
+  animation: price-flash-up 1000ms ease-out;
+  border-radius: 0.375rem;
+}
+.price-flash-down {
+  animation: price-flash-down 1000ms ease-out;
+  border-radius: 0.375rem;
+}
+
 /* Horizontal scrollable tab strip — no visible scrollbar, touch-friendly */
 .tab-scroll {
   overflow-x: auto;

@@ -116,6 +116,10 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       postMarketPrice: 196.9,
       postMarketChange: 0.48,
       postMarketChangePercent: 0.24,
+      dayOpen: 194.85,
+      dayHigh: 197.1,
+      dayLow: 194.2,
+      previousClose: 194.57,
     },
     profile: {
       sector: "Technology",
@@ -221,6 +225,10 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       postMarketPrice: null,
       postMarketChange: null,
       postMarketChangePercent: null,
+      dayOpen: 140.05,
+      dayHigh: 141.3,
+      dayLow: 137.9,
+      previousClose: 140.86,
     },
     profile: {
       sector: "Technology",
@@ -327,6 +335,10 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       postMarketPrice: null,
       postMarketChange: null,
       postMarketChangePercent: null,
+      dayOpen: 6790,
+      dayHigh: 6855,
+      dayLow: 6765,
+      previousClose: 6775,
     },
     profile: {
       sector: "Healthcare",
@@ -452,6 +464,10 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       postMarketPrice: null,
       postMarketChange: null,
       postMarketChangePercent: null,
+      dayOpen: 2_136_800,
+      dayHigh: 2_145_900,
+      dayLow: 2_134_100,
+      previousClose: 2_134_120,
     },
     profile: {
       sector: null,

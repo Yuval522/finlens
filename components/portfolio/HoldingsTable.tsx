@@ -6,11 +6,14 @@ import { formatPercent } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
 import { computeHolding, type HoldingComputed } from "@/lib/portfolio/derive";
 import type { PortfolioHolding } from "@/lib/portfolio/store";
+import type { LiveQuoteTick } from "@/lib/finance/useLiveQuotes";
 import { CompanyLogo } from "@/components/dashboard/CompanyLogo";
 
 interface HoldingsTableProps {
   holdings: PortfolioHolding[];
   onRemove: (symbol: string) => void;
+  /** Live Trading Feed ticks keyed by symbol (see useLiveQuotes) — flashes the Current Price cell green/red on an actual poll-to-poll move. Optional so the table still renders fine without a live feed wired up. */
+  ticks?: Map<string, LiveQuoteTick>;
 }
 
 type SortKey =
@@ -48,7 +51,7 @@ function money(v: number): string {
  * by that column, toggling ascending/descending on repeat clicks — matches
  * the confirmed-sortable "Gain/Loss" header behavior from the reference.
  */
-export function HoldingsTable({ holdings, onRemove }: HoldingsTableProps) {
+export function HoldingsTable({ holdings, onRemove, ticks }: HoldingsTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("positionValue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -120,6 +123,13 @@ export function HoldingsTable({ holdings, onRemove }: HoldingsTableProps) {
           <tbody>
             {sorted.map((h) => {
               const gainUp = h.gainLoss >= 0;
+              const tick = ticks?.get(h.symbol);
+              const priceFlashClass =
+                tick?.direction === "up"
+                  ? "price-flash-up"
+                  : tick?.direction === "down"
+                    ? "price-flash-down"
+                    : undefined;
               return (
                 <tr key={h.symbol} className="border-b border-slate-800/60 last:border-0">
                   <td className="px-2 py-2.5">
@@ -133,7 +143,11 @@ export function HoldingsTable({ holdings, onRemove }: HoldingsTableProps) {
                   <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
                     {money(h.purchasePrice)}
                   </td>
-                  <td className="px-2 py-2.5 text-right font-mono text-foreground">{money(h.currentPrice)}</td>
+                  <td className="px-2 py-2.5 text-right font-mono text-foreground">
+                    <span key={tick?.flashKey ?? 0} className={cn("inline-block px-1", priceFlashClass)}>
+                      {money(h.currentPrice)}
+                    </span>
+                  </td>
                   <td className="px-2 py-2.5 text-right font-mono font-semibold text-foreground">
                     {money(h.positionValue)}
                   </td>

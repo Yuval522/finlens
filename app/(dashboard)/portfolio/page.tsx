@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Briefcase, Plus } from "lucide-react";
 import { usePortfolio } from "@/lib/portfolio/store";
+import type { PortfolioHolding } from "@/lib/portfolio/store";
 import { computePortfolioTotals, USD_TO_ILS_RATE } from "@/lib/portfolio/derive";
-import { formatPercent } from "@/lib/format/currency";
+import { formatPercent, toDisplayUnit } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
 import { useBackgroundRefresh } from "@/lib/finance/useBackgroundRefresh";
+import { useLiveQuotes } from "@/lib/finance/useLiveQuotes";
 import { CurrencyToggle } from "@/components/portfolio/CurrencyToggle";
 import { AddStockModal } from "@/components/portfolio/AddStockModal";
 import { PortfolioValueChart } from "@/components/portfolio/PortfolioValueChart";
@@ -40,9 +42,35 @@ export default function PortfolioPage() {
   // loaded. Re-runs the same refreshLivePrices() quietly on window focus,
   // tab visibility, and a gentle 60s interval — see useBackgroundRefresh's
   // doc comment. Disabled entirely when there are no holdings to refresh.
+  // This remains the path that *persists* currentPrice to localStorage, so
+  // a reload still shows a real last-known price instead of the seed data.
   useBackgroundRefresh(refreshLivePrices, { intervalMs: 60_000, enabled: holdings.length > 0 });
 
-  const totals = computePortfolioTotals(holdings, cash);
+  // Live Trading Feed: a much faster (~7s) polling overlay purely for
+  // on-screen display + the green/red tick flash — deliberately separate
+  // from refreshLivePrices' slower, persisted 60s refresh above. Holdings
+  // rendered below merge in whatever this has last polled, falling back to
+  // the store's own currentPrice/changePercent for any symbol it hasn't
+  // heard from yet (e.g. the very first render, before the first poll
+  // resolves).
+  const symbols = useMemo(() => holdings.map((h) => h.symbol), [holdings]);
+  const { ticks } = useLiveQuotes(symbols, { intervalMs: 7000, enabled: holdings.length > 0 });
+
+  const displayHoldings: PortfolioHolding[] = useMemo(
+    () =>
+      holdings.map((h) => {
+        const tick = ticks.get(h.symbol);
+        if (!tick || tick.quote.price == null) return h;
+        return {
+          ...h,
+          currentPrice: toDisplayUnit(tick.quote.price, tick.quote.currency),
+          changePercent: tick.quote.changePercent ?? h.changePercent,
+        };
+      }),
+    [holdings, ticks]
+  );
+
+  const totals = computePortfolioTotals(displayHoldings, cash);
   const hasHoldings = holdings.length > 0;
 
   const fxMultiplier = displayCurrency === "USD" ? 1 : USD_TO_ILS_RATE;
@@ -153,9 +181,9 @@ export default function PortfolioPage() {
         <>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <PortfolioValueChart startValue={totals.totalCostBasis} endValue={totals.totalPositionValue} />
-            <AssetAllocationChart holdings={holdings} totalCashUsd={totals.totalCashUsd} />
+            <AssetAllocationChart holdings={displayHoldings} totalCashUsd={totals.totalCashUsd} />
           </div>
-          <HoldingsTable holdings={holdings} onRemove={removeHolding} />
+          <HoldingsTable holdings={displayHoldings} onRemove={removeHolding} ticks={ticks} />
         </>
       ) : (
         <div className="glass-card flex flex-col items-center justify-center gap-3 rounded-2xl !border-dashed py-24 text-center">

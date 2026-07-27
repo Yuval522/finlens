@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import { IndexCard } from "@/components/dashboard/IndexCard";
 import { MarketQuoteCard } from "@/components/dashboard/MarketQuoteCard";
+import type { LiveQuoteTick } from "@/lib/finance/useLiveQuotes";
 import type { MarketQuote } from "@/lib/finance/types";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,8 @@ interface QuoteCardGridProps {
   icon?: LucideIcon;
   /** Tailwind bg/text classes for the icon's rounded-square badge, e.g. "bg-blue-500/15 text-blue-400". */
   iconClassName?: string;
+  /** Live Trading Feed ticks keyed by symbol (see useLiveQuotes) — optional, so sections that don't poll live (Market Summary, Most Active) render unchanged. */
+  ticks?: Map<string, LiveQuoteTick>;
 }
 
 // QA hotfix (Phase 4, re-tuned in Final Polish pass, widened again in the
@@ -46,6 +49,7 @@ export function QuoteCardGrid({
   emptyMessage = "No data available.",
   icon: Icon,
   iconClassName,
+  ticks,
 }: QuoteCardGridProps) {
   return (
     <section>
@@ -80,9 +84,17 @@ export function QuoteCardGrid({
       <div className={cn("grid gap-4", columnsClassName)}>
         {quotes === null
           ? Array.from({ length: slots }).map((_, i) => <IndexCard key={i} />)
-          : quotes.map((q) => (
-              <MarketQuoteCard key={q.symbol} quote={q} showWatchlistToggle={showWatchlistToggle} />
-            ))}
+          : quotes.map((q) => {
+              const tick = ticks?.get(q.symbol);
+              return (
+                <MarketQuoteCard
+                  key={q.symbol}
+                  quote={tick?.quote ?? q}
+                  showWatchlistToggle={showWatchlistToggle}
+                  flash={tick ? { direction: tick.direction, key: tick.flashKey } : undefined}
+                />
+              );
+            })}
       </div>
 
       {quotes !== null && quotes.length === 0 && !error && (

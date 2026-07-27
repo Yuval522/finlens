@@ -38,6 +38,18 @@ export interface MarketQuote {
   postMarketPrice: number | null;
   postMarketChange: number | null;
   postMarketChangePercent: number | null;
+  /**
+   * Today's session OHLC + prior close, for the Live Trading Feed's Day
+   * Range strip (PriceHeaderBlock) — sourced from Yahoo's
+   * regularMarketOpen/DayHigh/DayLow/PreviousClose fields (see
+   * toMarketQuote() in yahoo.ts). Optional/nullable since mock data and
+   * some thin instruments (indices without a conventional day range) may
+   * not have all four.
+   */
+  dayOpen: number | null;
+  dayHigh: number | null;
+  dayLow: number | null;
+  previousClose: number | null;
 }
 
 export interface SearchResultItem {

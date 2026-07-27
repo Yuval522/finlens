@@ -14,6 +14,8 @@ interface MarketQuoteCardProps {
   quote: MarketQuote;
   /** Opt-in — the /watchlist page needs a remove affordance on every card; Market Summary/Most Active don't ask for one. */
   showWatchlistToggle?: boolean;
+  /** Live Trading Feed tick (see useLiveQuotes) — flashes the price green/red on an actual poll-to-poll move. Omitted on sections that don't poll live (kept optional so existing call sites need no change). */
+  flash?: { direction: "up" | "down" | "flat"; key: number };
 }
 
 const DIRECTION_GLYPH = { up: ArrowUp, down: ArrowDown, flat: Minus } as const;
@@ -27,9 +29,11 @@ const DIRECTION_GLYPH = { up: ArrowUp, down: ArrowDown, flat: Minus } as const;
  * whitespace/typographic hierarchy instead of packing everything into one
  * tight row.
  */
-export function MarketQuoteCard({ quote, showWatchlistToggle = false }: MarketQuoteCardProps) {
+export function MarketQuoteCard({ quote, showWatchlistToggle = false, flash }: MarketQuoteCardProps) {
   const direction = changeDirection(quote.change);
   const DirectionIcon = DIRECTION_GLYPH[direction];
+  const priceFlashClass =
+    flash?.direction === "up" ? "price-flash-up" : flash?.direction === "down" ? "price-flash-down" : undefined;
 
   return (
     <Link
@@ -81,7 +85,7 @@ export function MarketQuoteCard({ quote, showWatchlistToggle = false }: MarketQu
         is vertically centered and can otherwise start almost level with it.
       */}
       <div className="flex shrink-0 flex-col items-end gap-0.5 pr-6 pt-0.5">
-        <p className="font-mono text-base font-bold text-foreground">
+        <p key={flash?.key ?? 0} className={cn("font-mono text-base font-bold text-foreground", priceFlashClass)}>
           {formatPrice(quote.price, quote.currency)}
         </p>
         <p

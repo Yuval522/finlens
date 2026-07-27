@@ -104,6 +104,10 @@ function toMarketQuote(q: Record<string, unknown>): MarketQuote {
     postMarketPrice: num(q.postMarketPrice),
     postMarketChange: num(q.postMarketChange),
     postMarketChangePercent: num(q.postMarketChangePercent),
+    dayOpen: num(q.regularMarketOpen),
+    dayHigh: num(q.regularMarketDayHigh),
+    dayLow: num(q.regularMarketDayLow),
+    previousClose: num(q.regularMarketPreviousClose),
   };
 }
 
