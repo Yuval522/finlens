@@ -270,21 +270,40 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       { fiscalYear: "2023", totalRevenue: 26_974_000_000, grossProfit: 15_356_000_000, operatingIncome: 5_577_000_000, netIncome: 4_368_000_000, eps: 0.17, sharesOutstandingDiluted: 24_940_000_000, dividendsPerShare: 0.04 },
       { fiscalYear: "2024", totalRevenue: 60_922_000_000, grossProfit: 44_301_000_000, operatingIncome: 32_972_000_000, netIncome: 29_760_000_000, eps: 1.19, sharesOutstandingDiluted: 24_940_000_000, dividendsPerShare: 0.04 },
       { fiscalYear: "2025", totalRevenue: 130_500_000_000, grossProfit: 97_800_000_000, operatingIncome: 81_500_000_000, netIncome: 72_900_000_000, eps: 2.94, sharesOutstandingDiluted: 24_800_000_000, dividendsPerShare: 0.04 },
-      { fiscalYear: "TTM", totalRevenue: 165_000_000_000, grossProfit: 123_400_000_000, operatingIncome: 101_500_000_000, netIncome: 90_600_000_000, eps: 3.69, sharesOutstandingDiluted: 24_600_000_000, dividendsPerShare: 0.04 },
+      // FY2026 (ended Jan 25, 2026) and TTM (through Q1 FY27, ended Apr 26,
+      // 2026) are real, exact figures pulled from NVIDIA's own press
+      // releases (sec.gov/Archives/edgar/data/1045810/000104581026000019/q4fy26pr.htm
+      // and .../000104581026000051/q1fy27pr.htm), not illustrative
+      // estimates like the rounder rows above — added after a user report
+      // that this fallback data was stale (this mock previously topped out
+      // at FY2025/an old TTM snapshot, well behind NVDA's real growth
+      // since). TTM = FY2026 full year minus Q1 FY26 plus Q1 FY27 (rolling
+      // four quarters); its $253.491B revenue lines up with the $253.49B
+      // TTM figure independently reported by a professional terminal.
+      { fiscalYear: "2026", totalRevenue: 215_938_000_000, grossProfit: 153_463_000_000, operatingIncome: 130_387_000_000, netIncome: 120_067_000_000, eps: 4.90, sharesOutstandingDiluted: 24_514_000_000, dividendsPerShare: 0.04 },
+      { fiscalYear: "TTM", totalRevenue: 253_491_000_000, grossProfit: 187_952_000_000, operatingIncome: 162_285_000_000, netIncome: 159_613_000_000, eps: 6.54, sharesOutstandingDiluted: 24_391_000_000, dividendsPerShare: 0.04 },
     ],
     balance: [
       { fiscalYear: "2022", totalAssets: 44_187_000_000, totalLiabilities: 17_575_000_000, totalStockholdersEquity: 26_612_000_000, cashAndShortTermInvestments: 21_209_000_000, totalCurrentAssets: 28_829_000_000, totalCurrentLiabilities: 4_335_000_000, totalCash: 3_389_000_000, totalDebt: 10_946_000_000 },
       { fiscalYear: "2023", totalAssets: 41_182_000_000, totalLiabilities: 19_081_000_000, totalStockholdersEquity: 22_101_000_000, cashAndShortTermInvestments: 13_296_000_000, totalCurrentAssets: 23_073_000_000, totalCurrentLiabilities: 6_563_000_000, totalCash: 3_389_000_000, totalDebt: 9_703_000_000 },
       { fiscalYear: "2024", totalAssets: 65_728_000_000, totalLiabilities: 22_750_000_000, totalStockholdersEquity: 42_978_000_000, cashAndShortTermInvestments: 25_984_000_000, totalCurrentAssets: 44_345_000_000, totalCurrentLiabilities: 10_631_000_000, totalCash: 7_280_000_000, totalDebt: 9_500_000_000 },
-      { fiscalYear: "2025", totalAssets: 110_000_000_000, totalLiabilities: 32_000_000_000, totalStockholdersEquity: 78_000_000_000, cashAndShortTermInvestments: 38_000_000_000, totalCurrentAssets: 80_000_000_000, totalCurrentLiabilities: 18_000_000_000, totalCash: 10_000_000_000, totalDebt: 10_000_000_000 },
-      { fiscalYear: "TTM", totalAssets: 125_000_000_000, totalLiabilities: 35_000_000_000, totalStockholdersEquity: 90_000_000_000, cashAndShortTermInvestments: 43_000_000_000, totalCurrentAssets: 92_000_000_000, totalCurrentLiabilities: 20_000_000_000, totalCash: 43_000_000_000, totalDebt: 10_500_000_000 },
+      { fiscalYear: "2025", totalAssets: 111_601_000_000, totalLiabilities: 32_274_000_000, totalStockholdersEquity: 79_327_000_000, cashAndShortTermInvestments: 43_210_000_000, totalCurrentAssets: 80_126_000_000, totalCurrentLiabilities: 18_047_000_000, totalCash: 8_589_000_000, totalDebt: 8_463_000_000 },
+      // FY2026 (as of Jan 25, 2026) and TTM (as of Q1 FY27, Apr 26, 2026) —
+      // real figures, same sourcing as the income statement array's doc
+      // comment above. A balance sheet is a point-in-time snapshot, not a
+      // sum over four quarters like income/cash flow, so "TTM" here is
+      // simply the latest available quarter's real balance sheet.
+      { fiscalYear: "2026", totalAssets: 206_803_000_000, totalLiabilities: 49_510_000_000, totalStockholdersEquity: 157_293_000_000, cashAndShortTermInvestments: 62_556_000_000, totalCurrentAssets: 125_605_000_000, totalCurrentLiabilities: 32_163_000_000, totalCash: 10_605_000_000, totalDebt: 8_468_000_000 },
+      { fiscalYear: "TTM", totalAssets: 259_474_000_000, totalLiabilities: 64_000_000_000, totalStockholdersEquity: 195_474_000_000, cashAndShortTermInvestments: 80_572_000_000, totalCurrentAssets: 150_995_000_000, totalCurrentLiabilities: 43_884_000_000, totalCash: 13_237_000_000, totalDebt: 8_470_000_000 },
     ],
     cashFlow: [
       { fiscalYear: "2022", operatingCashFlow: 9_108_000_000, freeCashFlow: 8_132_000_000, stockBasedCompensation: 2_004_000_000, capitalExpenditures: -1_833_000_000, netIncome: 9_752_000_000 },
       { fiscalYear: "2023", operatingCashFlow: 5_641_000_000, freeCashFlow: 3_808_000_000, stockBasedCompensation: 2_709_000_000, capitalExpenditures: -1_833_000_000, netIncome: 4_368_000_000 },
       { fiscalYear: "2024", operatingCashFlow: 28_090_000_000, freeCashFlow: 27_021_000_000, stockBasedCompensation: 3_549_000_000, capitalExpenditures: -1_069_000_000, netIncome: 29_760_000_000 },
-      { fiscalYear: "2025", operatingCashFlow: 64_000_000_000, freeCashFlow: 60_800_000_000, stockBasedCompensation: 4_800_000_000, capitalExpenditures: -3_200_000_000, netIncome: 72_900_000_000 },
-      { fiscalYear: "TTM", operatingCashFlow: 78_000_000_000, freeCashFlow: 74_000_000_000, stockBasedCompensation: 5_600_000_000, capitalExpenditures: -4_000_000_000, netIncome: 90_600_000_000 },
+      { fiscalYear: "2025", operatingCashFlow: 64_089_000_000, freeCashFlow: 60_724_000_000, stockBasedCompensation: 4_737_000_000, capitalExpenditures: -3_236_000_000, netIncome: 72_880_000_000 },
+      // FY2026 and TTM (through Q1 FY27) — real figures, same sourcing as above.
+      { fiscalYear: "2026", operatingCashFlow: 102_718_000_000, freeCashFlow: 96_575_000_000, stockBasedCompensation: 6_386_000_000, capitalExpenditures: -6_042_000_000, netIncome: 120_067_000_000 },
+      { fiscalYear: "TTM", operatingCashFlow: 125_648_000_000, freeCashFlow: 118_994_000_000, stockBasedCompensation: 6_840_000_000, capitalExpenditures: -6_572_000_000, netIncome: 159_613_000_000 },
     ],
     estimates: {
       quarterly: [

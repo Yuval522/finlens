@@ -374,6 +374,45 @@ function durationDays(entry: XbrlFactEntry): number | null {
   return (new Date(entry.end).getTime() - new Date(entry.start).getTime()) / 86_400_000;
 }
 
+/**
+ * Root-cause fix (user report: NVDA's fullscreen Total Revenues chart showed
+ * "2026" = $61B, when NVIDIA's real FY2026 revenue was $215.9B and $61B is
+ * NVIDIA's real FY2024 revenue instead — i.e. a real, correct dollar figure
+ * surviving under the WRONG, much-later fiscal-year label). Previously these
+ * two classify() functions keyed each period by `entry.fy` when present,
+ * falling back to `entry.end`'s year only if `fy` was absent.
+ *
+ * That was backwards, and is the actual bug: `fy` (XBRL's
+ * `dei:DocumentFiscalYearFocus`) is FILING-level metadata — "which fiscal
+ * year is THIS FILING reporting on" — not period-level metadata. A 10-K's
+ * income statement conventionally shows 2-3 years of comparative columns
+ * (current year + 1-2 prior years side by side), and SEC's XBRL processor
+ * tags EVERY numeric fact in that filing — including the prior-year
+ * comparative columns — with that SAME filing-level `fy`, regardless of
+ * which column's real period a given fact instance actually describes.
+ * Concretely: NVIDIA's FY2026 10-K (filed ~March 2026) shows FY2026/FY2025/
+ * FY2024 revenue side by side; ALL THREE of those facts get tagged
+ * `fy=2026` in companyfacts, because that's the filing's own fiscal-year
+ * focus — even though only one of the three genuinely IS fiscal 2026.
+ * Keying on `entry.fy` therefore filed FY2024's real, correct $60.922B
+ * figure under "2026" once the FY2026 10-K was filed, exactly matching the
+ * reported bug (and independently confirmed as a general, well-documented
+ * companyfacts quirk — SEC's API returns every duplicate instance of a
+ * fact across every filing that reports it, not just its "home" filing —
+ * see thefullstackaccountant.com/blog/intro-to-edgar, "Handling Duplicate
+ * Values in Company Concepts").
+ *
+ * `entry.end` (and `entry.start` for durations) is genuine period-level
+ * data — it's the actual reported period boundary, identical across every
+ * duplicate instance of the same real fact regardless of which filing
+ * reported it. Deriving the year label from `end` instead (matching the
+ * convention yahoo.ts's annualLabel/quarterLabel already use) makes every
+ * duplicate instance of a given real fiscal year's figure collapse onto the
+ * SAME correct key, letting periodSeries' existing "prefer most recently
+ * filed" tie-break do its intended job — pick the latest-filed value for a
+ * genuine period, instead of accidentally comparing unrelated periods that
+ * happened to share a filing's fy.
+ */
 /** Genuinely annual, as-filed 10-K/20-F entries only, keyed by fiscal year (e.g. "2023"). */
 function annualSeries(
   facts: Record<string, XbrlConceptFacts> | undefined,
@@ -387,7 +426,7 @@ function annualSeries(
       if (entry.fp !== "FY" || !ANNUAL_FORMS.has(entry.form)) return null;
       const days = durationDays(entry);
       if (days != null && (days < 300 || days > 400)) return null; // not a genuine ~1-year duration
-      return String(entry.fy ?? new Date(entry.end).getFullYear());
+      return String(new Date(entry.end).getFullYear());
     },
     unitKey
   );
@@ -406,8 +445,12 @@ function quarterlySeries(
       if (!entry.fp || !/^Q[1-4]$/.test(entry.fp) || !QUARTERLY_FORMS.has(entry.form)) return null;
       const days = durationDays(entry);
       if (days != null && (days < 70 || days > 100)) return null; // not a genuine ~1-quarter duration
-      const year = entry.fy ?? new Date(entry.end).getFullYear();
-      return `${year}-${entry.fp}`;
+      // `entry.fp` ("Q1"-"Q4") is safe to keep as-is — unlike `fy`, it does
+      // correctly identify WHICH quarter a comparative column describes
+      // (a same-quarter-prior-year comparison is still tagged with that
+      // quarter's own fp). Only the YEAR component had the entry.fy bug —
+      // see this function pair's shared doc comment above.
+      return `${new Date(entry.end).getFullYear()}-${entry.fp}`;
     },
     unitKey
   );
