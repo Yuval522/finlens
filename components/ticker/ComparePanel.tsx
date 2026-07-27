@@ -184,10 +184,19 @@ function AddTickerSearch({
         onFocus={() => setOpen(true)}
         placeholder="Add a ticker to compare..."
         className="w-full rounded-md border border-border bg-card py-1.5 pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        // Same fix as SymbolSearchInput: stop the browser's own field-
+        // history/autofill suggestion box from rendering on top of this
+        // dropdown and swallowing clicks meant for it.
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        data-lpignore="true"
+        data-1p-ignore="true"
       />
       {loading && <Loader2 className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />}
       {open && query.trim() && (
-        <div className="glass-panel absolute left-0 right-0 top-9 z-50 max-h-64 overflow-y-auto rounded-md border border-border shadow-xl">
+        <div className="search-dropdown-panel absolute left-0 right-0 top-9 z-50 max-h-64 divide-y divide-border/60 overflow-y-auto rounded-md border border-border shadow-xl">
           {!loading && results.length === 0 && (
             <p className="px-3 py-2 text-xs text-muted-foreground">No matches</p>
           )}
@@ -195,8 +204,16 @@ function AddTickerSearch({
             <button
               key={r.symbol}
               type="button"
-              onClick={() => select(r.symbol)}
-              className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs hover:bg-accent"
+              onMouseDown={(e) => {
+                // mousedown (not click) — consistent with the other two
+                // search comboboxes, so selection always fires before any
+                // blur/outside-click handler could close this dropdown out
+                // from under the click.
+                e.preventDefault();
+                e.stopPropagation();
+                select(r.symbol);
+              }}
+              className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left text-xs transition-colors hover:bg-white/[0.08]"
             >
               <span className="font-mono font-medium text-foreground">{r.symbol}</span>
               <span className="truncate text-muted-foreground">{r.name}</span>

@@ -31,13 +31,29 @@ export function SymbolSearchResultRow({
       role="option"
       aria-selected={active}
       onMouseDown={(e) => {
-        // mousedown (not click) so this fires before the input's blur handler closes the list
+        // mousedown (not click) so this fires before the input's blur handler closes the list.
+        // stopPropagation is defensive: without it, this same mousedown also
+        // bubbles up to the document-level "click outside" listener that
+        // closes the dropdown — harmless today since that listener already
+        // no-ops for clicks inside the container, but stopping it here means
+        // selection can never race a future outside-click handler.
         e.preventDefault();
+        e.stopPropagation();
         onSelect(result);
       }}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors",
-        active ? "bg-accent" : "hover:bg-accent/60"
+        // UI/UX audit fix: hover used to be hover:bg-accent/60 (a 60%-alpha
+        // tint of an already-dark --accent token) sitting on top of the
+        // then-semi-transparent dropdown panel — two layers of partial
+        // opacity stacked made the highlight easy to miss. Now that the
+        // panel itself is fully opaque (search-dropdown-panel, see parent),
+        // hover gets a clearly visible, immediate solid-ish highlight
+        // instead; kept distinct from the stronger `active` (keyboard-
+        // selected) state so mouse-hover and keyboard-focus don't look
+        // identical. py-2.5 -> py-3.5 widens row spacing per the same
+        // audit's "increase padding for readability" request.
+        "flex w-full cursor-pointer items-center gap-3 px-3 py-3.5 text-left transition-colors",
+        active ? "bg-accent" : "hover:bg-white/[0.08]"
       )}
     >
       <div className="flex min-w-0 flex-1 items-center gap-2">

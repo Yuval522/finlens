@@ -108,12 +108,21 @@ function TickerCombobox({
         onFocus={() => setOpen(true)}
         placeholder="Search by symbol or company name..."
         className="w-full rounded-md border border-border bg-card py-2 pl-9 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+        // Same fix as SymbolSearchInput: stop the browser's own field-
+        // history/autofill suggestion box from rendering on top of this
+        // dropdown and swallowing clicks meant for it.
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        data-lpignore="true"
+        data-1p-ignore="true"
       />
       {loading && (
         <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
       )}
       {open && query.trim() && (
-        <div className="glass-panel absolute left-0 right-0 top-11 z-10 max-h-56 overflow-y-auto rounded-md border border-border shadow-xl">
+        <div className="search-dropdown-panel absolute left-0 right-0 top-11 z-10 max-h-56 divide-y divide-border/60 overflow-y-auto rounded-md border border-border shadow-xl">
           {!loading && results.length === 0 && (
             <p className="px-3 py-3 text-sm text-muted-foreground">No matches for &ldquo;{query.trim()}&rdquo;</p>
           )}
@@ -124,12 +133,13 @@ function TickerCombobox({
               // mousedown fires before the input's blur/click-outside handler closes the list
               onMouseDown={(e) => {
                 e.preventDefault();
+                e.stopPropagation();
                 onSelect(r);
                 setQuery("");
                 setResults([]);
                 setOpen(false);
               }}
-              className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/60"
+              className="flex w-full items-center gap-3 px-3 py-3.5 text-left transition-colors hover:bg-white/[0.08]"
             >
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm">

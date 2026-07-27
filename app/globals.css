@@ -101,6 +101,21 @@ body {
   -webkit-backdrop-filter: blur(20px);
 }
 
+/* UI/UX audit fix: search/ticker-combobox result dropdowns (Topbar search,
+   Add Stock modal, Compare tab's "add a ticker") previously reused
+   .glass-panel, which is only 82% opaque by design (it's meant to let
+   Topbar/Sidebar chrome show a hint of the page scrolling behind it). Over
+   a dense results list that read as "messy" — page content bleeding
+   through made rows harder to scan and made the already-subtle hover
+   state even harder to see. Dropdown result panels need to fully mask
+   whatever's behind them instead — this is just the opaque-background half
+   of that (border/shadow stay as the existing Tailwind utility classes
+   already applied alongside this on each dropdown, so they aren't
+   duplicated/fought over here). */
+.search-dropdown-panel {
+  background-color: hsl(var(--card));
+}
+
 /* Lighter glass treatment for individual content cards — subtle gradient
    fill + a brighter top-edge highlight so cards read as distinctly raised
    above the page background rather than blending into it. Every card gets
