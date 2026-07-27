@@ -192,6 +192,38 @@ export interface EstimatesBundle {
   annual: EstimateRow[];
 }
 
+/** Analyst rating counts for the most recent period Yahoo reports (its `recommendationTrend` module's first row, conventionally labeled "0m" — this month). */
+export interface AnalystRecommendationDistribution {
+  strongBuy: number;
+  buy: number;
+  hold: number;
+  sell: number;
+  strongSell: number;
+}
+
+/**
+ * Analyst price-target consensus (Estimates tab). Sourced from Yahoo's
+ * `financialData`/`recommendationTrend` quoteSummary modules — see
+ * toPriceTargets() in yahoo.ts. Target prices are assumed to share the same
+ * raw-unit convention as `quote.price` for that symbol (e.g. agorot for
+ * ILA-quoted TASE names) — same unverified-in-this-sandbox caveat already
+ * documented on toMetrics()/formatPrice(), so they're always rendered
+ * through the same currency-aware formatter as the header price rather than
+ * assumed to already be in display units.
+ */
+export interface AnalystPriceTargets {
+  meanTarget: number | null;
+  medianTarget: number | null;
+  highTarget: number | null;
+  lowTarget: number | null;
+  numberOfAnalysts: number | null;
+  /** Yahoo's 1 (Strong Buy) - 5 (Strong Sell) consensus scale. */
+  recommendationMean: number | null;
+  /** Yahoo's raw key, e.g. "buy", "strong_buy", "hold" — title-cased for display. */
+  recommendationKey: string | null;
+  distribution: AnalystRecommendationDistribution | null;
+}
+
 export interface PricePoint {
   /** ISO date, e.g. "2024-03-15" */
   date: string;
@@ -230,6 +262,8 @@ export interface FundamentalsBundle {
   balanceQuarterly?: BalanceSheetYear[];
   cashFlowQuarterly?: CashFlowYear[];
   estimates: EstimatesBundle;
+  /** Null when the provider has no analyst coverage for this symbol (thin/illiquid names) or on mock data that doesn't define it. */
+  priceTargets: AnalystPriceTargets | null;
   /** Daily closes, oldest first — sliced client-side per selected time range */
   history: PricePoint[];
   /**

@@ -11,6 +11,7 @@ import {
   GitCompare,
   Calculator,
   Sparkles,
+  Star,
   type LucideIcon,
 } from "lucide-react";
 import { IncomeStatementPanel } from "./IncomeStatementPanel";
@@ -22,8 +23,10 @@ import { ValuationCalculator } from "./ValuationCalculator";
 import { AIInsightsPanel } from "./AIInsightsPanel";
 import { ReportsPanel } from "./ReportsPanel";
 import { RatiosPanel } from "./RatiosPanel";
+import { ScorePanel } from "./ScorePanel";
 import { toDisplayUnit } from "@/lib/format/currency";
 import type {
+  AnalystPriceTargets,
   BalanceSheetYear,
   CashFlowYear,
   EstimatesBundle,
@@ -40,6 +43,7 @@ const TABS = [
   "Ratios",
   "Estimates",
   "Compare",
+  "Score",
   "Valuation",
   "AI Insights",
 ] as const;
@@ -57,6 +61,7 @@ const TAB_ICONS: Record<Tab, LucideIcon> = {
   Ratios: Percent,
   Estimates: Target,
   Compare: GitCompare,
+  Score: Star,
   Valuation: Calculator,
   "AI Insights": Sparkles,
 };
@@ -91,6 +96,8 @@ interface DataExplorerTabsProps {
   balanceQuarterly?: BalanceSheetYear[];
   cashFlowQuarterly?: CashFlowYear[];
   estimates: EstimatesBundle;
+  /** Null when the provider has no analyst coverage for this symbol. */
+  priceTargets: AnalystPriceTargets | null;
   reportingCurrency: string;
   quote: MarketQuote;
   metrics: TickerMetrics;
@@ -104,6 +111,7 @@ export function DataExplorerTabs({
   balanceQuarterly,
   cashFlowQuarterly,
   estimates,
+  priceTargets,
   reportingCurrency,
   quote,
   metrics,
@@ -265,12 +273,17 @@ export function DataExplorerTabs({
         )}
         {visitedTabs.has("Estimates") && (
           <div className={tab === "Estimates" ? undefined : "hidden"}>
-            <EstimatesPanel estimates={estimates} currency={reportingCurrency} />
+            <EstimatesPanel estimates={estimates} currency={reportingCurrency} quote={quote} priceTargets={priceTargets} />
           </div>
         )}
         {visitedTabs.has("Compare") && (
           <div className={tab === "Compare" ? undefined : "hidden"}>
             <ComparePanel initialSymbol={quote.symbol} />
+          </div>
+        )}
+        {visitedTabs.has("Score") && (
+          <div className={tab === "Score" ? undefined : "hidden"}>
+            <ScorePanel income={income} balance={balance} cashFlow={cashFlow} metrics={metrics} currency={reportingCurrency} />
           </div>
         )}
         {visitedTabs.has("Valuation") && latestIncome && (

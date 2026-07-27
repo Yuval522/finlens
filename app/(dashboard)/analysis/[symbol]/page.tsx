@@ -53,6 +53,7 @@ export default async function AnalysisPage({
     balanceQuarterly,
     cashFlowQuarterly,
     estimates,
+    priceTargets,
     history,
     reportingCurrency,
   } = bundle;
@@ -121,6 +122,7 @@ export default async function AnalysisPage({
             balanceQuarterly={balanceQuarterly}
             cashFlowQuarterly={cashFlowQuarterly}
             estimates={estimates}
+            priceTargets={priceTargets}
             reportingCurrency={reportingCurrency}
             quote={quote}
             metrics={metrics}

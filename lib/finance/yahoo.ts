@@ -25,6 +25,7 @@ import { fetchSecFinancials } from "./providers/sec-edgar";
 import { MARKET_SUMMARY_SYMBOLS, TASE_SEED_SYMBOLS, US_FALLBACK_SYMBOLS } from "./symbols";
 import {
   MarketDataError,
+  type AnalystPriceTargets,
   type BalanceSheetYear,
   type CashFlowYear,
   type EstimateRow,
@@ -755,6 +756,53 @@ function toEstimates(
   return { quarterly: quarterly.sort(byDate), annual: annual.sort(byDate) };
 }
 
+/**
+ * Analyst price-target consensus + Buy/Hold/Sell distribution (Estimates
+ * tab). `financialData` was already being fetched for the existing metrics
+ * (margins, P/E, cash/debt) — its targetMeanPrice/targetHighPrice/
+ * targetLowPrice/targetMedianPrice/recommendationMean/recommendationKey/
+ * numberOfAnalystOpinions fields cover the price-target half for free.
+ * `recommendationTrend` is a separate module (added to the modules list
+ * below) for the Buy/Hold/Sell counts, keyed by trailing period — Yahoo's
+ * convention is trend[0] = "0m" (this month), the current consensus.
+ *
+ * Returns null when Yahoo has no analyst coverage at all for this symbol
+ * (thin/illiquid names, some foreign listings) rather than a struct of all
+ * nulls, so the UI can render an honest "No analyst coverage" empty state
+ * instead of a price-target card full of dashes.
+ */
+function toPriceTargets(summary: QuoteSummaryResult): AnalystPriceTargets | null {
+  const fin = summary.financialData;
+  if (!fin) return null;
+
+  const hasAnyTarget = fin.targetMeanPrice != null || fin.targetHighPrice != null || fin.targetLowPrice != null;
+  const trendRow = summary.recommendationTrend?.trend?.[0] ?? null;
+  const distribution =
+    trendRow &&
+    (trendRow.strongBuy > 0 || trendRow.buy > 0 || trendRow.hold > 0 || trendRow.sell > 0 || trendRow.strongSell > 0)
+      ? {
+          strongBuy: trendRow.strongBuy,
+          buy: trendRow.buy,
+          hold: trendRow.hold,
+          sell: trendRow.sell,
+          strongSell: trendRow.strongSell,
+        }
+      : null;
+
+  if (!hasAnyTarget && !distribution && fin.recommendationKey == null) return null;
+
+  return {
+    meanTarget: fin.targetMeanPrice ?? null,
+    medianTarget: fin.targetMedianPrice ?? null,
+    highTarget: fin.targetHighPrice ?? null,
+    lowTarget: fin.targetLowPrice ?? null,
+    numberOfAnalysts: fin.numberOfAnalystOpinions ?? null,
+    recommendationMean: fin.recommendationMean ?? null,
+    recommendationKey: fin.recommendationKey ?? null,
+    distribution,
+  };
+}
+
 function toPricePoints(chart: ChartResultArray): PricePoint[] {
   const points: PricePoint[] = [];
   for (const q of chart.quotes) {
@@ -850,6 +898,11 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             // used to give the Estimates tab genuine historical beat/miss
             // rows on the live path. See toEstimates() doc comment.
             "earningsHistory",
+            // Buy/Hold/Sell analyst-rating counts (Estimates tab price
+            // targets card) — see toPriceTargets() doc comment. The price
+            // targets themselves (mean/high/low/median) come from
+            // financialData above, already fetched.
+            "recommendationTrend",
           ],
         }),
         yahooFinance.chart(symbol, { period1, interval: "1d" }),
@@ -1080,6 +1133,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         balanceQuarterly,
         cashFlowQuarterly,
         estimates: toEstimates(summary, income, quarterlyRevenueRows as FundamentalsTimeSeriesFinancialsResult[]),
+        priceTargets: toPriceTargets(summary),
         history: toPricePoints(chartResult),
       };
       return bundle;

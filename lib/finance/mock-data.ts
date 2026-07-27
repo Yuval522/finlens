@@ -187,6 +187,16 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
         { fiscalPeriodLabel: "Sep 2027", periodEndDate: "2027-09-25", revenueEstimate: 455_000_000_000, revenueYoyGrowthPct: 5.8, revenueAvg: 455_000_000_000, revenueLow: 432_000_000_000, revenueHigh: 478_000_000_000, numberOfAnalysts: 25, isHistorical: false, beat: null, actualRevenue: null, epsActual: null, epsEstimate: null, beatBasis: null },
       ],
     },
+    priceTargets: {
+      meanTarget: 228.5,
+      medianTarget: 225,
+      highTarget: 260,
+      lowTarget: 178,
+      numberOfAnalysts: 38,
+      recommendationMean: 1.9,
+      recommendationKey: "buy",
+      distribution: { strongBuy: 15, buy: 20, hold: 8, sell: 1, strongSell: 0 },
+    },
     history: generateSyntheticHistory({ seed: "AAPL", endPrice: 196.42, annualDriftPct: 18, annualVolPct: 28 }),
   },
 
@@ -281,6 +291,16 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
         { fiscalPeriodLabel: "Jan 2026", periodEndDate: "2026-01-25", revenueEstimate: 205_000_000_000, revenueYoyGrowthPct: 57.1, revenueAvg: 205_000_000_000, revenueLow: 192_000_000_000, revenueHigh: 218_000_000_000, numberOfAnalysts: 44, isHistorical: false, beat: null, actualRevenue: null, epsActual: null, epsEstimate: null, beatBasis: null },
         { fiscalPeriodLabel: "Jan 2027", periodEndDate: "2027-01-24", revenueEstimate: 260_000_000_000, revenueYoyGrowthPct: 26.8, revenueAvg: 260_000_000_000, revenueLow: 238_000_000_000, revenueHigh: 282_000_000_000, numberOfAnalysts: 33, isHistorical: false, beat: null, actualRevenue: null, epsActual: null, epsEstimate: null, beatBasis: null },
       ],
+    },
+    priceTargets: {
+      meanTarget: 175.4,
+      medianTarget: 172,
+      highTarget: 220,
+      lowTarget: 120,
+      numberOfAnalysts: 55,
+      recommendationMean: 1.5,
+      recommendationKey: "strong_buy",
+      distribution: { strongBuy: 35, buy: 15, hold: 4, sell: 0, strongSell: 0 },
     },
     history: generateSyntheticHistory({ seed: "NVDA", endPrice: 138.72, annualDriftPct: 45, annualVolPct: 52 }),
   },
@@ -378,6 +398,17 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
         { fiscalPeriodLabel: "Dec 2026", periodEndDate: "2026-12-31", revenueEstimate: 17_400_000_000, revenueYoyGrowthPct: 3.0, revenueAvg: 17_400_000_000, revenueLow: 16_700_000_000, revenueHigh: 18_000_000_000, numberOfAnalysts: 14, isHistorical: false, beat: null, actualRevenue: null, epsActual: null, epsEstimate: null, beatBasis: null },
       ],
     },
+    priceTargets: {
+      // Agorot, same raw-unit convention as quote.price for this symbol (₪78 -> 7800).
+      meanTarget: 7800,
+      medianTarget: 7700,
+      highTarget: 9200,
+      lowTarget: 6000,
+      numberOfAnalysts: 12,
+      recommendationMean: 2.3,
+      recommendationKey: "hold",
+      distribution: { strongBuy: 2, buy: 4, hold: 5, sell: 1, strongSell: 0 },
+    },
     history: generateSyntheticHistory({ seed: "TEVA.TA", endPrice: 68.2, annualDriftPct: 6, annualVolPct: 38 }).map(
       (p) => ({
         // Re-scale the (₪-denominated) synthetic walk into raw agorot, to
@@ -453,6 +484,7 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
     balance: [],
     cashFlow: [],
     estimates: { quarterly: [], annual: [] },
+    priceTargets: null,
     history: generateSyntheticHistory({
       seed: "^TA125.TA",
       endPrice: 21_425.3,
