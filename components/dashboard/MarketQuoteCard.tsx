@@ -86,18 +86,19 @@ export function MarketQuoteCard({ quote, showWatchlistToggle = false, flash }: M
         </p>
       </div>
       {/*
-        QA fix (price/badge collision): the absolute top-right trend badge
-        (h-6 w-6 circle at right-3/top-3, so it spans roughly 12-36px in
-        from the card's right edge) overlaps the price block, which — being
-        the last flex child, right-aligned via items-end — otherwise renders
-        flush with the card's own padding edge (only 20px in). Long price
-        strings like "₪4,173.88" run right under the badge. pr-6 (24px)
-        pushes the price block's right edge in past the badge's left edge
-        with a small visible gap; pt-0.5 gives the top price line a little
-        extra clearance from the badge's vertical band too, since the row
-        is vertically centered and can otherwise start almost level with it.
+        QA fix (price/badge collision, re-broken by the star/badge gap fix
+        above): pr-6 (24px) was tuned to clear only the plain trend-badge
+        cluster (~36px inset from the card edge when showWatchlistToggle is
+        off). Widening that cluster's own internal gap to clear the star
+        from the badge pushed its total footprint out to ~73px inset when
+        the star IS shown (right-3/12px + WatchlistButton's ~27px box +
+        gap-2.5/10px + the 24px badge) — comfortably past pr-6's 44px text
+        clearance, so the price digits started rendering right under the
+        star. pr-16 (64px, -> ~84px total inset) clears that wider cluster
+        with real margin; cards without the toggle (Market Summary/Most
+        Active) never had this problem and keep the tighter pr-6.
       */}
-      <div className="flex shrink-0 flex-col items-end gap-0.5 pr-6 pt-0.5">
+      <div className={cn("flex shrink-0 flex-col items-end gap-0.5 pt-0.5", showWatchlistToggle ? "pr-16" : "pr-6")}>
         <p key={flash?.key ?? 0} className={cn("font-mono text-base font-bold text-foreground", priceFlashClass)}>
           {formatPrice(quote.price, quote.currency)}
         </p>
