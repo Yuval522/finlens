@@ -4,15 +4,8 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear, IncomeStatementYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
-import {
-  filterByRange,
-  splitTrailingRow,
-  toPctOfRevenue,
-  toYoY,
-  type ChartRange,
-  type ChartType,
-  type ChartView,
-} from "@/lib/finance/chart-transform";
+import { splitTrailingRow, toPctOfRevenue, toYoY, type ChartView } from "@/lib/finance/chart-transform";
+import { useChartControls } from "@/lib/finance/useChartControls";
 import { SourceAttributionBadge } from "./SourceAttributionBadge";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
@@ -114,101 +107,112 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
   );
 }
 
-export function IncomeStatementPanel({
+interface MetricCardProps {
+  id: string;
+  title: string;
+  subtitle?: string;
+  income: IncomeStatementYear[];
+  incomeQuarterly: IncomeStatementYear[];
+  dataKey: keyof IncomeStatementYear;
+  color: string;
+  valueLabel: string;
+  formatValue: (value: number) => string;
+  /** Also offers "As a % of Revenue" as a View option — only meaningful for margin-style metrics (Gross Profit, Operating Income, Net Income). */
+  allowPctOfRevenue?: boolean;
+  expanded: string | null;
+  onToggle: (id: string) => void;
+}
+
+/**
+ * Bug fix ("changing a control in one chart modal changes every other
+ * chart"): each metric card used to read `range`/`view`/`chartType` off
+ * ONE state triple owned by the whole panel, so every ChartCard rendered
+ * the exact same slice of data regardless of which card the user was
+ * actually looking at. Mounting useChartControls() HERE — once per
+ * MetricCard instance, not once per panel — gives every card its own
+ * independent useState triple. Two cards showing "Total Revenues" and
+ * "Gross Profit" now happen to start out looking similar (same default
+ * Select Range/View/Chart Type), not because they share state, but
+ * because they were independently initialized to the same defaults.
+ */
+function MetricCard({
+  id,
+  title,
+  subtitle,
   income,
-  cashFlow,
-  incomeQuarterly = [],
-  cashFlowQuarterly = [],
-  currency,
-}: IncomeStatementPanelProps) {
-  const [expanded, setExpanded] = useState<string | null>(null);
+  incomeQuarterly,
+  dataKey,
+  color,
+  valueLabel,
+  formatValue,
+  allowPctOfRevenue = false,
+  expanded,
+  onToggle,
+}: MetricCardProps) {
+  const controls = useChartControls(income, incomeQuarterly);
 
-  // Chart Type: Annually/Quarterly — see ChartControls' doc comment. Only
-  // real when incomeQuarterly actually has rows (SEC EDGAR 10-Qs / Yahoo /
-  // FMP quarterly data); otherwise the toggle renders disabled.
-  const [chartType, setChartType] = useState<ChartType>("annually");
-  const quarterlyAvailable = incomeQuarterly.length > 0;
-  const activeIncome = chartType === "quarterly" ? incomeQuarterly : income;
-  const activeCashFlow = chartType === "quarterly" ? cashFlowQuarterly : cashFlow;
-  const periodsPerYear = chartType === "quarterly" ? 4 : 1;
+  const data =
+    controls.view === "yoy"
+      ? toYoY(controls.ranged, [dataKey])
+      : controls.view === "pctOfRevenue" && allowPctOfRevenue
+        ? toPctOfRevenue(controls.ranged, [dataKey], "totalRevenue")
+        : controls.ranged;
 
-  // QA feature (fullscreen chart modal controls, shared across every card
-  // in this panel): Select Range slices the trailing N years; View toggles
-  // each single-metric chart between its absolute figure and YoY % change.
-  // Real transforms over the real dataset (lib/finance/chart-transform.ts)
-  // — see ChartControls' doc comment for why "Chart Type" only offers
-  // Annually.
-  // QA fix ("Select Range does nothing" report): default to "All" instead
-  // of a hardcoded 5 — with FinLens's typical ~5-year data depth, a
-  // default of 5 already silently equals "All" for most tickers, so the
-  // very first thing a user saw was indistinguishable from what "All"
-  // would show anyway. Defaulting to "All" is both more useful (show
-  // everything available up front) and removes any chance of the initial
-  // range value being invalid (see ChartControls' getAvailableRanges use
-  // for why a hardcoded number could occasionally fall outside the
-  // options offered for a thinner dataset).
-  const [range, setRange] = useState<ChartRange>("All");
-  const [view, setView] = useState<ChartView>("absolute");
-
-  // "As a % of Revenue" only makes sense for margin-style metrics — opening
-  // a chart that doesn't support it while it's active falls back to
-  // Absolute rather than leaving the dropdown on an option it doesn't
-  // offer (see the ChartControls showPctOfRevenue prop). YoY intentionally
-  // isn't reset here — it's a valid view for every chart in this panel, so
-  // it's allowed to persist across cards, unlike this narrower mode.
-  const PCT_OF_REVENUE_CARDS = new Set(["grossprofit", "opincome", "netincome"]);
-  const toggle = (key: string) =>
-    setExpanded((cur) => {
-      const next = cur === key ? null : key;
-      if (next && view === "pctOfRevenue" && !PCT_OF_REVENUE_CARDS.has(next)) setView("absolute");
-      return next;
-    });
-
-  const money = (v: number) => `${compactAxis(v)} ${currency}`;
-  const perShare = (v: number) => `${v.toFixed(2)} ${currency}`;
-
-  // Trailing appendix ("TTM") — pulled out before Select Range filtering so
-  // it's never sliced away as one of the "N years", then always re-appended
-  // after. See splitTrailingRow's doc comment in chart-transform.ts.
-  const { historical: incomeHistorical, trailing: incomeTrailing } = useMemo(
-    () => splitTrailingRow(activeIncome),
-    [activeIncome]
+  return (
+    <ChartCard
+      title={title}
+      subtitle={subtitle}
+      fullscreen={expanded === id}
+      onToggleFullscreen={() => onToggle(id)}
+      controls={
+        <ChartControls
+          range={controls.range}
+          onRangeChange={controls.setRange}
+          view={controls.view}
+          onViewChange={controls.setView}
+          showPctOfRevenue={allowPctOfRevenue}
+          totalYears={controls.totalYears}
+          chartType={controls.chartType}
+          onChartTypeChange={controls.setChartType}
+          quarterlyAvailable={controls.quarterlyAvailable}
+        />
+      }
+    >
+      <SingleMetricChart data={data} dataKey={dataKey} color={color} valueLabel={valueLabel} formatValue={formatValue} view={controls.view} />
+    </ChartCard>
   );
-  const { historical: cashFlowHistorical, trailing: cashFlowTrailing } = useMemo(
-    () => splitTrailingRow(activeCashFlow),
-    [activeCashFlow]
-  );
-  const rangedIncome = useMemo(() => {
-    const base = filterByRange(incomeHistorical, range, periodsPerYear);
-    return incomeTrailing ? [...base, incomeTrailing] : base;
-  }, [incomeHistorical, incomeTrailing, range, periodsPerYear]);
-  const rangedCashFlow = useMemo(() => {
-    const base = filterByRange(cashFlowHistorical, range, periodsPerYear);
-    return cashFlowTrailing ? [...base, cashFlowTrailing] : base;
-  }, [cashFlowHistorical, cashFlowTrailing, range, periodsPerYear]);
+}
 
-  function chartData(dataKey: keyof IncomeStatementYear, allowPctOfRevenue = false) {
-    if (view === "yoy") return toYoY(rangedIncome, [dataKey]);
-    if (view === "pctOfRevenue" && allowPctOfRevenue) return toPctOfRevenue(rangedIncome, [dataKey], "totalRevenue");
-    return rangedIncome;
-  }
+interface RuleOf40CardProps {
+  income: IncomeStatementYear[];
+  incomeQuarterly: IncomeStatementYear[];
+  cashFlow: CashFlowYear[];
+  cashFlowQuarterly: CashFlowYear[];
+  expanded: string | null;
+  onToggle: (id: string) => void;
+}
 
+/**
+ * Rule of 40 = YoY Revenue Growth % + FCF Margin % (per the Phase 5 spec).
+ * Falls back to Operating Margin % when a fiscal year has no matching
+ * cash-flow row (e.g. a "TTM" row that fundamentalsTimeSeries doesn't
+ * cover) — an EBITDA-margin proxy, since D&A isn't broken out separately
+ * in this data model. First fiscal year is dropped: YoY growth is
+ * undefined without a prior-year revenue figure. No View toggle (it's
+ * already an intrinsically YoY-flavored composite metric).
+ *
+ * Own independent useChartControls instance (income-driven); cash flow is
+ * range-matched to it via rangeOther() so the two series always cover the
+ * same fiscal periods for THIS card specifically, without borrowing state
+ * from — or leaking state to — any other card in the panel.
+ */
+function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, expanded, onToggle }: RuleOf40CardProps) {
+  const controls = useChartControls(income, incomeQuarterly);
+  const rangedCashFlow = controls.rangeOther(cashFlow, cashFlowQuarterly);
   const cashFlowByYear = new Map(rangedCashFlow.map((c) => [c.fiscalYear, c]));
 
-  /**
-   * Rule of 40 = YoY Revenue Growth % + FCF Margin % (per the Phase 5
-   * spec). Falls back to Operating Margin % when a fiscal year has no
-   * matching cash-flow row (e.g. a "TTM" row that fundamentalsTimeSeries
-   * doesn't cover) — an EBITDA-margin proxy, since D&A isn't broken out
-   * separately in this data model. First fiscal year is dropped: YoY
-   * growth is undefined without a prior-year revenue figure. Built from
-   * the range-filtered income, not the raw prop — Select Range applies
-   * here too. The View toggle deliberately does NOT apply to this card
-   * (it's already an intrinsically YoY-flavored composite metric — see
-   * showView={false} below).
-   */
-  const ruleOf40Data = rangedIncome.slice(1).map((year, idx) => {
-    const prevRevenue = rangedIncome[idx].totalRevenue;
+  const ruleOf40Data = controls.ranged.slice(1).map((year, idx) => {
+    const prevRevenue = controls.ranged[idx].totalRevenue;
     const revenueGrowthPct = prevRevenue > 0 ? ((year.totalRevenue - prevRevenue) / prevRevenue) * 100 : 0;
     const cf = cashFlowByYear.get(year.fiscalYear);
     const marginPct =
@@ -224,24 +228,81 @@ export function IncomeStatementPanel({
     };
   });
 
-  const controls = (showView = true, showPctOfRevenue = false) => (
-    <ChartControls
-      range={range}
-      onRangeChange={setRange}
-      view={view}
-      onViewChange={setView}
-      showView={showView}
-      showPctOfRevenue={showPctOfRevenue}
-      totalYears={chartType === "quarterly" ? Math.floor(incomeHistorical.length / 4) : incomeHistorical.length}
-      chartType={chartType}
-      onChartTypeChange={setChartType}
-      quarterlyAvailable={quarterlyAvailable}
-    />
+  return (
+    <ChartCard
+      title="Rule of 40"
+      subtitle="Revenue growth % + FCF margin %"
+      fullscreen={expanded === "ruleof40"}
+      onToggleFullscreen={() => onToggle("ruleof40")}
+      controls={
+        <ChartControls
+          range={controls.range}
+          onRangeChange={controls.setRange}
+          showView={false}
+          totalYears={controls.totalYears}
+          chartType={controls.chartType}
+          onChartTypeChange={controls.setChartType}
+          quarterlyAvailable={controls.quarterlyAvailable}
+        />
+      }
+    >
+      {ruleOf40Data.length > 0 ? (
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={ruleOf40Data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
+            <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
+            <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+            <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
+            <ReferenceLine y={40} stroke={AMBER} strokeDasharray="4 4" />
+            <Tooltip
+              contentStyle={CHART_TOOLTIP_STYLE}
+              wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
+              formatter={(value, _name, item) => [
+                `${Number(value).toFixed(1)}%${item?.payload?.usedFcf ? "" : " (op. margin proxy)"}`,
+                "Rule of 40",
+              ]}
+              allowEscapeViewBox={{ x: true, y: true }}
+            />
+            <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600} barSize={48} maxBarSize={60}>
+              {ruleOf40Data.map((row) => (
+                <Cell key={row.fiscalYear} fill={row.ruleOf40 >= 40 ? SUCCESS : DESTRUCTIVE} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      ) : (
+        <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+          Not enough history to compute YoY growth.
+        </div>
+      )}
+    </ChartCard>
   );
+}
+
+export function IncomeStatementPanel({
+  income,
+  cashFlow,
+  incomeQuarterly = [],
+  cashFlowQuarterly = [],
+  currency,
+}: IncomeStatementPanelProps) {
+  // Only tracks which single card is fullscreen at a time (a UI/layout
+  // concern — the reference terminal never shows two modals at once) —
+  // NOT chart data state, so it has no bearing on the isolation fix above.
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const toggle = (id: string) => setExpanded((cur) => (cur === id ? null : id));
+
+  const money = (v: number) => `${compactAxis(v)} ${currency}`;
+  const perShare = (v: number) => `${v.toFixed(2)} ${currency}`;
+
+  // Panel-level source-attribution caption always reflects the full annual
+  // dataset, independent of any individual card's own Chart Type selection
+  // (there's no longer a single panel-wide "the" chart type to read it
+  // from — see the MetricCard doc comment above).
+  const { historical: incomeHistoricalAnnual } = useMemo(() => splitTrailingRow(income), [income]);
 
   return (
     <div className="space-y-2">
-      <SourceAttributionBadge years={incomeHistorical} />
+      <SourceAttributionBadge years={incomeHistoricalAnnual} />
       {/* QA fix (root-caused via DOM inspection against the reference
           terminal): this used to be viewport-width breakpoints
           (sm:grid-cols-2 xl:grid-cols-4), sized off the *window's* width. But
@@ -253,124 +314,108 @@ export function IncomeStatementPanel({
           width instead, so it self-adapts correctly regardless of the split
           — no viewport breakpoints, no container-query plugin needed. */}
       <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(240px,1fr))]">
-      <ChartCard
-        title="Total Revenues"
-        fullscreen={expanded === "revenue"}
-        onToggleFullscreen={() => toggle("revenue")}
-        controls={controls()}
-      >
-        <SingleMetricChart data={chartData("totalRevenue")} dataKey="totalRevenue" color={PRIMARY} valueLabel="Revenue" formatValue={money} view={view} />
-      </ChartCard>
+        <MetricCard
+          id="revenue"
+          title="Total Revenues"
+          income={income}
+          incomeQuarterly={incomeQuarterly}
+          dataKey="totalRevenue"
+          color={PRIMARY}
+          valueLabel="Revenue"
+          formatValue={money}
+          expanded={expanded}
+          onToggle={toggle}
+        />
 
-      <ChartCard
-        title="Gross Profit"
-        fullscreen={expanded === "grossprofit"}
-        onToggleFullscreen={() => toggle("grossprofit")}
-        controls={controls(true, true)}
-      >
-        <SingleMetricChart data={chartData("grossProfit", true)} dataKey="grossProfit" color={SUCCESS} valueLabel="Gross Profit" formatValue={money} view={view} />
-      </ChartCard>
+        <MetricCard
+          id="grossprofit"
+          title="Gross Profit"
+          income={income}
+          incomeQuarterly={incomeQuarterly}
+          dataKey="grossProfit"
+          color={SUCCESS}
+          valueLabel="Gross Profit"
+          formatValue={money}
+          allowPctOfRevenue
+          expanded={expanded}
+          onToggle={toggle}
+        />
 
-      <ChartCard
-        title="Operating Income"
-        fullscreen={expanded === "opincome"}
-        onToggleFullscreen={() => toggle("opincome")}
-        controls={controls(true, true)}
-      >
-        <SingleMetricChart data={chartData("operatingIncome", true)} dataKey="operatingIncome" color={AMBER} valueLabel="Operating Income" formatValue={money} view={view} />
-      </ChartCard>
+        <MetricCard
+          id="opincome"
+          title="Operating Income"
+          income={income}
+          incomeQuarterly={incomeQuarterly}
+          dataKey="operatingIncome"
+          color={AMBER}
+          valueLabel="Operating Income"
+          formatValue={money}
+          allowPctOfRevenue
+          expanded={expanded}
+          onToggle={toggle}
+        />
 
-      <ChartCard
-        title="Net Income"
-        fullscreen={expanded === "netincome"}
-        onToggleFullscreen={() => toggle("netincome")}
-        controls={controls(true, true)}
-      >
-        <SingleMetricChart data={chartData("netIncome", true)} dataKey="netIncome" color={SKY} valueLabel="Net Income" formatValue={money} view={view} />
-      </ChartCard>
+        <MetricCard
+          id="netincome"
+          title="Net Income"
+          income={income}
+          incomeQuarterly={incomeQuarterly}
+          dataKey="netIncome"
+          color={SKY}
+          valueLabel="Net Income"
+          formatValue={money}
+          allowPctOfRevenue
+          expanded={expanded}
+          onToggle={toggle}
+        />
 
-      <ChartCard
-        title="EPS (Diluted)"
-        fullscreen={expanded === "eps"}
-        onToggleFullscreen={() => toggle("eps")}
-        controls={controls()}
-      >
-        <SingleMetricChart data={chartData("eps")} dataKey="eps" color={SUCCESS} valueLabel="EPS" formatValue={perShare} view={view} />
-      </ChartCard>
+        <MetricCard
+          id="eps"
+          title="EPS (Diluted)"
+          income={income}
+          incomeQuarterly={incomeQuarterly}
+          dataKey="eps"
+          color={SUCCESS}
+          valueLabel="EPS"
+          formatValue={perShare}
+          expanded={expanded}
+          onToggle={toggle}
+        />
 
-      <ChartCard
-        title="Shares Outstanding (Diluted)"
-        fullscreen={expanded === "shares"}
-        onToggleFullscreen={() => toggle("shares")}
-        controls={controls()}
-      >
-        <SingleMetricChart
-          data={chartData("sharesOutstandingDiluted")}
+        <MetricCard
+          id="shares"
+          title="Shares Outstanding (Diluted)"
+          income={income}
+          incomeQuarterly={incomeQuarterly}
           dataKey="sharesOutstandingDiluted"
           color={SLATE}
           valueLabel="Diluted Shares"
           formatValue={compactAxis}
-          view={view}
+          expanded={expanded}
+          onToggle={toggle}
         />
-      </ChartCard>
 
-      <ChartCard
-        title="Rule of 40"
-        subtitle="Revenue growth % + FCF margin %"
-        fullscreen={expanded === "ruleof40"}
-        onToggleFullscreen={() => toggle("ruleof40")}
-        controls={controls(false)}
-      >
-        {ruleOf40Data.length > 0 ? (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={ruleOf40Data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="20%">
-              <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
-              {/* QA fix: explicit type="category" — this was already Recharts'
-            default for XAxis, but the reported "bars bunched left with
-            dead space" symptom matches what happens under a *numeric*
-            scale (which this never was), so making it explicit removes
-            any doubt and any risk from a future Recharts default change. */}
-        <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-              <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
-              <ReferenceLine y={40} stroke={AMBER} strokeDasharray="4 4" />
-              <Tooltip
-                contentStyle={CHART_TOOLTIP_STYLE}
-                wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
-                formatter={(value, _name, item) => [
-                  `${Number(value).toFixed(1)}%${item?.payload?.usedFcf ? "" : " (op. margin proxy)"}`,
-                  "Rule of 40",
-                ]}
-                allowEscapeViewBox={{ x: true, y: true }}
-              />
-              <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600} barSize={48} maxBarSize={60}>
-                {ruleOf40Data.map((row) => (
-                  <Cell key={row.fiscalYear} fill={row.ruleOf40 >= 40 ? SUCCESS : DESTRUCTIVE} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            Not enough history to compute YoY growth.
-          </div>
-        )}
-      </ChartCard>
+        <RuleOf40Card
+          income={income}
+          incomeQuarterly={incomeQuarterly}
+          cashFlow={cashFlow}
+          cashFlowQuarterly={cashFlowQuarterly}
+          expanded={expanded}
+          onToggle={toggle}
+        />
 
-      <ChartCard
-        title="Dividends Per Share"
-        fullscreen={expanded === "dividends"}
-        onToggleFullscreen={() => toggle("dividends")}
-        controls={controls()}
-      >
-        <SingleMetricChart
-          data={chartData("dividendsPerShare")}
+        <MetricCard
+          id="dividends"
+          title="Dividends Per Share"
+          income={income}
+          incomeQuarterly={incomeQuarterly}
           dataKey="dividendsPerShare"
           color={AMBER}
           valueLabel="Dividends / Share"
           formatValue={perShare}
-          view={view}
+          expanded={expanded}
+          onToggle={toggle}
         />
-      </ChartCard>
       </div>
     </div>
   );
