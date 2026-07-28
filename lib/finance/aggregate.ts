@@ -24,6 +24,12 @@
  * Every merged row keeps a `dataSource` tag so the UI can show exactly
  * where each year's numbers came from (see summarizeYearSources /
  * formatSourceSummary, used by the Income/Balance/Cash Flow panel badges).
+ *
+ * Data triangulation: priority order is the default tie-breaker, but
+ * mergeYearsBySource's optional `anchorField` lets it actually cross-check
+ * providers against each other for years all three cover, and demote a
+ * clear 2-against-1 outlier instead of trusting priority blindly — see
+ * that function's doc comment for the exact mechanism and thresholds.
  */
 
 import type { FinancialDataSource } from "./types";
@@ -38,26 +44,104 @@ export interface SourceLayer<T extends YearRow> {
   years: T[];
 }
 
+/** Relative difference between two finite numbers, symmetric and 0..~2 scale (not clamped). */
+function relativeDifference(a: number, b: number): number {
+  const denom = Math.max(Math.abs(a), Math.abs(b));
+  if (denom === 0) return 0;
+  return Math.abs(a - b) / denom;
+}
+
+// Cross-source triangulation thresholds — see mergeYearsBySource's
+// `anchorField` doc comment. AGREEMENT: how close two independent sources
+// must be to count as "corroborating" each other (loose enough to absorb
+// normal rounding/restatement noise between two real providers).
+// OUTLIER: how far the priority winner must diverge from BOTH corroborating
+// sources before it's treated as the odd one out rather than a genuine,
+// if-slightly-different, real figure. Deliberately wide apart (2% vs 8%) so
+// this only fires on clear-cut cases, not routine provider-to-provider
+// variance.
+const CROSS_VALIDATION_AGREEMENT_TOLERANCE = 0.02;
+const CROSS_VALIDATION_OUTLIER_TOLERANCE = 0.08;
+/** Same floor as warnIfDuplicateValuesAcrossYears — sub-$1M anchor values are too close to
+ *  noise/rounding for a percentage comparison to mean anything. */
+const CROSS_VALIDATION_MIN_MAGNITUDE = 1_000_000;
+
 /**
  * Merges ordered source layers into one fiscal-year timeline. For each
  * fiscal year, the first layer (in priority order) that has a row wins —
  * later layers only fill years earlier ones are missing entirely, so a
  * single year's figures always come from one consistent, real filing/API
  * response rather than a patchwork of fields from different providers.
+ *
+ * Data-triangulation override (the `anchorField` option): every layer is
+ * fetched in parallel regardless of who ultimately wins (see
+ * getFundamentals() in yahoo.ts), so for any fiscal year where 3 sources
+ * all report data, this function can — and now does — actually compare
+ * them instead of blindly trusting priority order. If the two
+ * lower-priority sources agree closely with each other on `anchorField`
+ * (e.g. totalRevenue for income, totalAssets for balance,
+ * operatingCashFlow for cash flow) but the would-be winner diverges
+ * sharply from BOTH of them, that's a 2-against-1 majority against the
+ * "winner" — a real signal, not routine provider noise — so the row is
+ * demoted to the next-best (whole-row, still un-blended — see this file's
+ * module doc comment) source instead. This only ever activates with 3
+ * genuinely present sources for the same year (rare when FMP is
+ * unconfigured, by design — see CROSS_VALIDATION_* thresholds), and when
+ * it doesn't activate, behavior is byte-for-byte identical to the
+ * original priority-order merge. Omitting `anchorField` entirely (existing
+ * call sites that haven't opted in) preserves the original behavior
+ * exactly.
  */
 export function mergeYearsBySource<T extends YearRow>(
   label: string,
   symbol: string,
-  layers: SourceLayer<T>[]
+  layers: SourceLayer<T>[],
+  options?: { anchorField?: keyof T & string }
 ): T[] {
-  const byYear = new Map<string, T>();
+  const anchorField = options?.anchorField;
+  const candidatesByYear = new Map<string, { source: FinancialDataSource; row: T }[]>();
   for (const layer of layers) {
     for (const row of layer.years) {
-      if (!byYear.has(row.fiscalYear)) {
-        byYear.set(row.fiscalYear, { ...row, dataSource: layer.source });
-      }
+      const list = candidatesByYear.get(row.fiscalYear) ?? [];
+      list.push({ source: layer.source, row });
+      candidatesByYear.set(row.fiscalYear, list);
     }
   }
+
+  const byYear = new Map<string, T>();
+  for (const [fiscalYear, candidates] of candidatesByYear) {
+    let winner = candidates[0]; // highest-priority source that has this year — default/original behavior
+
+    if (anchorField && candidates.length >= 3) {
+      const withAnchor = candidates
+        .map((c) => ({ ...c, value: Number(c.row[anchorField]) }))
+        .filter((c) => Number.isFinite(c.value) && Math.abs(c.value) >= CROSS_VALIDATION_MIN_MAGNITUDE);
+      const top = withAnchor.find((c) => c.source === winner.source);
+      const others = withAnchor.filter((c) => c.source !== winner.source);
+      if (top && others.length >= 2) {
+        const othersAgree = relativeDifference(others[0].value, others[1].value) < CROSS_VALIDATION_AGREEMENT_TOLERANCE;
+        const winnerIsOutlier =
+          relativeDifference(top.value, others[0].value) > CROSS_VALIDATION_OUTLIER_TOLERANCE &&
+          relativeDifference(top.value, others[1].value) > CROSS_VALIDATION_OUTLIER_TOLERANCE;
+        if (othersAgree && winnerIsOutlier) {
+          const demoted = winner;
+          winner = others[0]; // the higher-priority of the two agreeing, corroborating sources
+          if (process.env.NODE_ENV !== "production") {
+            console.warn(
+              `[FinLens] ${label}(${symbol}) ${fiscalYear}: "${anchorField}" from ${demoted.source} ` +
+                `(${Number(demoted.row[anchorField]).toLocaleString("en-US")}) is an outlier vs. ` +
+                `${others[0].source} and ${others[1].source}, which agree with each other ` +
+                `(${others[0].value.toLocaleString("en-US")} vs. ${others[1].value.toLocaleString("en-US")}) — ` +
+                `using ${winner.source}'s row for this year instead of the default priority order.`
+            );
+          }
+        }
+      }
+    }
+
+    byYear.set(fiscalYear, { ...winner.row, dataSource: winner.source });
+  }
+
   // String comparison, not Number() subtraction — `fiscalYear` is either a
   // bare year ("2023") or a quarter label ("2023-Q2", see quarterLabel() /
   // quarterlySeries()), and Number("2023-Q2") is NaN. Plain lexicographic

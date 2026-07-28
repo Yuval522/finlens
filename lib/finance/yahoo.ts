@@ -1128,21 +1128,42 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       // fills recent years and any ticker SEC doesn't register, FMP fills
       // whatever isolated gap remains. Every row keeps a `dataSource` tag
       // for the UI attribution badge (see Income/Balance/CashFlow panels).
-      const income = mergeYearsBySource("income", symbol, [
-        { source: "sec-edgar", years: secFinancials.income },
-        { source: "yahoo", years: yahooIncome },
-        { source: "fmp", years: fmpIncomeToYears(fmpIncomeRows) },
-      ]);
-      const balance = mergeYearsBySource("balance", symbol, [
-        { source: "sec-edgar", years: secFinancials.balance },
-        { source: "yahoo", years: yahooBalance },
-        { source: "fmp", years: fmpBalanceToYears(fmpBalanceRows) },
-      ]);
-      const cashFlow = mergeYearsBySource("cashFlow", symbol, [
-        { source: "sec-edgar", years: secFinancials.cashFlow },
-        { source: "yahoo", years: yahooCashFlow },
-        { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRows) },
-      ]);
+      // anchorField opts each statement into cross-source triangulation —
+      // see mergeYearsBySource's doc comment in aggregate.ts. Each anchor
+      // is that statement's single most load-bearing, universally-reported
+      // figure, chosen specifically because every provider defines it the
+      // same way (unlike, say, "operating income", which varies by
+      // one-time-charge treatment across sources).
+      const income = mergeYearsBySource(
+        "income",
+        symbol,
+        [
+          { source: "sec-edgar", years: secFinancials.income },
+          { source: "yahoo", years: yahooIncome },
+          { source: "fmp", years: fmpIncomeToYears(fmpIncomeRows) },
+        ],
+        { anchorField: "totalRevenue" }
+      );
+      const balance = mergeYearsBySource(
+        "balance",
+        symbol,
+        [
+          { source: "sec-edgar", years: secFinancials.balance },
+          { source: "yahoo", years: yahooBalance },
+          { source: "fmp", years: fmpBalanceToYears(fmpBalanceRows) },
+        ],
+        { anchorField: "totalAssets" }
+      );
+      const cashFlow = mergeYearsBySource(
+        "cashFlow",
+        symbol,
+        [
+          { source: "sec-edgar", years: secFinancials.cashFlow },
+          { source: "yahoo", years: yahooCashFlow },
+          { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRows) },
+        ],
+        { anchorField: "operatingCashFlow" }
+      );
 
       // Quarterly counterparts — Chart Type: Quarterly view. Same merge
       // priority (SEC EDGAR 10-Qs > Yahoo > FMP), keyed "fiscalYear-Qn"
@@ -1171,21 +1192,36 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         quarterLabel,
         "toCashFlowRows(quarterly)"
       );
-      const incomeQuarterly = mergeYearsBySource("incomeQuarterly", symbol, [
-        { source: "sec-edgar", years: secFinancials.incomeQuarterly },
-        { source: "yahoo", years: yahooIncomeQuarterly },
-        { source: "fmp", years: fmpIncomeToYears(fmpIncomeRowsQuarterly) },
-      ]);
-      const balanceQuarterly = mergeYearsBySource("balanceQuarterly", symbol, [
-        { source: "sec-edgar", years: secFinancials.balanceQuarterly },
-        { source: "yahoo", years: yahooBalanceQuarterly },
-        { source: "fmp", years: fmpBalanceToYears(fmpBalanceRowsQuarterly) },
-      ]);
-      const cashFlowQuarterly = mergeYearsBySource("cashFlowQuarterly", symbol, [
-        { source: "sec-edgar", years: secFinancials.cashFlowQuarterly },
-        { source: "yahoo", years: yahooCashFlowQuarterly },
-        { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRowsQuarterly) },
-      ]);
+      const incomeQuarterly = mergeYearsBySource(
+        "incomeQuarterly",
+        symbol,
+        [
+          { source: "sec-edgar", years: secFinancials.incomeQuarterly },
+          { source: "yahoo", years: yahooIncomeQuarterly },
+          { source: "fmp", years: fmpIncomeToYears(fmpIncomeRowsQuarterly) },
+        ],
+        { anchorField: "totalRevenue" }
+      );
+      const balanceQuarterly = mergeYearsBySource(
+        "balanceQuarterly",
+        symbol,
+        [
+          { source: "sec-edgar", years: secFinancials.balanceQuarterly },
+          { source: "yahoo", years: yahooBalanceQuarterly },
+          { source: "fmp", years: fmpBalanceToYears(fmpBalanceRowsQuarterly) },
+        ],
+        { anchorField: "totalAssets" }
+      );
+      const cashFlowQuarterly = mergeYearsBySource(
+        "cashFlowQuarterly",
+        symbol,
+        [
+          { source: "sec-edgar", years: secFinancials.cashFlowQuarterly },
+          { source: "yahoo", years: yahooCashFlowQuarterly },
+          { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRowsQuarterly) },
+        ],
+        { anchorField: "operatingCashFlow" }
+      );
 
       // Trailing-twelve-month appendix — appended directly onto the merged
       // annual arrays as a final "TTM" row (same convention mock-data.ts
