@@ -8,6 +8,7 @@ import type {
 } from "yahoo-finance2/modules/fundamentalsTimeSeries";
 import { TtlCache } from "./cache";
 import { mergeYearsBySource } from "./aggregate";
+import { computeTrailingTwelveMonths } from "./ttm";
 import { guessCurrencyForSearchResult, toExchangeBadge } from "./exchange";
 import { getMockFundamentals } from "./mock-data";
 import {
@@ -1143,26 +1144,14 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRows) },
       ]);
 
-      // Trailing-twelve-month appendix — appended directly onto the merged
-      // annual arrays as a final "TTM" row (same convention mock-data.ts
-      // already uses for its illustrative fixtures), NOT merged through
-      // mergeYearsBySource since TTM is a Yahoo-only rolling computation,
-      // not a fiscal year any source "has" or "is missing". Panels split it
-      // back out before Select Range filtering (see splitTrailingRow() in
-      // chart-transform.ts) so it's always shown regardless of range,
-      // matching the reference terminal's behavior. SEC EDGAR has no TTM
-      // concept (audited filings only), so this is deliberately Yahoo-only.
-      const incomeTrailing = toTrailingIncomeRow(trailingIncomeRows as FundamentalsTimeSeriesFinancialsResult[], summary);
-      if (incomeTrailing) income.push(incomeTrailing);
-      const cashFlowTrailing = toTrailingCashFlowRow(trailingCashFlowRows as FundamentalsTimeSeriesCashFlowResult[]);
-      if (cashFlowTrailing) cashFlow.push(cashFlowTrailing);
-
       // Quarterly counterparts — Chart Type: Quarterly view. Same merge
       // priority (SEC EDGAR 10-Qs > Yahoo > FMP), keyed "fiscalYear-Qn"
       // instead of a bare year (see quarterLabel()/quarterlySeries()).
       // Foreign private issuers (20-F filers) generally don't file 10-Qs,
       // so `secFinancials.*Quarterly` is often empty for them — Yahoo/FMP
-      // still cover that case.
+      // still cover that case. Computed BEFORE the trailing/TTM appendix
+      // below so the merged, multi-source quarterly arrays are available as
+      // a universal TTM fallback (see computeTrailingTwelveMonths in ttm.ts).
       const yahooIncomeQuarterly = toIncomeRows(
         quarterlyRevenueRows as FundamentalsTimeSeriesFinancialsResult[],
         summary,
@@ -1197,6 +1186,41 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         { source: "yahoo", years: yahooCashFlowQuarterly },
         { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRowsQuarterly) },
       ]);
+
+      // Trailing-twelve-month appendix — appended directly onto the merged
+      // annual arrays as a final "TTM" row (same convention mock-data.ts
+      // already uses for its illustrative fixtures), NOT merged through
+      // mergeYearsBySource since TTM isn't a fiscal year any source "has"
+      // or "is missing". Panels split it back out before Select Range
+      // filtering (see splitTrailingRow() in chart-transform.ts) so it's
+      // always shown regardless of range, matching the reference
+      // terminal's behavior.
+      //
+      // Prefers Yahoo's own dedicated trailing-type fetch when it succeeds
+      // (a real, live figure, occasionally fresher than the latest filed
+      // quarter). Falls back to computeTrailingTwelveMonths() — summing the
+      // 4 most recent CONSECUTIVE quarters out of the merged, multi-source
+      // `incomeQuarterly`/`cashFlowQuarterly` above — whenever Yahoo's
+      // trailing endpoint fails, rate-limits, or doesn't cover this symbol.
+      // This makes "TTM" genuinely universal/source-agnostic instead of a
+      // silent Yahoo-only dependency: any symbol with 4 consecutive merged
+      // quarters (from SEC EDGAR 10-Qs, Yahoo, or FMP, in any combination)
+      // now gets a TTM bar. SEC EDGAR itself has no TTM concept (audited
+      // annual/quarterly filings only) — it contributes via the quarterly
+      // merge above, not directly.
+      const incomeTrailing =
+        toTrailingIncomeRow(trailingIncomeRows as FundamentalsTimeSeriesFinancialsResult[], summary) ??
+        computeTrailingTwelveMonths(incomeQuarterly, {
+          sumKeys: ["totalRevenue", "grossProfit", "operatingIncome", "netIncome", "eps", "dividendsPerShare"],
+          latestKeys: ["sharesOutstandingDiluted"],
+        });
+      if (incomeTrailing) income.push(incomeTrailing);
+      const cashFlowTrailing =
+        toTrailingCashFlowRow(trailingCashFlowRows as FundamentalsTimeSeriesCashFlowResult[]) ??
+        computeTrailingTwelveMonths(cashFlowQuarterly, {
+          sumKeys: ["operatingCashFlow", "freeCashFlow", "stockBasedCompensation", "capitalExpenditures", "netIncome"],
+        });
+      if (cashFlowTrailing) cashFlow.push(cashFlowTrailing);
 
       // Most Recent Quarter (MRQ) appendix for the Balance Sheet panel —
       // unlike income/cash flow (flow statements, where "trailing twelve
