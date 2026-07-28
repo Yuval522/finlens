@@ -226,24 +226,56 @@ function findCeo(assetProfile: QuoteSummaryResult["assetProfile"]): string | nul
 }
 
 /**
- * Maps quoteSummary's financialData/summaryDetail/defaultKeyStatistics into
- * our four metric groups. Note: Yahoo's dividendYield/payoutRatio/margin
- * fields are assumed to be fractions (0.045 = 4.5%) based on this library's
- * historical behavior — unverified live in this environment (network
- * blocked here), so spot-check against a real quote before trusting the
- * exact scale.
+ * Global fix (live bug report): the top summary cards and this metrics
+ * object were reading Total Cash / Total Debt / operating & free cash flow
+ * (and therefore FCF Yield, Cash Flow Yield, P/CF, P/FCF, and every margin)
+ * straight off quoteSummary's raw `financialData` module — a completely
+ * separate, uncorrected Yahoo-only path that bypasses every fix this
+ * pipeline applies to the actual statement arrays (aggregate.ts's
+ * cross-source backfill for zero'd grossProfit/totalLiabilities, SEC
+ * EDGAR's YTD-cumulative quarterly cash-flow reconstruction, the MRQ
+ * total-debt component-sum fix above). A ticker could have a perfectly
+ * corrected `balance`/`cashFlow` array feeding every chart correctly while
+ * its summary card still showed the old, wrong number, because the card
+ * was never actually reading that array.
+ *
+ * Fixed by repointing every one of those fields at the SAME normalized,
+ * multi-source-merged TTM income/cash-flow row and MRQ balance-sheet row
+ * every other panel on this page renders from — passed in directly from
+ * getFundamentals() below, where they're already computed. `financialData`
+ * fields are now only a last-resort fallback for the rare case a symbol
+ * has no usable TTM/MRQ row from any of the three providers, so cards
+ * still render *something* rather than going blank; whenever a corrected
+ * row exists, it always wins. This applies uniformly to every ticker (no
+ * per-symbol branching) since incomeTrailing/cashFlowTrailing/balanceMRQ
+ * are computed identically for all of them upstream.
+ *
+ * Note: Yahoo's dividendYield/payoutRatio fields are assumed to be
+ * fractions (0.045 = 4.5%) based on this library's historical behavior —
+ * unverified live in this environment (network blocked here), so
+ * spot-check against a real quote before trusting the exact scale.
  */
-function toMetrics(summary: QuoteSummaryResult) {
+function toMetrics(
+  summary: QuoteSummaryResult,
+  incomeTrailing: IncomeStatementYear | null | undefined,
+  cashFlowTrailing: CashFlowYear | null | undefined,
+  balanceMRQ: BalanceSheetYear | null | undefined
+) {
   const summaryDetail = summary.summaryDetail;
   const keyStats = summary.defaultKeyStatistics;
   const fin = summary.financialData;
 
   const marketCap = summaryDetail?.marketCap ?? null;
-  const operatingCashflow = fin?.operatingCashflow ?? null;
-  const freeCashflow = fin?.freeCashflow ?? null;
   const trailingPE = summaryDetail?.trailingPE ?? null;
-  const totalCash = fin?.totalCash ?? null;
-  const totalDebt = fin?.totalDebt ?? null;
+
+  const operatingCashflow = cashFlowTrailing?.operatingCashFlow ?? fin?.operatingCashflow ?? null;
+  const freeCashflow = cashFlowTrailing?.freeCashFlow ?? fin?.freeCashflow ?? null;
+  const totalCash = balanceMRQ?.totalCash ?? fin?.totalCash ?? null;
+  const totalDebt = balanceMRQ?.totalDebt ?? fin?.totalDebt ?? null;
+  const revenueTTM = incomeTrailing?.totalRevenue ?? null;
+  const grossProfitTTM = incomeTrailing?.grossProfit ?? null;
+  const operatingIncomeTTM = incomeTrailing?.operatingIncome ?? null;
+  const netIncomeTTM = incomeTrailing?.netIncome ?? null;
 
   return {
     financials: {
@@ -284,11 +316,24 @@ function toMetrics(summary: QuoteSummaryResult) {
         totalCash != null && totalDebt != null ? totalCash - totalDebt : null,
     },
     margins: {
-      grossMargin: fin?.grossMargins != null ? Number((fin.grossMargins * 100).toFixed(2)) : null,
+      grossMargin:
+        revenueTTM && grossProfitTTM != null
+          ? Number(((grossProfitTTM / revenueTTM) * 100).toFixed(2))
+          : fin?.grossMargins != null
+            ? Number((fin.grossMargins * 100).toFixed(2))
+            : null,
       operatingMargin:
-        fin?.operatingMargins != null ? Number((fin.operatingMargins * 100).toFixed(2)) : null,
+        revenueTTM && operatingIncomeTTM != null
+          ? Number(((operatingIncomeTTM / revenueTTM) * 100).toFixed(2))
+          : fin?.operatingMargins != null
+            ? Number((fin.operatingMargins * 100).toFixed(2))
+            : null,
       netIncomeMargin:
-        fin?.profitMargins != null ? Number((fin.profitMargins * 100).toFixed(2)) : null,
+        revenueTTM && netIncomeTTM != null
+          ? Number(((netIncomeTTM / revenueTTM) * 100).toFixed(2))
+          : fin?.profitMargins != null
+            ? Number((fin.profitMargins * 100).toFixed(2))
+            : null,
     },
   };
 }
@@ -519,6 +564,37 @@ function toTrailingIncomeRow(
  * (e.g. `totalAssets`, not `annualTotalAssets` — verified against the
  * module's transform code, not just its stale doc-comment examples).
  */
+/**
+ * Global MRQ/Total Debt fix (live bug report: AT&T's MRQ totalDebt read
+ * implausibly smaller than its own prior annual totalDebt — flagged by
+ * warnIfTrailingRowImplausible). Root cause: this used to read Yahoo's own
+ * single pre-aggregated `totalDebt` field verbatim — a field Yahoo has
+ * been observed to populate inconsistently quarter-to-quarter, sometimes
+ * reflecting only ONE debt component (e.g. just long-term debt, missing
+ * the current/short-term portion entirely) rather than the company's full
+ * obligation. Since this narrows the figure rather than zeroing it out,
+ * the cross-source `backfillZeroFields` mechanism (aggregate.ts) can't
+ * catch it — that only fires on an exact 0, by design (see its doc
+ * comment on why totalDebt is deliberately excluded from that list: a
+ * genuine drop to a smaller-but-real number must never be auto-"fixed").
+ * The right fix is at the source: never trust the single aggregate field
+ * when the granular components are available. Computes Total Debt the
+ * same way toSecBalanceRows() (sec-edgar.ts) always has — short-term debt
+ * + current portion of long-term debt + long-term debt — preferring each
+ * side's "AndCapitalLeaseObligation" rollup (includes lease obligations)
+ * over the bare debt-only field when Yahoo reports both. Yahoo's own
+ * `totalDebt` is now only a last-resort fallback for a row where NONE of
+ * the granular component fields are populated at all — universal across
+ * every ticker and every period (annual, quarterly, MRQ alike), not a
+ * one-off patch for AT&T specifically.
+ */
+function componentSummedTotalDebt(row: FundamentalsTimeSeriesBalanceSheetResult): number {
+  const shortTermDebt = row.currentDebtAndCapitalLeaseObligation ?? row.currentDebt ?? 0;
+  const longTermDebtComponent = row.longTermDebtAndCapitalLeaseObligation ?? row.longTermDebt ?? 0;
+  const componentDebt = shortTermDebt + longTermDebtComponent;
+  return componentDebt > 0 ? componentDebt : (row.totalDebt ?? 0);
+}
+
 /** Per-row field extraction shared by toBalanceRows and the MRQ derivation in getFundamentals(). */
 function mapBalanceRow(row: FundamentalsTimeSeriesBalanceSheetResult): Omit<BalanceSheetYear, "fiscalYear"> {
   return {
@@ -529,7 +605,7 @@ function mapBalanceRow(row: FundamentalsTimeSeriesBalanceSheetResult): Omit<Bala
     totalLiabilities: row.totalLiabilitiesNetMinorityInterest ?? 0,
     totalStockholdersEquity: row.stockholdersEquity ?? row.totalEquityGrossMinorityInterest ?? 0,
     totalCash: row.cashAndCashEquivalents ?? 0,
-    totalDebt: row.totalDebt ?? 0,
+    totalDebt: componentSummedTotalDebt(row),
     dataSource: "yahoo" as const,
   };
 }
@@ -670,18 +746,28 @@ function fmpBalanceToYears(rows: FmpBalanceSheetStatement[] | null): BalanceShee
   if (!rows) return [];
   return rows
     .filter((r) => r.calendarYear)
-    .map((r) => ({
-      fiscalYear: fmpPeriodKey(r),
-      cashAndShortTermInvestments: r.cashAndShortTermInvestments ?? 0,
-      totalCurrentAssets: r.totalCurrentAssets ?? 0,
-      totalCurrentLiabilities: r.totalCurrentLiabilities ?? 0,
-      totalAssets: r.totalAssets ?? 0,
-      totalLiabilities: r.totalLiabilities ?? 0,
-      totalStockholdersEquity: r.totalStockholdersEquity ?? 0,
-      totalCash: r.cashAndCashEquivalents ?? 0,
-      totalDebt: r.totalDebt ?? 0,
-      dataSource: "fmp" as const,
-    }));
+    .map((r) => {
+      // Same global MRQ/Total Debt fix as componentSummedTotalDebt (yahoo.ts)
+      // and toSecBalanceRows (sec-edgar.ts) — sum short-term + long-term
+      // debt components when FMP's response includes them, only falling
+      // back to FMP's own pre-aggregated totalDebt when neither component
+      // is present, so this third-tier provider can't reintroduce the same
+      // narrow-subcomponent bug the other two sources are now guarded
+      // against.
+      const componentDebt = (r.shortTermDebt ?? 0) + (r.longTermDebt ?? 0);
+      return {
+        fiscalYear: fmpPeriodKey(r),
+        cashAndShortTermInvestments: r.cashAndShortTermInvestments ?? 0,
+        totalCurrentAssets: r.totalCurrentAssets ?? 0,
+        totalCurrentLiabilities: r.totalCurrentLiabilities ?? 0,
+        totalAssets: r.totalAssets ?? 0,
+        totalLiabilities: r.totalLiabilities ?? 0,
+        totalStockholdersEquity: r.totalStockholdersEquity ?? 0,
+        totalCash: r.cashAndCashEquivalents ?? 0,
+        totalDebt: componentDebt > 0 ? componentDebt : (r.totalDebt ?? 0),
+        dataSource: "fmp" as const,
+      };
+    });
 }
 
 function fmpCashFlowToYears(rows: FmpCashFlowStatement[] | null): CashFlowYear[] {
@@ -1300,7 +1386,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
           ceo: findCeo(assetProfile),
           description: assetProfile?.longBusinessSummary ?? null,
         },
-        metrics: toMetrics(summary),
+        metrics: toMetrics(summary, incomeTrailing, cashFlowTrailing, latestQuarter),
         income,
         balance,
         cashFlow,

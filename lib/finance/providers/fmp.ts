@@ -189,6 +189,17 @@ export interface FmpBalanceSheetStatement {
   totalStockholdersEquity: number;
   cashAndCashEquivalents: number;
   totalDebt: number;
+  /**
+   * Global MRQ/Total Debt fix companion (see componentSummedTotalDebt in
+   * yahoo.ts for the full rationale): FMP's public balance-sheet-statement
+   * endpoint documents these two component fields alongside its own
+   * pre-aggregated `totalDebt` — declared optional here since this
+   * provider is unverified live in this sandbox (network egress blocked),
+   * so a response that omits either simply falls back to `totalDebt`
+   * as-is rather than failing.
+   */
+  shortTermDebt?: number;
+  longTermDebt?: number;
 }
 
 /** Annual balance sheets — see the module doc comment above for this fallback's role/limits. */
