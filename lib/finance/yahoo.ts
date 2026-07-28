@@ -340,14 +340,86 @@ function warnIfFiscalYearGaps(label: string, symbol: string, fiscalYears: string
  * used for the quarterly revenue backfill and proven live for balance
  * sheet / cash flow.
  */
-/** "2023" for annual rows, "2023-Q2" for quarterly — see quarterLabel(). String-sortable either way (see aggregate.ts). */
+/** "2023" for annual rows, "2023-Q2" for quarterly — see makeFiscalQuarterLabelFn(). String-sortable either way (see aggregate.ts). */
 type PeriodLabelFn = (date: Date) => string;
 const annualLabel: PeriodLabelFn = (date) => String(date.getFullYear());
-/** Calendar-quarter label — Yahoo's fundamentalsTimeSeries rows are dated by
- *  period end, so this reads as "the quarter ending in this row's date,"
- *  matching the same "fiscalYear-Qn" convention SEC EDGAR's quarterlySeries
- *  uses (see providers/sec-edgar.ts), so both sources merge cleanly. */
-const quarterLabel: PeriodLabelFn = (date) => `${date.getFullYear()}-Q${Math.floor(date.getMonth() / 3) + 1}`;
+
+/**
+ * Root-cause fix (live bug report: NVDA/AAPL/MSFT quarterly Income/Balance/
+ * Cash Flow data showed two adjacent quarter labels — e.g. "2025-Q3" and
+ * "2025-Q4" — carrying byte-for-byte identical dollar figures, while GOOGL
+ * and TSLA's quarterly data was clean). Root cause: this file used to
+ * compute a pure CALENDAR quarter from a row's raw date
+ * (`Math.floor(date.getMonth() / 3) + 1`), while SEC EDGAR's
+ * quarterlySeries (providers/sec-edgar.ts) labels the SAME real periods by
+ * each company's own reported FISCAL quarter (`entry.fp`, straight from
+ * their XBRL filing). For a calendar-fiscal-year filer (GOOGL, TSLA — FY
+ * ends December), calendar quarter and fiscal quarter are the same number,
+ * so the old code coincidentally produced correct-looking labels. For any
+ * filer whose fiscal year does NOT end in December — NVDA (~January),
+ * MSFT (~June), AAPL (~September) among them — the two schemes disagree
+ * for 3 of every 4 quarters. mergeYearsBySource (aggregate.ts) merges SEC
+ * EDGAR and Yahoo quarterly rows into one timeline keyed by this exact
+ * label string; when the two sources label the SAME real reporting period
+ * differently (SEC's correct fiscal "2025-Q3" vs. Yahoo's miscomputed
+ * calendar "2025-Q4" for what is actually the same Oct-ending quarter),
+ * neither wins outright — both survive as separate entries, so the same
+ * real dollar figures appear to repeat under two adjacent, seemingly
+ * distinct fiscal periods. This wasn't visible in annual charts because
+ * annualLabel (`date.getFullYear()`) needs no quarter-number math at all —
+ * a fiscal year's own end date already carries the correct fiscal year
+ * number by construction, for every filer regardless of fiscal calendar.
+ *
+ * Fix: derive each Yahoo quarterly row's FISCAL quarter number (not
+ * calendar quarter) relative to the company's own fiscal year-end month,
+ * inferred from its most recent annual row's period-end date (see
+ * inferFiscalYearEndMonth below) — the same date already used, unmodified,
+ * for annualLabel. A December fiscal year-end reduces this exactly to the
+ * old calendar-quarter formula, so calendar-fiscal filers are unaffected;
+ * every other filer now gets fiscal-aware quarter numbers that agree with
+ * SEC EDGAR's `entry.fp` labels for the same real periods, so
+ * mergeYearsBySource's exact-string-key dedup can actually recognize them
+ * as the same period instead of silently double-counting it.
+ */
+function inferFiscalYearEndMonth(...annualRowSets: { date: unknown }[][]): number {
+  for (const rows of annualRowSets) {
+    const dated = rows.filter((r): r is { date: Date } => r.date instanceof Date);
+    if (dated.length === 0) continue;
+    const mostRecent = dated.reduce((a, b) => (a.date > b.date ? a : b));
+    return mostRecent.date.getMonth();
+  }
+  // No dated annual row from any source — default to December (month 11),
+  // i.e. the old behavior, which is also correct for the common
+  // calendar-fiscal-year case.
+  return 11;
+}
+
+/**
+ * Fiscal quarter label ("2023-Q2") for a period-END date, given the
+ * company's fiscal year-end month (0-11 — e.g. 0 for NVDA's ~January, 5
+ * for MSFT's ~June, 8 for AAPL's ~September, 11 for a calendar-fiscal
+ * filer). See this pair's shared doc comment above for the bug this fixes.
+ * Worked examples (all confirmed against each company's real reporting
+ * convention): NVDA (M=0) — a quarter ending in January is 0 months past
+ * the fiscal year-end -> Q4 of the fiscal year sharing that January's
+ * calendar year; one ending in April is 3 months past -> Q1 of the FOLLOWING
+ * fiscal year (NVDA's real FY2026 Q1 ended ~April 2025). MSFT (M=5) — a
+ * quarter ending in September is 3 months past June -> Q1 of the fiscal
+ * year ending the FOLLOWING June (MSFT's real FY2026 Q1 ended Sept 2025).
+ * AAPL (M=8) — a quarter ending in December is 3 months past September ->
+ * Q1 of the next fiscal year (Apple's real FY2026 Q1 ended Dec 2025).
+ */
+function makeFiscalQuarterLabelFn(fiscalYearEndMonth: number): PeriodLabelFn {
+  return (date) => {
+    const monthsSinceFyEnd = (date.getMonth() - fiscalYearEndMonth + 12) % 12;
+    // 0 months past FY-end month = that's Q4 itself; otherwise ceil to the
+    // nearest quarter (tolerates a quarter-end date landing a few weeks
+    // into the adjacent month, e.g. a 52/53-week fiscal calendar).
+    const quarter = Math.ceil(monthsSinceFyEnd / 3) || 4;
+    const fiscalYear = date.getMonth() > fiscalYearEndMonth ? date.getFullYear() + 1 : date.getFullYear();
+    return `${fiscalYear}-Q${quarter}`;
+  };
+}
 
 /**
  * Maps a single fundamentalsTimeSeries "financials" row into our
@@ -1032,6 +1104,19 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       }
 
       const assetProfile = summary.assetProfile;
+
+      // Root-cause fix for the "duplicate quarter" bug — see
+      // makeFiscalQuarterLabelFn's doc comment above. Computed once per
+      // request, before any quarterly row gets labeled, from whichever
+      // annual dataset actually has a dated row (income first, falling
+      // back to balance/cash-flow for the rare case income's fetch came
+      // back empty but another statement's didn't).
+      const fiscalYearEndMonth = inferFiscalYearEndMonth(
+        incomeRows as FundamentalsTimeSeriesFinancialsResult[],
+        balanceRows as FundamentalsTimeSeriesBalanceSheetResult[],
+        cashFlowRows as FundamentalsTimeSeriesCashFlowResult[]
+      );
+      const quarterLabel = makeFiscalQuarterLabelFn(fiscalYearEndMonth);
 
       const yahooIncome = toIncomeRows(incomeRows as FundamentalsTimeSeriesFinancialsResult[], summary, symbol, annualLabel, "toIncomeRows");
       const yahooBalance = toBalanceRows(balanceRows as FundamentalsTimeSeriesBalanceSheetResult[], symbol, annualLabel, "toBalanceRows");
