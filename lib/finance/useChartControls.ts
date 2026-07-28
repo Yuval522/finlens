@@ -52,7 +52,24 @@ export function useChartControls<T extends { fiscalYear: string }>(
   const activeData = chartType === "quarterly" ? quarterlyData : annualData;
   const periodsPerYear = chartType === "quarterly" ? 4 : 1;
 
-  const [range, setRange] = useState<ChartRange>("All");
+  // QA fix (live report: preview cards on the stock page "still render bars
+  // that are way too thin and sparse" even after widening barSize/reducing
+  // barCategoryGap): defaulting to "All" here means a ticker with deep SEC
+  // EDGAR history (e.g. a filer going back ~19 fiscal years) crams every
+  // single year into a ~500px-wide, non-fullscreen preview card by default
+  // — no barSize/maxBarSize value can make 19 bars look "wide and dense" in
+  // that little space; the category count itself is the real constraint,
+  // not the per-bar pixel settings. Defaulting to a 5-year window instead
+  // (falling back to "All" when the ticker genuinely has 5 years or fewer,
+  // so this never picks a range that would be a silent no-op — same
+  // threshold getAvailableRanges already uses to hide redundant options)
+  // matches how professional terminals typically treat a compact widget
+  // preview vs. its own expanded/fullscreen view: recent-window by default,
+  // full history one click away via this exact same Select Range control.
+  const [range, setRange] = useState<ChartRange>(() => {
+    const approxYears = splitTrailingRow(annualData).historical.length;
+    return approxYears > 5 ? 5 : "All";
+  });
   const [view, setView] = useState<ChartView>("absolute");
 
   const { historical, trailing } = useMemo(() => splitTrailingRow(activeData), [activeData]);
