@@ -128,6 +128,25 @@ interface MetricCardProps {
   formatValue: (value: number) => string;
   /** Also offers "As a % of Revenue" as a View option — only meaningful for margin-style metrics (Gross Profit, Operating Income, Net Income). */
   allowPctOfRevenue?: boolean;
+  /**
+   * Bug fix (live report: "Shares Outstanding Diluted" showed "TTM" as its
+   * final bar label, but a diluted share count is a point-in-time snapshot,
+   * not a rolling 12-month sum — that label is reserved for genuine flow
+   * metrics like Revenue/Net Income). The underlying VALUE was already
+   * correct (toTrailingIncomeRow / computeTrailingTwelveMonths's
+   * `latestKeys` both use the single latest quarter's actual share count,
+   * never a sum across 4 quarters) — only the displayed label was wrong,
+   * because it physically lives inside the Income Statement's one shared
+   * trailing row (see splitTrailingRow in chart-transform.ts) alongside
+   * real flow metrics. Set this for any Income Statement metric that's a
+   * snapshot/count rather than a flow, to relabel just that card's own
+   * trailing bar to "MRQ" — matching how Balance Sheet's trailing row is
+   * already labeled "MRQ" (see the MRQ appendix in getFundamentals(),
+   * yahoo.ts), without touching the shared `income` array or any other
+   * card reading from it (each MetricCard has its own independent
+   * useChartControls copy — see that hook's doc comment).
+   */
+  pointInTime?: boolean;
   expanded: string | null;
   onToggle: (id: string) => void;
 }
@@ -155,6 +174,7 @@ function MetricCard({
   valueLabel,
   formatValue,
   allowPctOfRevenue = false,
+  pointInTime = false,
   expanded,
   onToggle,
 }: MetricCardProps) {
@@ -166,6 +186,14 @@ function MetricCard({
       : controls.view === "pctOfRevenue" && allowPctOfRevenue
         ? toPctOfRevenue(controls.ranged, [dataKey], "totalRevenue")
         : controls.ranged;
+
+  // See MetricCardProps.pointInTime's doc comment — every range/view
+  // transform above preserves `fiscalYear` on the trailing row untouched,
+  // so relabeling here as the final step covers Absolute/YoY/%-of-Revenue
+  // and any Select Range alike.
+  const displayData = pointInTime
+    ? data.map((row) => (row.fiscalYear === "TTM" ? { ...row, fiscalYear: "MRQ" } : row))
+    : data;
 
   return (
     <ChartCard
@@ -187,7 +215,7 @@ function MetricCard({
         />
       }
     >
-      <SingleMetricChart data={data} dataKey={dataKey} color={color} valueLabel={valueLabel} formatValue={formatValue} view={controls.view} />
+      <SingleMetricChart data={displayData} dataKey={dataKey} color={color} valueLabel={valueLabel} formatValue={formatValue} view={controls.view} />
     </ChartCard>
   );
 }
@@ -400,6 +428,7 @@ export function IncomeStatementPanel({
           color={SLATE}
           valueLabel="Diluted Shares"
           formatValue={compactAxis}
+          pointInTime
           expanded={expanded}
           onToggle={toggle}
         />
