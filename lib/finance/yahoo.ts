@@ -7,7 +7,7 @@ import type {
   FundamentalsTimeSeriesFinancialsResult,
 } from "yahoo-finance2/modules/fundamentalsTimeSeries";
 import { TtlCache } from "./cache";
-import { mergeYearsBySource } from "./aggregate";
+import { mergeYearsBySource, warnIfTrailingRowImplausible } from "./aggregate";
 import { computeTrailingTwelveMonths } from "./ttm";
 import { guessCurrencyForSearchResult, toExchangeBadge } from "./exchange";
 import { getMockFundamentals } from "./mock-data";
@@ -1134,6 +1134,16 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       // figure, chosen specifically because every provider defines it the
       // same way (unlike, say, "operating income", which varies by
       // one-time-charge treatment across sources).
+      //
+      // backfillZeroFields (live bug reports: AT&T's Gross Profit was $0
+      // for every annual year, and separately its Total Liabilities was $0
+      // for every period, despite Total Assets/Revenue populating fine —
+      // root-caused to SEC EDGAR's per-filer XBRL tag coverage gaps, not a
+      // company that genuinely has $0 liabilities/gross profit — see
+      // mergeYearsBySource's doc comment for the exact mechanism) patches
+      // just that one field from a lower-priority source's real value when
+      // the winning row's own value is a suspicious, structurally-implausible
+      // exact 0, without touching any other field on the row.
       const income = mergeYearsBySource(
         "income",
         symbol,
@@ -1142,7 +1152,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
           { source: "yahoo", years: yahooIncome },
           { source: "fmp", years: fmpIncomeToYears(fmpIncomeRows) },
         ],
-        { anchorField: "totalRevenue" }
+        { anchorField: "totalRevenue", backfillZeroFields: ["grossProfit", "operatingIncome"] }
       );
       const balance = mergeYearsBySource(
         "balance",
@@ -1152,7 +1162,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
           { source: "yahoo", years: yahooBalance },
           { source: "fmp", years: fmpBalanceToYears(fmpBalanceRows) },
         ],
-        { anchorField: "totalAssets" }
+        { anchorField: "totalAssets", backfillZeroFields: ["totalLiabilities"] }
       );
       const cashFlow = mergeYearsBySource(
         "cashFlow",
@@ -1200,7 +1210,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
           { source: "yahoo", years: yahooIncomeQuarterly },
           { source: "fmp", years: fmpIncomeToYears(fmpIncomeRowsQuarterly) },
         ],
-        { anchorField: "totalRevenue" }
+        { anchorField: "totalRevenue", backfillZeroFields: ["grossProfit", "operatingIncome"] }
       );
       const balanceQuarterly = mergeYearsBySource(
         "balanceQuarterly",
@@ -1210,7 +1220,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
           { source: "yahoo", years: yahooBalanceQuarterly },
           { source: "fmp", years: fmpBalanceToYears(fmpBalanceRowsQuarterly) },
         ],
-        { anchorField: "totalAssets" }
+        { anchorField: "totalAssets", backfillZeroFields: ["totalLiabilities"] }
       );
       const cashFlowQuarterly = mergeYearsBySource(
         "cashFlowQuarterly",
@@ -1269,6 +1279,13 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       // row — see splitTrailingRow() in chart-transform.ts.
       const latestQuarter = balanceQuarterly[balanceQuarterly.length - 1];
       if (latestQuarter) {
+        // Dev-only sanity check (live bug reports: GOOGL's Total Assets
+        // jumped $595B annual -> $922B MRQ; AT&T's Total Debt dropped
+        // $143.7B annual -> $9.32B MRQ) — see warnIfTrailingRowImplausible's
+        // doc comment for why this only logs rather than "fixing" either
+        // figure. `balance` here is still the pre-MRQ-append annual array.
+        warnIfTrailingRowImplausible("balance", symbol, balance, latestQuarter, "totalAssets");
+        warnIfTrailingRowImplausible("balance", symbol, balance, latestQuarter, "totalDebt");
         balance.push({ ...latestQuarter, fiscalYear: "MRQ" });
       }
 

@@ -91,14 +91,43 @@ const CROSS_VALIDATION_MIN_MAGNITUDE = 1_000_000;
  * original priority-order merge. Omitting `anchorField` entirely (existing
  * call sites that haven't opted in) preserves the original behavior
  * exactly.
+ *
+ * Zero-field backfill (the `backfillZeroFields` option): live bug reports
+ * against AT&T found `grossProfit`/`operatingIncome` (income) and
+ * `totalLiabilities` (balance) coming back as a hard `0` from SEC EDGAR for
+ * an operating company with real, positive revenue/assets — not because
+ * the value is genuinely zero, but because that filer simply doesn't tag
+ * the specific XBRL concept toSecIncomeRows/toSecBalanceRows (sec-edgar.ts)
+ * looks for (e.g. a cost-of-revenue tag variant this app doesn't check),
+ * so the derivation silently falls back to 0. Because mergeYearsBySource
+ * otherwise selects a WHOLE row per year, that fabricated 0 wins outright
+ * even when Yahoo/FMP have a real, non-zero number for that one field —
+ * their whole row loses priority for the year, so their good data for
+ * this field is never consulted either. `backfillZeroFields` closes that
+ * specific gap: for a listed field, if the winning row's value is exactly
+ * 0, and ANY other source's row for the same year has a real (finite,
+ * non-zero) value for that field, that one field gets patched onto a copy
+ * of the winning row — every other field, and the row's `dataSource`
+ * attribution, stays exactly as the winner reported it. This is
+ * deliberately narrower than "blend fields across sources": it only ever
+ * fires on a 0 (a value that structurally can't be a differing-but-valid
+ * figure, only an absence), never on a genuine disagreement between two
+ * real numbers — so it doesn't reopen the "mixing incompatible line-item
+ * definitions" risk this file's whole-row design otherwise avoids. Only
+ * apply this to fields that are essentially never legitimately exactly
+ * zero for a real operating company (Gross Profit, Operating Income,
+ * Total Liabilities) — never to a field where 0 can be a genuine, correct
+ * value (e.g. Total Debt for a debt-free company, or Stock-Based
+ * Compensation for a company with no equity comp program).
  */
 export function mergeYearsBySource<T extends YearRow>(
   label: string,
   symbol: string,
   layers: SourceLayer<T>[],
-  options?: { anchorField?: keyof T & string }
+  options?: { anchorField?: keyof T & string; backfillZeroFields?: (keyof T & string)[] }
 ): T[] {
   const anchorField = options?.anchorField;
+  const backfillZeroFields = options?.backfillZeroFields;
   const candidatesByYear = new Map<string, { source: FinancialDataSource; row: T }[]>();
   for (const layer of layers) {
     for (const row of layer.years) {
@@ -137,6 +166,29 @@ export function mergeYearsBySource<T extends YearRow>(
           }
         }
       }
+    }
+
+    if (backfillZeroFields && backfillZeroFields.length > 0) {
+      let patchedRow: T | null = null;
+      for (const field of backfillZeroFields) {
+        const currentVal = Number(winner.row[field]);
+        if (!Number.isFinite(currentVal) || currentVal !== 0) continue; // only patch a genuine, suspicious 0
+        const donor = candidates.find((c) => {
+          if (c.source === winner.source) return false;
+          const v = Number(c.row[field]);
+          return Number.isFinite(v) && v !== 0;
+        });
+        if (!donor) continue;
+        patchedRow = { ...(patchedRow ?? winner.row), [field]: donor.row[field] };
+        if (process.env.NODE_ENV !== "production") {
+          console.warn(
+            `[FinLens] ${label}(${symbol}) ${fiscalYear}: "${field}" from ${winner.source} was 0 — ` +
+              `backfilled from ${donor.source}'s value (${Number(donor.row[field]).toLocaleString("en-US")}) ` +
+              `for this field only. Every other field still comes from ${winner.source}.`
+          );
+        }
+      }
+      if (patchedRow) winner = { source: winner.source, row: patchedRow };
     }
 
     byYear.set(fiscalYear, { ...winner.row, dataSource: winner.source });
@@ -314,5 +366,56 @@ function warnIfDuplicateValuesAcrossYears<T extends YearRow>(label: string, symb
         );
       }
     }
+  }
+}
+
+/**
+ * Dev-only diagnostic added after two independent, unverified-live bug
+ * reports that share the same signature — a plausible real annual figure
+ * followed by an implausible trailing (TTM/MRQ) one:
+ *   - GOOGL: Total Assets $595B (last annual) -> $922B (MRQ), a 55%
+ *     one-quarter jump.
+ *   - AT&T: Total Debt $143.7B (last annual) -> $9.32B (MRQ), an ~93%
+ *     one-quarter drop (almost exactly matching just the current portion
+ *     of long-term debt, suggesting the quarterly LongTermDebtNoncurrent
+ *     tag came back empty for that specific period while the smaller
+ *     current-portion tag didn't).
+ *
+ * Neither could be root-caused without live SEC EDGAR/Yahoo access in
+ * this sandbox (see this file's module doc comment on that limitation),
+ * and — unlike the exactly-0 case backfillZeroFields handles — there's no
+ * structurally safe automatic fix here: both fields CAN legitimately move
+ * a lot in one quarter for a real reason (a major acquisition, a large
+ * new bond issuance), so silently overriding either figure risks
+ * suppressing a genuinely correct number. This only logs, so the data
+ * shown is unchanged; it exists purely so an implausible trailing figure
+ * is visible in server logs (with both values named) instead of silently
+ * feeding wrong ratios (P/FCF, Debt-to-Equity, etc.) with no trace of why.
+ */
+export function warnIfTrailingRowImplausible<T extends YearRow>(
+  label: string,
+  symbol: string,
+  historical: T[],
+  trailing: T | null | undefined,
+  anchorField: keyof T & string,
+  /** How large a one-period move counts as "implausible" — defaults to 40%, loose enough that normal quarter-to-quarter movement never trips it. */
+  threshold = 0.4
+): void {
+  if (process.env.NODE_ENV === "production") return;
+  if (!trailing || historical.length === 0) return;
+  const last = historical[historical.length - 1];
+  const lastVal = Number(last[anchorField]);
+  const trailingVal = Number(trailing[anchorField]);
+  if (!Number.isFinite(lastVal) || !Number.isFinite(trailingVal)) return;
+  if (Math.abs(lastVal) < 1_000_000) return; // same noise floor as warnIfDuplicateValuesAcrossYears
+  const relDiff = Math.abs(trailingVal - lastVal) / Math.max(Math.abs(lastVal), Math.abs(trailingVal));
+  if (relDiff > threshold) {
+    console.warn(
+      `[FinLens] ${label}(${symbol}): "${anchorField}" moved from ${lastVal.toLocaleString("en-US")} ` +
+        `(${last.fiscalYear}) to ${trailingVal.toLocaleString("en-US")} (${trailing.fiscalYear}) — a ` +
+        `${(relDiff * 100).toFixed(0)}% change in one period. Could be real (acquisition, major debt ` +
+        `issuance) or a tag-mapping/dimensional-data artifact — verify against a raw SEC EDGAR/Yahoo ` +
+        `payload before trusting either figure.`
+    );
   }
 }

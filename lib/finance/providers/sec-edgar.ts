@@ -780,26 +780,134 @@ function toSecBalanceRows(facts: Record<string, XbrlConceptFacts> | undefined, s
   return rows.sort((a, b) => a.fiscalYear.localeCompare(b.fiscalYear));
 }
 
-function toSecCashFlowRows(facts: Record<string, XbrlConceptFacts> | undefined, series: SeriesFn): CashFlowYear[] {
-  const operatingCashFlow = series(facts, [
+/**
+ * Root-cause fix (live bug report: AT&T's `cashFlowQuarterly` had genuine
+ * $0 operating-cash-flow values for 2025-Q2/2025-Q3/2026-Q2 while adjacent
+ * quarters had real figures — confirmed systemic across NVDA/AAPL too, and
+ * traced downstream to understate TTM free cash flow by roughly half,
+ * dragging FCF Yield/P-FCF ratios off by a comparable margin).
+ *
+ * Cash flow statements are conventionally presented in 10-Q interim
+ * filings as YEAR-TO-DATE CUMULATIVE columns only — "six months ended
+ * June 30" for Q2, "nine months ended September 30" for Q3 — rather than
+ * a discrete-quarter-only column, unlike the income statement (which
+ * typically presents both). `quarterlySeries`' duration filter (~70-100
+ * days) correctly rejects these longer cumulative entries as "not a
+ * genuine single quarter" — right for avoiding a ~181-day H1 figure being
+ * mistaken for Q2 alone — but for a filer that reports cash flow this way,
+ * that correct rejection means NO entry survives quarterlySeries for the
+ * affected tag/quarter at all, and toSecCashFlowRows' `operatingCashFlow:
+ * ocf ?? 0` then bakes in a fabricated $0 for a period that only lacks a
+ * DISCRETE figure — real underlying data exists, just cumulative.
+ *
+ * This reconstructs the discrete figure the same way an analyst would:
+ * Q2 = (six-months-ended) − Q1, Q3 = (nine-months-ended) − (six-months-ended).
+ * Deliberately conservative: only fires when a real Q1 (or H1) anchor is
+ * available from the SAME already-discrete series to subtract against, so
+ * a bad delta is never computed from a missing anchor. Q4 is NOT
+ * reconstructed here (FY − nine-months) — no standalone Q4-only 10-Q ever
+ * exists to source a "genuinely quarterly, as-filed" entry for it in the
+ * first place (a pre-existing, separate gap from this bug, not something
+ * this pass changes — Yahoo/FMP's quarterly data is the fallback for Q4,
+ * same as before).
+ */
+function reconstructDiscreteQuartersFromCumulative(
+  facts: Record<string, XbrlConceptFacts> | undefined,
+  tags: string[],
+  discreteQuarterly: Map<string, number>,
+  unitKey = "USD"
+): Map<string, number> {
+  const h1ByYear = new Map<string, { value: number; filed: string }>();
+  const ninemoByYear = new Map<string, { value: number; filed: string }>();
+  for (const tag of tags) {
+    const entries = facts?.[tag]?.units[unitKey];
+    if (!entries) continue;
+    for (const entry of entries) {
+      if (!entry.start || !QUARTERLY_FORMS.has(entry.form)) continue;
+      const days = durationDays(entry);
+      if (days == null) continue;
+      // Generous ~±30-day bands around the nominal 181/273-day cumulative
+      // durations — same pragmatic tolerance this file already applies to
+      // the ~91-day discrete-quarter window, to absorb non-calendar fiscal
+      // years and 52/53-week reporting calendars.
+      const bucket = days >= 150 && days <= 210 ? h1ByYear : days >= 240 && days <= 300 ? ninemoByYear : null;
+      if (!bucket) continue;
+      const year = String(new Date(entry.end).getFullYear());
+      const existing = bucket.get(year);
+      if (!existing || entry.filed > existing.filed) {
+        bucket.set(year, { value: entry.val, filed: entry.filed });
+      }
+    }
+  }
+
+  const reconstructed = new Map<string, number>();
+  for (const [year, h1] of h1ByYear) {
+    const q1 = discreteQuarterly.get(`${year}-Q1`);
+    if (q1 == null) continue; // no real Q1 anchor — don't guess
+    reconstructed.set(`${year}-Q2`, h1.value - q1);
+  }
+  for (const [year, ninemo] of ninemoByYear) {
+    const h1 = h1ByYear.get(year);
+    if (!h1) continue; // no real H1 anchor — don't guess
+    reconstructed.set(`${year}-Q3`, ninemo.value - h1.value);
+  }
+  return reconstructed;
+}
+
+/** Discrete-series values win when present; a reconstructed (cumulative-delta) value only fills a period the discrete series has nothing for. */
+function withReconstructedFallback(discrete: Map<string, number>, reconstructed: Map<string, number>): Map<string, number> {
+  const out = new Map(discrete);
+  for (const [key, value] of reconstructed) {
+    if (!out.has(key)) out.set(key, value);
+  }
+  return out;
+}
+
+function toSecCashFlowRows(
+  facts: Record<string, XbrlConceptFacts> | undefined,
+  series: SeriesFn,
+  isQuarterly: boolean
+): CashFlowYear[] {
+  const ocfTags = [
     "NetCashProvidedByUsedInOperatingActivities",
     "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
-  ]);
+  ];
   // SEC's convention reports capex as a positive outflow amount; this
   // codebase's established convention (see toCashFlowYears in yahoo.ts)
   // stores it negative, so it's negated below to stay consistent for every
   // consumer (charts, freeCashFlow math) regardless of which source a given
   // period came from.
-  const capex = series(facts, [
+  const capexTags = [
     "PaymentsToAcquirePropertyPlantAndEquipment",
     "PaymentsForCapitalImprovements",
     "PaymentsToAcquireProductiveAssets",
-  ]);
+  ];
   // "ShareBasedCompensation" is the common tag, but a number of large
   // filers (several under the same "big tech" umbrella as the Gross Profit
   // fix above) file this concept under "AllocatedShareBasedCompensationExpense" instead.
-  const stockBasedComp = series(facts, ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense"]);
-  const netIncome = series(facts, ["NetIncomeLoss", "ProfitLoss"]);
+  const sbcTags = ["ShareBasedCompensation", "AllocatedShareBasedCompensationExpense"];
+  const niTags = ["NetIncomeLoss", "ProfitLoss"];
+
+  const operatingCashFlowDiscrete = series(facts, ocfTags);
+  const capexDiscrete = series(facts, capexTags);
+  const stockBasedCompDiscrete = series(facts, sbcTags);
+  const netIncomeDiscrete = series(facts, niTags);
+
+  // YTD-cumulative reconstruction only makes sense for quarterly data —
+  // see reconstructDiscreteQuartersFromCumulative's doc comment. Annual
+  // (10-K) figures are already full-year; nothing to reconstruct.
+  const operatingCashFlow = isQuarterly
+    ? withReconstructedFallback(operatingCashFlowDiscrete, reconstructDiscreteQuartersFromCumulative(facts, ocfTags, operatingCashFlowDiscrete))
+    : operatingCashFlowDiscrete;
+  const capex = isQuarterly
+    ? withReconstructedFallback(capexDiscrete, reconstructDiscreteQuartersFromCumulative(facts, capexTags, capexDiscrete))
+    : capexDiscrete;
+  const stockBasedComp = isQuarterly
+    ? withReconstructedFallback(stockBasedCompDiscrete, reconstructDiscreteQuartersFromCumulative(facts, sbcTags, stockBasedCompDiscrete))
+    : stockBasedCompDiscrete;
+  const netIncome = isQuarterly
+    ? withReconstructedFallback(netIncomeDiscrete, reconstructDiscreteQuartersFromCumulative(facts, niTags, netIncomeDiscrete))
+    : netIncomeDiscrete;
 
   const periods = new Set([...operatingCashFlow.keys(), ...netIncome.keys()]);
   const rows: CashFlowYear[] = [];
@@ -901,10 +1009,10 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
       status: "ok",
       income: toSecIncomeRows(facts, annualSeries, splits),
       balance: toSecBalanceRows(facts, annualSeries),
-      cashFlow: toSecCashFlowRows(facts, annualSeries),
+      cashFlow: toSecCashFlowRows(facts, annualSeries, false),
       incomeQuarterly: toSecIncomeRows(facts, quarterlySeries, splits),
       balanceQuarterly: toSecBalanceRows(facts, quarterlySeries),
-      cashFlowQuarterly: toSecCashFlowRows(facts, quarterlySeries),
+      cashFlowQuarterly: toSecCashFlowRows(facts, quarterlySeries, true),
     };
     // A 200 response with zero extracted rows is a different failure mode
     // than a 403 (the tag lists in toSecIncomeRows/etc. not matching this
