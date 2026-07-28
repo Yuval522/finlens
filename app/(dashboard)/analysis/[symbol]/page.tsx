@@ -114,6 +114,7 @@ export default async function AnalysisPage({
             currency={quote.currency}
             symbol={quote.symbol}
             exchange={quote.exchange}
+            currentPrice={quote.price}
           />
 
           {!isNonFundamental && (
