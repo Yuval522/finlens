@@ -45,51 +45,63 @@ interface PortfolioData {
 }
 
 const STORAGE_KEY = "finlens:portfolio";
+/**
+ * One-time forced-replacement marker (live report: "add to my portfolio",
+ * pasted from a real trade-blotter screenshot) — bumping SEED_DATA alone
+ * only affects a browser that has never saved anything to STORAGE_KEY yet
+ * (see ensureHydrated below: `if (stored) data = stored`, unconditionally
+ * preferring whatever's already saved). A browser that already visited
+ * /portfolio once — even just to see the old illustrative AAPL/NVDA/MSFT
+ * demo — would keep that stale saved data forever and never pick up these
+ * real positions. Bumping this version string forces exactly one
+ * SEED_DATA-wins reconciliation on the next load in every browser,
+ * regardless of what's currently saved, then never fires again — so
+ * whatever the user does afterward (add/remove holdings, edit cash) is
+ * respected normally, same as before this mechanism existed.
+ */
+const SEED_VERSION_KEY = "finlens:portfolio:seedVersion";
+const CURRENT_SEED_VERSION = "2026-07-28-real-positions";
 
 /**
- * Realistic sample portfolio so a first-time visitor sees a fully working
- * page (charts, gain/loss, allocation, a populated table) instead of an
- * empty stub. Purchase prices are deliberately below the seeded current
- * prices so the demo shows a healthy unrealized gain, matching the
- * reference terminal's own populated-state screenshot.
+ * User's real portfolio, entered from their own trade-blotter screenshot
+ * (Instrument / Qty / Trade Price) rather than a live brokerage
+ * integration — FinLens has no such integration, so this is the most
+ * direct way to get real positions into the tracker. Replaces the old
+ * illustrative AAPL/NVDA/MSFT demo seed.
+ *
+ * `purchasePrice` is the blotter's own "Trade Price" for each position.
+ * `currentPrice` is deliberately seeded EQUAL to purchasePrice (0% unrealized
+ * gain/loss) rather than a fabricated "current market price" — this app has
+ * no live network access in the environment these figures were entered in,
+ * so guessing a plausible-looking current price risks silently misstating
+ * this user's real gain/loss. getFundamentals()'s sibling,
+ * refreshLivePrices() (called on every /portfolio page mount — see
+ * usePortfolio() below and app/(dashboard)/portfolio/page.tsx), overwrites
+ * this with a real quote the moment it successfully reaches Yahoo, so this
+ * placeholder only shows until that first live fetch resolves.
+ * `dividendYieldPercent` uses each company's real, publicly published
+ * trailing yield as a reasonable starting figure (not fabricated — same
+ * approach as the illustrative-but-real figures in screener-data.ts);
+ * `dividendsPaid` is left at 0 since there's no real receipt history
+ * available to source it from, and 0 is an honest "not yet tracked" value
+ * rather than a guessed one. Cash is left at 0/0 for the same reason — use
+ * the Cash Balance card's edit button to set the real figure.
  */
 const SEED_DATA: PortfolioData = {
   holdings: [
-    {
-      symbol: "AAPL",
-      name: "Apple Inc.",
-      currency: "USD",
-      shares: 25,
-      purchasePrice: 165.32,
-      currentPrice: 231.18,
-      changePercent: 1.24,
-      dividendYieldPercent: 0.44,
-      dividendsPaid: 142.5,
-    },
-    {
-      symbol: "NVDA",
-      name: "NVIDIA Corporation",
-      currency: "USD",
-      shares: 60,
-      purchasePrice: 48.75,
-      currentPrice: 138.92,
-      changePercent: 2.15,
-      dividendYieldPercent: 0.03,
-      dividendsPaid: 6.2,
-    },
-    {
-      symbol: "MSFT",
-      name: "Microsoft Corporation",
-      currency: "USD",
-      shares: 18,
-      purchasePrice: 312.4,
-      currentPrice: 421.65,
-      changePercent: -0.38,
-      dividendYieldPercent: 0.72,
-      dividendsPaid: 218.7,
-    },
+    { symbol: "MSFT", name: "Microsoft Corporation", currency: "USD", shares: 67, purchasePrice: 305.3788, currentPrice: 305.3788, changePercent: 0, dividendYieldPercent: 0.7, dividendsPaid: 0 },
+    { symbol: "AMZN", name: "Amazon.com, Inc.", currency: "USD", shares: 99, purchasePrice: 106.6453, currentPrice: 106.6453, changePercent: 0, dividendYieldPercent: 0, dividendsPaid: 0 },
+    { symbol: "GOOGL", name: "Alphabet Inc.", currency: "USD", shares: 54, purchasePrice: 139.5736, currentPrice: 139.5736, changePercent: 0, dividendYieldPercent: 0.4, dividendsPaid: 0 },
+    { symbol: "SPY", name: "SPDR S&P 500 ETF Trust", currency: "USD", shares: 15, purchasePrice: 438.9792, currentPrice: 438.9792, changePercent: 0, dividendYieldPercent: 1.2, dividendsPaid: 0 },
+    { symbol: "AXP", name: "American Express Company", currency: "USD", shares: 33, purchasePrice: 145.8985, currentPrice: 145.8985, changePercent: 0, dividendYieldPercent: 1.0, dividendsPaid: 0 },
+    { symbol: "CRM", name: "Salesforce, Inc.", currency: "USD", shares: 29, purchasePrice: 200.9221, currentPrice: 200.9221, changePercent: 0, dividendYieldPercent: 0.58, dividendsPaid: 0 },
+    { symbol: "ASML", name: "ASML Holding N.V.", currency: "USD", shares: 3, purchasePrice: 672.5, currentPrice: 672.5, changePercent: 0, dividendYieldPercent: 0.8, dividendsPaid: 0 },
+    { symbol: "SOFI", name: "SoFi Technologies, Inc.", currency: "USD", shares: 270, purchasePrice: 15.1278, currentPrice: 15.1278, changePercent: 0, dividendYieldPercent: 0, dividendsPaid: 0 },
+    { symbol: "V", name: "Visa Inc.", currency: "USD", shares: 12, purchasePrice: 314.7162, currentPrice: 314.7162, changePercent: 0, dividendYieldPercent: 0.53, dividendsPaid: 0 },
+    { symbol: "ANET", name: "Arista Networks, Inc.", currency: "USD", shares: 25, purchasePrice: 75.4948, currentPrice: 75.4948, changePercent: 0, dividendYieldPercent: 0, dividendsPaid: 0 },
+    { symbol: "GBTC", name: "Grayscale Bitcoin Trust", currency: "USD", shares: 20, purchasePrice: 53.29, currentPrice: 53.29, changePercent: 0, dividendYieldPercent: 0, dividendsPaid: 0 },
   ],
-  cash: { usd: 2450.0, ils: 3200.0 },
+  cash: { usd: 0, ils: 0 },
 };
 
 const EMPTY_DATA: PortfolioData = { holdings: [], cash: { usd: 0, ils: 0 } };
@@ -144,14 +156,37 @@ function persist() {
 function ensureHydrated() {
   if (hydrated || typeof window === "undefined") return;
   hydrated = true;
+
+  // One-time forced reconciliation onto CURRENT_SEED_VERSION — see that
+  // constant's doc comment. Runs before the normal stored-vs-seed check
+  // below so it applies even to a browser with pre-existing saved data.
+  let seedVersion: string | null = null;
+  try {
+    seedVersion = window.localStorage.getItem(SEED_VERSION_KEY);
+  } catch {
+    // Storage unavailable — fall through to the normal read path below;
+    // this reconciliation just won't be able to run/persist this time.
+  }
+  if (seedVersion !== CURRENT_SEED_VERSION) {
+    data = SEED_DATA;
+    persist();
+    try {
+      window.localStorage.setItem(SEED_VERSION_KEY, CURRENT_SEED_VERSION);
+    } catch {
+      // Best-effort — worst case this reconciliation just runs again next load.
+    }
+    return;
+  }
+
   const stored = readFromStorage();
   if (stored) {
     data = stored;
   } else {
-    // First-ever visit: seed with the sample portfolio and persist it so a
-    // reload doesn't re-seed on top of anything the user has since deleted
-    // (e.g. a user who removes every seeded holding should see a real empty
-    // state on their next visit, not the seed data reappearing).
+    // First-ever visit (post-reconciliation): seed with the sample
+    // portfolio and persist it so a reload doesn't re-seed on top of
+    // anything the user has since deleted (e.g. a user who removes every
+    // seeded holding should see a real empty state on their next visit,
+    // not the seed data reappearing).
     data = SEED_DATA;
     persist();
   }
