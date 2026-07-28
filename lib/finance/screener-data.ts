@@ -74,3 +74,21 @@ export const SCREENER_UNIVERSE: ScreenerStock[] = [
   { symbol: "TEVA.TA", name: "Teva Pharmaceutical", sector: "Healthcare", industry: "Drug Manufacturers - Specialty", price: 61.4, changePercent: 1.28, marketCapB: 53, peRatio: 19.4, dividendYieldPercent: 0 },
   { symbol: "NICE.TA", name: "NICE Ltd.", sector: "Technology", industry: "Software", price: 187.2, changePercent: -0.44, marketCapB: 12, peRatio: 22.8, dividendYieldPercent: 0 },
 ];
+
+const SECTOR_BY_SYMBOL = new Map(SCREENER_UNIVERSE.map((s) => [s.symbol.toUpperCase(), s.sector]));
+
+/**
+ * Best-effort symbol -> sector lookup, reusing this file's own screener
+ * universe (Portfolio's Asset Allocation "By Sector" view — see
+ * AssetAllocationChart.tsx). FinLens has no live company-profile fetch
+ * wired into the portfolio store itself (holdings only carry
+ * symbol/name/currency/shares/price, see lib/portfolio/store.ts), so this
+ * is the same honest-fallback approach as the rest of this file: a real,
+ * hand-authored sector for the well-known names this universe already
+ * covers, and a clearly-labeled "Other" bucket (not a fabricated guess)
+ * for anything outside it — a user's actual holding could genuinely be
+ * any sector, and pretending otherwise would misrepresent their portfolio.
+ */
+export function getSectorForSymbol(symbol: string): string {
+  return SECTOR_BY_SYMBOL.get(symbol.toUpperCase()) ?? "Other";
+}

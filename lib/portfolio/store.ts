@@ -231,6 +231,23 @@ export function removeHolding(symbolRaw: string): void {
 }
 
 /**
+ * QA feature (live report: Cash Balance was read-only — no way to update
+ * the USD/ILS figures short of clearing localStorage). Mirrors
+ * addHolding/removeHolding's mutate-module-state-then-persist-then-notify
+ * pattern exactly, so the Cash Balance card stays in sync with any other
+ * open instance of usePortfolio() the same way holdings already do.
+ * Negative values are clamped to 0 — a cash balance below zero isn't a
+ * real state this app models (no margin/negative-cash concept anywhere
+ * else in the portfolio math, see computePortfolioTotals).
+ */
+export function updateCash(next: PortfolioCash): void {
+  ensureHydrated();
+  data = { ...data, cash: { usd: Math.max(0, next.usd), ils: Math.max(0, next.ils) } };
+  persist();
+  notify();
+}
+
+/**
  * Refreshes currentPrice/changePercent for every held symbol from the live
  * /api/quotes route (same endpoint the Watchlist page already uses) and
  * persists the result — so once a fetch succeeds, that live price is what
@@ -277,6 +294,7 @@ export function usePortfolio() {
     cash: snapshot.cash,
     addHolding,
     removeHolding,
+    updateCash,
     refreshLivePrices,
   };
 }

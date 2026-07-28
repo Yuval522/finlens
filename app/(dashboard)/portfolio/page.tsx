@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Briefcase, Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, Briefcase, Pencil, Plus } from "lucide-react";
 import { usePortfolio } from "@/lib/portfolio/store";
 import type { PortfolioHolding } from "@/lib/portfolio/store";
 import { computePortfolioTotals, USD_TO_ILS_RATE } from "@/lib/portfolio/derive";
@@ -11,6 +11,7 @@ import { useBackgroundRefresh } from "@/lib/finance/useBackgroundRefresh";
 import { useLiveQuotes } from "@/lib/finance/useLiveQuotes";
 import { CurrencyToggle } from "@/components/portfolio/CurrencyToggle";
 import { AddStockModal } from "@/components/portfolio/AddStockModal";
+import { EditCashModal } from "@/components/portfolio/EditCashModal";
 import { PortfolioValueChart } from "@/components/portfolio/PortfolioValueChart";
 import { AssetAllocationChart } from "@/components/portfolio/AssetAllocationChart";
 import { HoldingsTable } from "@/components/portfolio/HoldingsTable";
@@ -27,6 +28,7 @@ export default function PortfolioPage() {
   const { holdings, cash, removeHolding, refreshLivePrices } = usePortfolio();
   const [displayCurrency, setDisplayCurrency] = useState<"USD" | "ILS">("USD");
   const [modalOpen, setModalOpen] = useState(false);
+  const [cashModalOpen, setCashModalOpen] = useState(false);
 
   // Best-effort live refresh of held symbols' prices on mount — updates and
   // persists currentPrice/changePercent when the fetch succeeds, silently
@@ -126,7 +128,22 @@ export default function PortfolioPage() {
           </div>
 
           <div className="glass-card rounded-xl p-4">
-            <p className="mb-2 text-sm text-muted-foreground">Cash Balance</p>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">Cash Balance</p>
+              {/* QA feature (live report: Cash Balance was read-only): edit
+                  button opens EditCashModal — same mutate-then-persist
+                  pattern as Add Stock, see lib/portfolio/store.ts's
+                  updateCash(). */}
+              <button
+                type="button"
+                onClick={() => setCashModalOpen(true)}
+                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Edit cash balance"
+                aria-label="Edit cash balance"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </div>
             <div className="space-y-1.5 text-sm">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Cash (USD)</span>
@@ -203,6 +220,7 @@ export default function PortfolioPage() {
       )}
 
       <AddStockModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      <EditCashModal open={cashModalOpen} cash={cash} onClose={() => setCashModalOpen(false)} />
     </div>
   );
 }
