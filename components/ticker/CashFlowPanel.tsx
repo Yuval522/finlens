@@ -101,8 +101,12 @@ function MultiMetricCard({
   cashFlowQuarterly,
   options,
   currency,
-  barSize = 28,
-  maxBarSize = 38,
+  // QA fix (reference-terminal density audit — see IncomeStatementPanel.tsx's
+  // matching comment): widened from 28/38. Multi-series cards (2-4 bars per
+  // category here) can't go as wide as the single-metric Income charts
+  // without bars touching, so the bump is proportionally smaller.
+  barSize = 36,
+  maxBarSize = 48,
   expanded,
   onToggle,
 }: MultiMetricCardProps) {
@@ -142,7 +146,7 @@ function MultiMetricCard({
       }
     >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="14%">
+        <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="10%">
           <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
           {/* QA fix: explicit type="category" — see IncomeStatementPanel.tsx's matching comment. */}
           <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
@@ -224,8 +228,8 @@ export function CashFlowPanel({ cashFlow, cashFlowQuarterly = [], currency }: Ca
           cashFlowQuarterly={cashFlowQuarterly}
           options={QUALITY_OPTIONS}
           currency={currency}
-          barSize={44}
-          maxBarSize={56}
+          barSize={52}
+          maxBarSize={68}
           expanded={expanded}
           onToggle={toggle}
         />

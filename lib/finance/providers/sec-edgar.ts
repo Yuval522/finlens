@@ -581,12 +581,48 @@ function cumulativeSplitRatioAfter(periodEnd: Date, splits: StockSplitEvent[]): 
  * the rarer filer that doesn't even tag that subtotal, per the same
  * "comprehensive fallbacks so no core chart silently zeroes out" goal.
  */
+/**
+ * Root-cause fix (live bug report: an Income Statement panel showed real,
+ * populated Operating Income / Net Income / EPS bars for 2021-2023 but
+ * completely blank (zero-height) Revenue / Gross Profit bars for the exact
+ * same years). Traced to this function's period-inclusion rule further
+ * down (`periods = new Set([...revenue.keys(), ...netIncome.keys()])`) — a
+ * period only needs revenue OR net income tagged to become a row, but the
+ * row unconditionally pushed `totalRevenue: totalRevenue ?? 0`. When a
+ * filer's revenue for a given fiscal year wasn't tagged under any of the
+ * (previously shorter) list below — an XBRL tag-coverage gap, not "this
+ * company had zero revenue" — OperatingIncomeLoss/NetIncomeLoss are
+ * near-universal tags that don't depend on Revenue being tagged at all —
+ * that period silently got a *fabricated* $0 revenue baked into the row.
+ * Because mergeYearsBySource (aggregate.ts) merges WHOLE rows per fiscal
+ * year with SEC EDGAR as the top-priority source, that fabricated-$0 row
+ * won the entire year, so even a real revenue figure Yahoo/FMP might have
+ * had for that year was never consulted.
+ *
+ * Two changes close this gap without regressing the (correct) Operating
+ * Income/Net Income/EPS data those years already had:
+ *  1. The revenue tag list below was widened with industry-specific
+ *     revenue concepts (banks/financials, regulated utilities, healthcare,
+ *     REITs, oil & gas) that weren't previously checked — standard
+ *     `us-gaap` taxonomy concepts, same "unverified live in this sandbox"
+ *     caveat as the rest of this file's tag lists.
+ *  2. `deriveRevenue()` below applies Revenue = Gross Profit + Cost of
+ *     Revenue as a last-resort derivation for any period that still has no
+ *     direct revenue tag — the same accounting identity this function
+ *     already uses in reverse a few lines down (Gross Profit = Revenue -
+ *     Cost of Revenue), just solved for the other variable. This is a real
+ *     mathematical identity, not a guess, and only fires when a period
+ *     genuinely has both GrossProfit and a Cost-of-Revenue tag reported.
+ * A period that still has no revenue after both of these keeps its row —
+ * dropping the whole row over one missing field would regress Operating
+ * Income/Net Income/EPS/Shares, which is worse than a gap in one metric.
+ */
 function toSecIncomeRows(
   facts: Record<string, XbrlConceptFacts> | undefined,
   series: SeriesFn,
   splits: StockSplitEvent[] = []
 ): IncomeStatementYear[] {
-  const revenue = series(facts, [
+  const revenueTagged = series(facts, [
     "Revenues",
     "RevenueFromContractWithCustomerExcludingAssessedTax",
     "RevenueFromContractWithCustomerIncludingAssessedTax",
@@ -594,6 +630,12 @@ function toSecIncomeRows(
     "SalesRevenueGoodsNet",
     "SalesRevenueServicesNet",
     "RevenuesNetOfInterestExpense",
+    // Industry-specific revenue tags — see this function's doc comment.
+    "InterestAndDividendIncomeOperating",
+    "RegulatedAndUnregulatedOperatingRevenue",
+    "HealthCareOrganizationRevenue",
+    "RealEstateRevenueNet",
+    "OilAndGasRevenue",
   ]);
   const grossProfitTagged = series(facts, ["GrossProfit"]);
   // Fallback derivation source for filers that never tag GrossProfit at
@@ -607,6 +649,15 @@ function toSecIncomeRows(
     "CostOfServices",
     "CostOfGoodsSoldExcludingDepreciationDepletionAndAmortization",
   ]);
+  // Revenue = Gross Profit + Cost of Revenue — see this function's doc
+  // comment, item 2. Only fills periods revenueTagged genuinely has no
+  // entry for; never overrides a directly-tagged figure.
+  const revenue = new Map(revenueTagged);
+  for (const [fiscalYear, gp] of grossProfitTagged) {
+    if (!revenue.has(fiscalYear) && costOfRevenue.has(fiscalYear)) {
+      revenue.set(fiscalYear, gp + costOfRevenue.get(fiscalYear)!);
+    }
+  }
   const operatingIncomeTagged = series(facts, ["OperatingIncomeLoss"]);
   // Fallback derivation source for the rarer filer that doesn't tag an
   // operating-income subtotal either — same rationale as Gross Profit.

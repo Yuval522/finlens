@@ -58,7 +58,13 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
 
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="12%">
+      {/* QA fix (reference-terminal density audit): bars read as "thin and
+          sparse" next to the reference screenshots even where every year had
+          real data — barCategoryGap 12% -> 8% shrinks the gap between
+          category bands, and the barSize/maxBarSize bump below raises the
+          bar's own upper-bound width, together letting a single-bar-per-
+          category chart like this one fill noticeably more of its band. */}
+      <BarChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="8%">
         <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
         {/* QA fix: explicit type="category" — this was already Recharts'
             default for XAxis, but the reported "bars bunched left with
@@ -97,8 +103,8 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
           radius={[4, 4, 0, 0]}
           animationDuration={600}
           fill={color}
-          barSize={64}
-          maxBarSize={84}
+          barSize={72}
+          maxBarSize={96}
         >
           {effectiveColorByValue &&
             data.map((row, idx) => (
@@ -251,7 +257,7 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
     >
       {ruleOf40Data.length > 0 ? (
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={ruleOf40Data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="12%">
+          <BarChart data={ruleOf40Data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }} barCategoryGap="8%">
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
@@ -265,7 +271,7 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
               ]}
               allowEscapeViewBox={{ x: true, y: true }}
             />
-            <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600} barSize={64} maxBarSize={84}>
+            <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600} barSize={72} maxBarSize={96}>
               {ruleOf40Data.map((row) => (
                 <Cell key={row.fiscalYear} fill={row.ruleOf40 >= 40 ? SUCCESS : DESTRUCTIVE} />
               ))}
