@@ -29,10 +29,13 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 
   return (
     <header className="glass-panel sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border px-4 md:px-6">
+      {/* Mobile UX audit fix: h-9 w-9 (36px) is under the ~44px minimum
+          recommended touch target — bumped both the hamburger menu button
+          and the user-menu avatar trigger below to h-11 w-11 (44px). */}
       <button
         type="button"
         onClick={onMenuClick}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/60 hover:text-foreground md:hidden"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/60 hover:text-foreground md:hidden"
         aria-label="Open menu"
       >
         <Menu className="h-5 w-5" />
@@ -44,7 +47,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
           aria-label="Open user menu"
           aria-expanded={menuOpen}
         >
@@ -52,7 +55,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         </button>
 
         {menuOpen && (
-          <div className="absolute right-0 top-11 w-48 rounded-md border border-border bg-card py-1 shadow-lg">
+          <div className="absolute right-0 top-[calc(100%+4px)] w-48 rounded-md border border-border bg-card py-1 shadow-lg">
             {MENU_ITEMS.map((item) =>
               // QA polish: now that /settings is a real page, route "Account"
               // there instead of leaving it as a dead button — the other
@@ -63,7 +66,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                   key={item}
                   href="/settings"
                   onClick={() => setMenuOpen(false)}
-                  className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-accent/60"
+                  className="flex min-h-11 w-full items-center px-3 text-left text-sm text-foreground hover:bg-accent/60"
                 >
                   {item}
                 </Link>
@@ -71,7 +74,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                 <button
                   key={item}
                   type="button"
-                  className="block w-full px-3 py-2 text-left text-sm text-foreground hover:bg-accent/60"
+                  className="flex min-h-11 w-full items-center px-3 text-left text-sm text-foreground hover:bg-accent/60"
                 >
                   {item}
                 </button>

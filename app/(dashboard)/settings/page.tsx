@@ -55,14 +55,18 @@ function SectionCard({
 // of absolute positioning for the thumb so the translate distance is
 // exactly track-width minus thumb-width minus insets, not a hand-tuned
 // magic number.
-function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+// Mobile UX audit fix: the switch track itself is a deliberately
+// iOS-proportioned 24x44px (see the QA comment this replaced) — a good
+// visual size, but only 24px tall as a touch target. Rather than change
+// that visual design, `Switch` is now purely decorative (aria-hidden) and
+// `ToggleRow` below is the actual interactive control: the WHOLE row
+// (title + description + switch) is one `role="switch"` button, so the
+// real tappable area comfortably clears the ~44px minimum without
+// changing how the switch itself looks.
+function Switch({ checked }: { checked: boolean }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
+    <span
+      aria-hidden="true"
       className={cn(
         "relative flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors",
         checked ? "bg-primary" : "bg-zinc-700"
@@ -74,7 +78,7 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: 
           checked ? "translate-x-5" : "translate-x-0"
         )}
       />
-    </button>
+    </span>
   );
 }
 
@@ -90,13 +94,20 @@ function ToggleRow({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-1.5">
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={title}
+      onClick={() => onChange(!checked)}
+      className="flex min-h-11 w-full items-center justify-between gap-4 rounded-md py-1.5 text-left transition-colors hover:bg-accent/40"
+    >
       <div className="min-w-0">
         <p className="text-sm text-foreground">{title}</p>
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
-      <Switch checked={checked} onChange={onChange} label={title} />
-    </div>
+      <Switch checked={checked} />
+    </button>
   );
 }
 
@@ -175,7 +186,7 @@ export default function SettingsPage() {
                 }}
                 title={opt.label}
                 className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-card transition-shadow",
+                  "flex h-11 w-11 items-center justify-center rounded-full ring-2 ring-offset-2 ring-offset-card transition-shadow",
                   opt.swatch,
                   settings.accentColor === opt.id ? "ring-foreground" : "ring-transparent"
                 )}

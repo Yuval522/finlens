@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AreaChart, CandlestickChart, Grid3x3 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AreaChart, CandlestickChart, Grid3x3, Palette } from "lucide-react";
 import { PriceChart, type ChartMode } from "./PriceChart";
 import { TimeRangeSelector, type TimeRange } from "./TimeRangeSelector";
 import { currencySymbol, formatPercent, formatPrice, toDisplayUnit } from "@/lib/format/currency";
@@ -63,6 +63,27 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
   const [showSma, setShowSma] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [chartColor, setChartColor] = useState<string | null>(null);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const colorPickerRef = useRef<HTMLDivElement>(null);
+
+  // Mobile UX audit fix: the color picker used to be a permanently-open
+  // row of five 14px swatch buttons crammed next to the SMA/grid toggles
+  // and mode buttons — both a touch-target problem (14px is well under
+  // the ~44px minimum recommended tap size) and a row-crowding problem on
+  // narrow phone widths. Collapsed into a single 44px trigger that opens a
+  // small popover with 44px swatch buttons instead — same click-outside
+  // pattern already used by the search comboboxes (SymbolSearchInput,
+  // ComparePanel's inline search) elsewhere in this codebase.
+  useEffect(() => {
+    if (!colorPickerOpen) return;
+    function onClickOutside(event: MouseEvent) {
+      if (colorPickerRef.current && !colorPickerRef.current.contains(event.target as Node)) {
+        setColorPickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [colorPickerOpen]);
 
   // QA hotfix (Phase 4): date-axis locale is market-aware now — Hebrew only
   // for TASE listings, English everywhere else (was previously left unset,
@@ -143,16 +164,31 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
           SMA/grid/color/mode controls on their own line — matching the
           reference layout's two-row toolbar and no longer needing the
           squeeze workaround. */}
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <div className="flex shrink-0 flex-wrap items-center gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground">
+      {/* Mobile UX audit fix: every control below used to have a real
+          tappable area well under the ~44px minimum recommended touch
+          target (the SMA/grid switches were 20px tall with an
+          unclickable text label next to them — a <label> wrapping a
+          plain <button> does NOT forward clicks per the HTML spec, only
+          real form controls get that; the five color swatches were 14px
+          circles; the mode buttons were ~28px). Every control is now
+          either a full min-h-11 (44px) button in its own right (SMA/grid
+          toggles — the whole row including the text label is now
+          clickable) or 44x44px (color trigger, popover swatches, mode
+          buttons). flex-wrap on both this row and the group below it was
+          already present, so nothing needed to change there — the actual
+          audit finding was tap-target size, not wrapping. */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showSma}
+            onClick={() => setShowSma((v) => !v)}
+            className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
             <span>SMA 20</span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={showSma}
-              onClick={() => setShowSma((v) => !v)}
-              className={`relative h-5 w-9 rounded-full transition-colors ${
+            <span
+              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
                 showSma ? "bg-primary" : "bg-accent"
               }`}
             >
@@ -161,21 +197,21 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
                   showSma ? "translate-x-4" : "translate-x-0.5"
                 }`}
               />
-            </button>
-          </label>
+            </span>
+          </button>
 
-          <label
-            className="flex cursor-pointer items-center gap-2 text-xs font-medium text-muted-foreground"
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showGrid}
+            aria-label="Toggle grid lines"
             title="הצג/הסתר רשת — toggle chart grid lines"
+            onClick={() => setShowGrid((v) => !v)}
+            className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <Grid3x3 className="h-3.5 w-3.5" />
-            <button
-              type="button"
-              role="switch"
-              aria-checked={showGrid}
-              aria-label="Toggle grid lines"
-              onClick={() => setShowGrid((v) => !v)}
-              className={`relative h-5 w-9 rounded-full transition-colors ${
+            <span
+              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
                 showGrid ? "bg-primary" : "bg-accent"
               }`}
             >
@@ -184,37 +220,75 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
                   showGrid ? "translate-x-4" : "translate-x-0.5"
                 }`}
               />
-            </button>
-          </label>
+            </span>
+          </button>
 
-          <div
-            className="flex items-center gap-1.5 rounded-lg border border-slate-800/80 px-2 py-1"
-            role="group"
-            aria-label="Chart color"
-          >
+          {/* Color picker: was a permanently-open row of 14px swatches —
+              now a single 44px trigger that opens a small popover with
+              44px swatch buttons, both fixing the touch-target size and
+              decluttering this row on narrow phone widths. */}
+          <div ref={colorPickerRef} className="relative">
             <button
               type="button"
-              onClick={() => setChartColor(null)}
-              aria-pressed={chartColor === null}
-              title="Auto (trend color)"
-              className={`h-3.5 w-3.5 shrink-0 rounded-full transition-shadow ${
-                chartColor === null ? "ring-2 ring-primary ring-offset-1 ring-offset-background" : ""
-              }`}
-              style={{ background: "linear-gradient(135deg, #10B981 50%, #EF4444 50%)" }}
-            />
-            {COLOR_PRESETS.map((preset) => (
-              <button
-                key={preset.hex}
-                type="button"
-                onClick={() => setChartColor(preset.hex)}
-                aria-pressed={chartColor === preset.hex}
-                title={preset.name}
-                className={`h-3.5 w-3.5 shrink-0 rounded-full transition-shadow ${
-                  chartColor === preset.hex ? "ring-2 ring-primary ring-offset-1 ring-offset-background" : ""
-                }`}
-                style={{ backgroundColor: preset.hex }}
+              onClick={() => setColorPickerOpen((v) => !v)}
+              aria-expanded={colorPickerOpen}
+              aria-haspopup="true"
+              aria-label="Chart color"
+              title="Chart color"
+              className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg border border-slate-800/80 px-3 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <span
+                className="h-3.5 w-3.5 shrink-0 rounded-full"
+                style={
+                  chartColor
+                    ? { backgroundColor: chartColor }
+                    : { background: "linear-gradient(135deg, #10B981 50%, #EF4444 50%)" }
+                }
               />
-            ))}
+              <Palette className="h-3.5 w-3.5" />
+            </button>
+            {colorPickerOpen && (
+              <div
+                role="group"
+                aria-label="Chart color options"
+                className="search-dropdown-panel absolute left-0 top-[calc(100%+4px)] z-50 flex items-center gap-1 rounded-lg border border-border p-1 shadow-xl"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChartColor(null);
+                    setColorPickerOpen(false);
+                  }}
+                  aria-pressed={chartColor === null}
+                  title="Auto (trend color)"
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-md transition-colors ${
+                    chartColor === null ? "bg-accent ring-2 ring-primary" : "hover:bg-accent"
+                  }`}
+                >
+                  <span
+                    className="h-3.5 w-3.5 rounded-full"
+                    style={{ background: "linear-gradient(135deg, #10B981 50%, #EF4444 50%)" }}
+                  />
+                </button>
+                {COLOR_PRESETS.map((preset) => (
+                  <button
+                    key={preset.hex}
+                    type="button"
+                    onClick={() => {
+                      setChartColor(preset.hex);
+                      setColorPickerOpen(false);
+                    }}
+                    aria-pressed={chartColor === preset.hex}
+                    title={preset.name}
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-md transition-colors ${
+                      chartColor === preset.hex ? "bg-accent ring-2 ring-primary" : "hover:bg-accent"
+                    }`}
+                  >
+                    <span className="h-3.5 w-3.5 rounded-full" style={{ backgroundColor: preset.hex }} />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center rounded-lg border border-slate-800/80 p-0.5">
@@ -223,7 +297,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
               aria-pressed={mode === "area"}
               onClick={() => setMode("area")}
               title="Area mode"
-              className={`rounded-md p-1.5 transition-colors ${
+              className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
                 mode === "area"
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -236,7 +310,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
               aria-pressed={mode === "candlestick"}
               onClick={() => setMode("candlestick")}
               title="Candlestick mode"
-              className={`rounded-md p-1.5 transition-colors ${
+              className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
                 mode === "candlestick"
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground"

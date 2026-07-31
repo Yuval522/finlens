@@ -57,10 +57,14 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
         {/* Wordmark */}
         <div className="flex h-16 items-center gap-2 border-b border-border px-4">
           <FinLensLogo size={28} showWordmark={!collapsed} className="min-w-0" />
+          {/* Mobile UX audit fix: h-8 w-8 (32px) is under the ~44px minimum
+              recommended touch target — this is the mobile-only close
+              control for the nav drawer, so a comfortably-sized tap area
+              matters more here than almost anywhere else in the app. */}
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/60 hover:text-foreground md:hidden"
+            className="ml-auto flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/60 hover:text-foreground md:hidden"
             aria-label="Close menu"
           >
             <X className="h-5 w-5" />
@@ -79,7 +83,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                 onClick={onClose}
                 title={collapsed ? label : undefined}
                 className={cn(
-                  "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  "group flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   active
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",

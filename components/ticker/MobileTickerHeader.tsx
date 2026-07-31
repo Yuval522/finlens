@@ -27,9 +27,13 @@ interface MobileTickerHeaderProps {
 export function MobileTickerHeader({ quote }: MobileTickerHeaderProps) {
   return (
     <div className="mb-4 flex items-center gap-3 lg:hidden">
+      {/* Mobile UX audit fix: p-2 around a 16px icon (~32px total) was under
+          the ~44px minimum touch target — this is the only way back to the
+          dashboard on mobile (no persistent nav), so it matters more here
+          than most controls in the app. */}
       <Link
         href="/"
-        className="flex shrink-0 items-center justify-center rounded-full border border-border bg-accent/60 p-2 text-foreground transition-colors hover:bg-accent"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-accent/60 text-foreground transition-colors hover:bg-accent"
         aria-label="Back to dashboard"
       >
         <ArrowLeft className="h-4 w-4" />
