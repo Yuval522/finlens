@@ -929,6 +929,125 @@ function toSecCashFlowRows(
   return rows.sort((a, b) => a.fiscalYear.localeCompare(b.fiscalYear));
 }
 
+/**
+ * Synthesizes each fiscal year's 4th quarter as a residual — Annual (10-K)
+ * minus that year's real, as-filed Q1+Q2+Q3 — for the income statement.
+ *
+ * Root cause this closes (external audit + independently re-verified
+ * against this file's own code before trusting the report): no filer ever
+ * submits a standalone "Q4-only" 10-Q, since the 10-K itself covers the
+ * full fiscal year — so `quarterlySeries()` structurally can never produce
+ * a `-Q4` key from directly-tagged facts alone (unlike
+ * `reconstructDiscreteQuartersFromCumulative` above, which reconstructs Q2/
+ * Q3 for cash flow from YTD-cumulative facts that DO exist; no equivalent
+ * cumulative fact covers Q4 either, since "twelve months ended" IS the
+ * annual figure). Previously this silently fell through to the Yahoo/FMP
+ * fallback for every historical year, and Yahoo's quarterly endpoint has an
+ * undocumented ~4-5 quarter hard cap (see USER_AGENT's doc comment) — so in
+ * practice almost every historical Q4 was simply missing.
+ *
+ * Deliberately conservative, same posture as
+ * reconstructDiscreteQuartersFromCumulative: only fires when Q1, Q2, AND Q3
+ * are all genuinely present for that fiscal year (real anchors to subtract
+ * against) — a year missing any one of the three keeps no synthesized Q4
+ * rather than silently absorbing that missing quarter's value into a wrong,
+ * inflated "Q4". Never overrides an already-present Q4 (a real 10-Q filer's
+ * or an earlier pass's).
+ *
+ * `sharesOutstandingDiluted` is a weighted-average SNAPSHOT for the period,
+ * not a summable flow — subtracting it the way a dollar figure sums would
+ * produce a nonsensical negative-ish residual, so the synthesized Q4 row
+ * reuses the annual (full-year weighted average) figure directly instead,
+ * the same "point-in-time value stands in for the missing period" approach
+ * synthesizeBalanceQ4 below uses for the entire balance sheet.
+ */
+function synthesizeIncomeQ4(annual: IncomeStatementYear[], quarterly: IncomeStatementYear[]): IncomeStatementYear[] {
+  const quarterlyByKey = new Map(quarterly.map((row) => [row.fiscalYear, row]));
+  const synthesized: IncomeStatementYear[] = [];
+  for (const fy of annual) {
+    const q4Key = `${fy.fiscalYear}-Q4`;
+    if (quarterlyByKey.has(q4Key)) continue;
+    const q1 = quarterlyByKey.get(`${fy.fiscalYear}-Q1`);
+    const q2 = quarterlyByKey.get(`${fy.fiscalYear}-Q2`);
+    const q3 = quarterlyByKey.get(`${fy.fiscalYear}-Q3`);
+    if (!q1 || !q2 || !q3) continue;
+    synthesized.push({
+      fiscalYear: q4Key,
+      totalRevenue: fy.totalRevenue - q1.totalRevenue - q2.totalRevenue - q3.totalRevenue,
+      grossProfit: fy.grossProfit - q1.grossProfit - q2.grossProfit - q3.grossProfit,
+      operatingIncome: fy.operatingIncome - q1.operatingIncome - q2.operatingIncome - q3.operatingIncome,
+      netIncome: fy.netIncome - q1.netIncome - q2.netIncome - q3.netIncome,
+      // Summed rather than derived from a weighted-average share count —
+      // same "sum the quarters" convention essentially every financial data
+      // vendor uses for quarterly EPS, even though it's a mild approximation
+      // given quarter-to-quarter share-count drift.
+      eps: fy.eps - q1.eps - q2.eps - q3.eps,
+      sharesOutstandingDiluted: fy.sharesOutstandingDiluted,
+      dividendsPerShare: fy.dividendsPerShare - q1.dividendsPerShare - q2.dividendsPerShare - q3.dividendsPerShare,
+      dataSource: "sec-edgar",
+    });
+  }
+  return synthesized;
+}
+
+/**
+ * Cash flow's equivalent of synthesizeIncomeQ4 — see that function's doc
+ * comment for the shared rationale (Annual − Q1 − Q2 − Q3, only when all
+ * three real quarters exist). Every field here (OCF, capex, SBC, net
+ * income) is a genuine flow, so straight subtraction is correct with no
+ * "point-in-time" caveat the way sharesOutstandingDiluted needed above.
+ * `freeCashFlow` is recomputed from the synthesized OCF/capex rather than
+ * subtracted directly, to stay consistent with how toSecCashFlowRows
+ * derives it (freeCashFlow = OCF + negative capex) everywhere else in this
+ * file.
+ */
+function synthesizeCashFlowQ4(annual: CashFlowYear[], quarterly: CashFlowYear[]): CashFlowYear[] {
+  const quarterlyByKey = new Map(quarterly.map((row) => [row.fiscalYear, row]));
+  const synthesized: CashFlowYear[] = [];
+  for (const fy of annual) {
+    const q4Key = `${fy.fiscalYear}-Q4`;
+    if (quarterlyByKey.has(q4Key)) continue;
+    const q1 = quarterlyByKey.get(`${fy.fiscalYear}-Q1`);
+    const q2 = quarterlyByKey.get(`${fy.fiscalYear}-Q2`);
+    const q3 = quarterlyByKey.get(`${fy.fiscalYear}-Q3`);
+    if (!q1 || !q2 || !q3) continue;
+    const operatingCashFlow = fy.operatingCashFlow - q1.operatingCashFlow - q2.operatingCashFlow - q3.operatingCashFlow;
+    const capitalExpenditures =
+      fy.capitalExpenditures - q1.capitalExpenditures - q2.capitalExpenditures - q3.capitalExpenditures;
+    synthesized.push({
+      fiscalYear: q4Key,
+      operatingCashFlow,
+      freeCashFlow: operatingCashFlow + capitalExpenditures,
+      stockBasedCompensation:
+        fy.stockBasedCompensation - q1.stockBasedCompensation - q2.stockBasedCompensation - q3.stockBasedCompensation,
+      capitalExpenditures,
+      netIncome: fy.netIncome - q1.netIncome - q2.netIncome - q3.netIncome,
+      dataSource: "sec-edgar",
+    });
+  }
+  return synthesized;
+}
+
+/**
+ * Balance sheet figures are point-in-time snapshots, not flows — a fiscal
+ * year-end's balance IS the Q4 balance (a 10-K's period-end date and a
+ * would-be Q4 10-Q's period-end date are the same date; no filer ever needs
+ * to separately report the latter, since the former already covers it). So
+ * unlike synthesizeIncomeQ4/synthesizeCashFlowQ4's residual subtraction,
+ * the correct fix here is simply reusing the annual row's own figures under
+ * a `-Q4` key whenever no directly-tagged quarterly Q4 entry exists.
+ */
+function synthesizeBalanceQ4(annual: BalanceSheetYear[], quarterly: BalanceSheetYear[]): BalanceSheetYear[] {
+  const quarterlyKeys = new Set(quarterly.map((row) => row.fiscalYear));
+  const synthesized: BalanceSheetYear[] = [];
+  for (const fy of annual) {
+    const q4Key = `${fy.fiscalYear}-Q4`;
+    if (quarterlyKeys.has(q4Key)) continue;
+    synthesized.push({ ...fy, fiscalYear: q4Key, dataSource: "sec-edgar" });
+  }
+  return synthesized;
+}
+
 export interface SecFinancials {
   status: "ok" | "not-registered" | "unavailable";
   income: IncomeStatementYear[];
@@ -1005,14 +1124,31 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
     // that lands mid-year still retroactively adjusts every prior quarter
     // and fiscal year's per-share figures consistently.
     const splits = detectStockSplits(facts);
+    const incomeAnnual = toSecIncomeRows(facts, annualSeries, splits);
+    const balanceAnnual = toSecBalanceRows(facts, annualSeries);
+    const cashFlowAnnual = toSecCashFlowRows(facts, annualSeries, false);
+    const incomeQuarterlyRaw = toSecIncomeRows(facts, quarterlySeries, splits);
+    const balanceQuarterlyRaw = toSecBalanceRows(facts, quarterlySeries);
+    const cashFlowQuarterlyRaw = toSecCashFlowRows(facts, quarterlySeries, true);
+    // See synthesizeIncomeQ4/synthesizeCashFlowQ4/synthesizeBalanceQ4's doc
+    // comments — fills each fiscal year's missing 4th quarter, which no
+    // filer ever files as a standalone 10-Q, so it can never come from
+    // toSecIncomeRows/toSecBalanceRows/toSecCashFlowRows' tag-based
+    // extraction alone.
     const result: SecFinancials = {
       status: "ok",
-      income: toSecIncomeRows(facts, annualSeries, splits),
-      balance: toSecBalanceRows(facts, annualSeries),
-      cashFlow: toSecCashFlowRows(facts, annualSeries, false),
-      incomeQuarterly: toSecIncomeRows(facts, quarterlySeries, splits),
-      balanceQuarterly: toSecBalanceRows(facts, quarterlySeries),
-      cashFlowQuarterly: toSecCashFlowRows(facts, quarterlySeries, true),
+      income: incomeAnnual,
+      balance: balanceAnnual,
+      cashFlow: cashFlowAnnual,
+      incomeQuarterly: [...incomeQuarterlyRaw, ...synthesizeIncomeQ4(incomeAnnual, incomeQuarterlyRaw)].sort((a, b) =>
+        a.fiscalYear.localeCompare(b.fiscalYear)
+      ),
+      balanceQuarterly: [...balanceQuarterlyRaw, ...synthesizeBalanceQ4(balanceAnnual, balanceQuarterlyRaw)].sort(
+        (a, b) => a.fiscalYear.localeCompare(b.fiscalYear)
+      ),
+      cashFlowQuarterly: [...cashFlowQuarterlyRaw, ...synthesizeCashFlowQ4(cashFlowAnnual, cashFlowQuarterlyRaw)].sort(
+        (a, b) => a.fiscalYear.localeCompare(b.fiscalYear)
+      ),
     };
     // A 200 response with zero extracted rows is a different failure mode
     // than a 403 (the tag lists in toSecIncomeRows/etc. not matching this
