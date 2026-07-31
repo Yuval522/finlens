@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear, IncomeStatementYear } from "@/lib/finance/types";
-import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
+import { CHART_COLORS, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
 import { splitTrailingRow, toPctOfRevenue, toYoY, type ChartView } from "@/lib/finance/chart-transform";
 import { useChartControls } from "@/lib/finance/useChartControls";
+import { ChartTooltip } from "./ChartTooltip";
 import { SourceAttributionBadge } from "./SourceAttributionBadge";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
@@ -22,6 +23,68 @@ interface IncomeStatementPanelProps {
 }
 
 const { success: SUCCESS, amber: AMBER, slate: SLATE, destructive: DESTRUCTIVE, sky: SKY } = CHART_COLORS;
+
+interface SingleMetricTooltipProps {
+  active?: boolean;
+  label?: string;
+  payload?: { value: number }[];
+  data: { fiscalYear: string }[];
+  dataKey: string;
+  entryLabel: string;
+  color: string;
+  formatValue: (value: number) => string;
+}
+
+/**
+ * Passed as a JSX element (not a function) to `content` — same convention
+ * as CashFlowPanel's CashFlowTooltip, whose doc comment explains why:
+ * recharts clones this element at runtime, injecting active/label/payload,
+ * and typing it against recharts' own strict TooltipContentProps function
+ * signature (rather than this element-clone path) produces unresolvable
+ * ContentType assignability errors for no behavioral benefit.
+ */
+function SingleMetricTooltip({ active, label, payload, data, dataKey, entryLabel, color, formatValue }: SingleMetricTooltipProps) {
+  return (
+    <ChartTooltip
+      active={active}
+      label={label}
+      data={data}
+      entries={
+        payload && payload.length > 0
+          ? [{ key: dataKey, label: entryLabel, value: formatValue(Number(payload[0].value)), color }]
+          : []
+      }
+    />
+  );
+}
+
+interface RuleOf40TooltipProps {
+  active?: boolean;
+  label?: string;
+  payload?: { value: number; payload?: { usedFcf?: boolean } }[];
+  data: { fiscalYear: string }[];
+}
+
+function RuleOf40Tooltip({ active, label, payload, data }: RuleOf40TooltipProps) {
+  return (
+    <ChartTooltip
+      active={active}
+      label={label}
+      data={data}
+      entries={
+        payload && payload.length > 0
+          ? [
+              {
+                key: "ruleOf40",
+                label: "Rule of 40",
+                value: `${Number(payload[0].value).toFixed(1)}%${payload[0].payload?.usedFcf ? "" : " (op. margin proxy)"}`,
+              },
+            ]
+          : []
+      }
+    />
+  );
+}
 
 /** Single-series bar chart used for every card in this 8-chart grid — the
  * reference dashboard shows one metric per card rather than grouped pairs
@@ -79,10 +142,16 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
           axisLine={false}
           tickFormatter={isPercentView ? (v: number) => `${v}%` : compactAxis}
         />
+        {/* QA fix (mobile screenshot: tooltip clipped off the right edge on
+            the "2026" bar) — custom `content` swaps in ChartTooltip, which
+            flips the box to grow left of the cursor once the hovered bar is
+            near the end of the series. See shouldFlipTooltip() in
+            lib/format/chart.ts for the full root-cause writeup. */}
         <Tooltip
-          contentStyle={CHART_TOOLTIP_STYLE}
+          content={
+            <SingleMetricTooltip data={data} dataKey={dataKey} entryLabel={effectiveLabel} color={color} formatValue={effectiveFormat} />
+          }
           wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
-          formatter={(value) => [effectiveFormat(Number(value)), effectiveLabel]}
           allowEscapeViewBox={{ x: true, y: true }}
         />
         {/* Recharts' TypedDataKey inference can't resolve a plain `keyof T`
@@ -291,12 +360,8 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
             <ReferenceLine y={40} stroke={AMBER} strokeDasharray="4 4" />
             <Tooltip
-              contentStyle={CHART_TOOLTIP_STYLE}
+              content={<RuleOf40Tooltip data={ruleOf40Data} />}
               wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
-              formatter={(value, _name, item) => [
-                `${Number(value).toFixed(1)}%${item?.payload?.usedFcf ? "" : " (op. margin proxy)"}`,
-                "Rule of 40",
-              ]}
               allowEscapeViewBox={{ x: true, y: true }}
             />
             <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600} barSize={72} maxBarSize={96}>

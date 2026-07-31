@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear } from "@/lib/finance/types";
-import { CHART_COLORS, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
+import { CHART_COLORS, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis, shouldFlipTooltip } from "@/lib/format/chart";
 import { splitTrailingRow, toYoY, type ChartView } from "@/lib/finance/chart-transform";
 import { useChartControls } from "@/lib/finance/useChartControls";
 import { ChartCard } from "./ChartCard";
@@ -34,6 +34,9 @@ interface CashFlowTooltipProps {
   payload?: CashFlowTooltipPayloadEntry[];
   currency: string;
   view: ChartView;
+  /** Chart's own fiscalYear-keyed rows — used only to compute whether the
+   *  hovered bar is near the end of the series (see shouldFlipTooltip). */
+  data: { fiscalYear: string }[];
 }
 
 /**
@@ -43,11 +46,20 @@ interface CashFlowTooltipProps {
  * minimal local shape rather than recharts' own TooltipProps generic,
  * which doesn't consistently expose `payload`/`label` on the props object
  * recharts actually clones onto a custom `content` element at runtime.
+ *
+ * QA fix (mobile screenshot: tooltip clipped off the right edge on a
+ * rightmost bar) — flips to grow left of the cursor via shouldFlipTooltip()
+ * once the hovered bar is near the end of the series; see that helper in
+ * lib/format/chart.ts for the full root-cause writeup.
  */
-function CashFlowTooltip({ active, payload, label, currency, view }: CashFlowTooltipProps) {
+function CashFlowTooltip({ active, payload, label, currency, view, data }: CashFlowTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
+  const flip = shouldFlipTooltip(label, data);
   return (
-    <div className="glass-card min-w-[220px] rounded-lg border !border-solid p-3 shadow-xl">
+    <div
+      className="glass-card min-w-[220px] rounded-lg border !border-solid p-3 shadow-xl"
+      style={{ transform: flip ? "translateX(-100%)" : undefined }}
+    >
       <p className="mb-2 font-mono text-xs font-semibold text-foreground">{label}</p>
       <div className="space-y-1.5">
         {payload.map((entry) => (
@@ -152,7 +164,7 @@ function MultiMetricCard({
           <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
           <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
           <Tooltip
-            content={<CashFlowTooltip currency={currency} view={controls.view} />}
+            content={<CashFlowTooltip currency={currency} view={controls.view} data={data} />}
             wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
             cursor={{ fill: "rgba(148,163,184,0.06)" }}
             allowEscapeViewBox={{ x: true, y: true }}

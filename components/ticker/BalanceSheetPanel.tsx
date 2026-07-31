@@ -3,10 +3,11 @@
 import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { BalanceSheetYear } from "@/lib/finance/types";
-import { CHART_COLORS, CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
+import { CHART_COLORS, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
 import { splitTrailingRow, toYoY } from "@/lib/finance/chart-transform";
 import { useChartControls } from "@/lib/finance/useChartControls";
 import { ChartCard } from "./ChartCard";
+import { ChartTooltip } from "./ChartTooltip";
 import { ChartControls } from "./ChartControls";
 import { MetricFilterControl, type MetricFilterOption } from "./MetricFilterControl";
 import { SourceAttributionBadge } from "./SourceAttributionBadge";
@@ -20,6 +21,35 @@ interface BalanceSheetPanelProps {
 }
 
 const { success: SUCCESS, primary: PRIMARY, destructive: DESTRUCTIVE, sky: SKY } = CHART_COLORS;
+
+interface BalanceSheetTooltipProps {
+  active?: boolean;
+  label?: string;
+  payload?: { dataKey?: string; name?: string; value: number; color?: string }[];
+  data: { fiscalYear: string }[];
+  formatValue: (value: unknown) => string;
+}
+
+/** Passed as a JSX element to `content` — see SingleMetricTooltip's doc
+ *  comment in IncomeStatementPanel.tsx for why (same convention throughout
+ *  this codebase's chart tooltips). */
+function BalanceSheetTooltip({ active, label, payload, data, formatValue }: BalanceSheetTooltipProps) {
+  return (
+    <ChartTooltip
+      active={active}
+      label={label}
+      data={data}
+      entries={
+        payload?.map((entry) => ({
+          key: entry.dataKey ?? entry.name ?? "",
+          label: entry.name ?? "",
+          value: formatValue(entry.value),
+          color: entry.color,
+        })) ?? []
+      }
+    />
+  );
+}
 
 interface MultiMetricCardProps {
   id: string;
@@ -105,10 +135,14 @@ function MultiMetricCard({
           {/* QA fix: explicit type="category" — see IncomeStatementPanel.tsx's matching comment. */}
           <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
           <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={axisFormatter} />
+          {/* QA fix (mobile screenshot: tooltip clipped off the right edge on
+              a rightmost bar) — custom `content` swaps in the shared
+              ChartTooltip, which flips the box to grow left of the cursor
+              near the end of the series. See shouldFlipTooltip() in
+              lib/format/chart.ts. */}
           <Tooltip
-            contentStyle={CHART_TOOLTIP_STYLE}
+            content={<BalanceSheetTooltip data={data} formatValue={tooltipFormatter} />}
             wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
-            formatter={tooltipFormatter}
             allowEscapeViewBox={{ x: true, y: true }}
           />
           <Legend wrapperStyle={{ fontSize: 11 }} />

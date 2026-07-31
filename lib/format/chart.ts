@@ -57,3 +57,29 @@ export const CHART_COLORS = {
   slate: "#64748B",
   sky: "#38BDF8",
 };
+
+// QA fix (mobile screenshot: Gross Profit chart, "2026" bar — tooltip text
+// rendered clipped off the right edge of the phone screen). Root cause:
+// allowEscapeViewBox={{x:true,y:true}} is set on every <Tooltip> in this app
+// (see CHART_TOOLTIP_WRAPPER_STYLE's doc comment above — added for a
+// *different*, prior bug: the tooltip rendering behind a neighboring grid
+// card, a z-index issue). That flag explicitly disables Recharts' own
+// built-in "keep the tooltip inside the chart" boundary containment, and
+// nothing was put back in its place — so a tooltip hovered/tapped near the
+// end of the x-axis has nowhere to stop and overflows the viewport on
+// narrow (mobile) screens.
+//
+// Fix: match the hovered category's `label` against the chart's own `data`
+// array to find its index, then flip the tooltip to grow left instead of
+// right once that index is past ~60% of the series. Deliberately
+// index-based rather than a DOM measurement (getBoundingClientRect /
+// ResizeObserver): it's computed synchronously from props already available
+// on first render, so there's no "flash of wrong position" a
+// measure-after-paint approach would have, and it avoids relying on
+// Recharts' `viewBox`, which isn't reliably exposed to a custom `content`
+// render function (checked against recharts' own Tooltip.d.ts).
+export function shouldFlipTooltip(label: string | undefined, data: { fiscalYear: string }[]): boolean {
+  if (!label || data.length <= 1) return false;
+  const index = data.findIndex((row) => row.fiscalYear === label);
+  return index >= 0 && index / (data.length - 1) > 0.6;
+}
