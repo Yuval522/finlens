@@ -27,6 +27,22 @@ export class TtlCache<T> {
     this.store.set(key, { value, expiresAt: Date.now() + this.ttlMs });
   }
 
+  /**
+   * Explicit eviction — used by the earnings-aware cache bypass in
+   * yahoo.ts, which re-keys `fundamentalsCache` by a freshness epoch that
+   * changes the moment a symbol crosses a new earnings date. Without this,
+   * the previous epoch's entry would just sit in `store` until its own TTL
+   * happened to be checked again (which may never happen once nothing
+   * requests that exact key anymore) — a slow, unbounded memory leak for a
+   * long-running process. Deleting the stale key explicitly the moment we
+   * know it's superseded keeps the cache's real footprint bounded to
+   * "currently relevant keys" regardless of how many earnings cycles a
+   * long-lived server process lives through.
+   */
+  delete(key: string): void {
+    this.store.delete(key);
+  }
+
   /** Fetch-through helper: returns the cached value, or calls `fn`, caches, and returns it. */
   async getOrSet(key: string, fn: () => Promise<T>): Promise<T> {
     const cached = this.get(key);

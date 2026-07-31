@@ -55,6 +55,15 @@ const mostActiveCache = new TtlCache<MarketQuote[]>(CACHE_TTL_MS);
 // see the getQuotes() re-fetch at the end of getFundamentals(), which
 // decouples the price specifically onto quoteCache's faster 20s cadence.
 const fundamentalsCache = new TtlCache<FundamentalsBundle>(CACHE_TTL_MS * 15);
+// Earnings-aware cache bypass support (see getEarningsFreshnessEpoch and
+// getFundamentals below): a short-lived cache for the lightweight
+// calendarEvents freshness probe itself (so bursts of requests for the
+// same symbol don't each trigger their own probe fetch), plus a map
+// remembering which `fundamentalsCache` key was last used per symbol so
+// the now-superseded entry can be explicitly evicted the moment a symbol
+// crosses into a new earnings-freshness epoch, instead of leaking forever.
+const earningsFreshnessProbeCache = new TtlCache<string>(60_000);
+const lastFundamentalsCacheKeyBySymbol = new Map<string, string>();
 
 const KNOWN_MARKET_STATES: MarketState[] = [
   "PRE",
@@ -991,6 +1000,53 @@ function toPricePoints(chart: ChartResultArray): PricePoint[] {
 }
 
 /**
+ * Earnings-aware cache bypass: a cheap probe (one small quoteSummary
+ * module, not the full multi-source fundamentals fetch below) used to
+ * derive a "freshness epoch" string that becomes PART of the fundamentals
+ * cache key. As long as a symbol hasn't crossed a new earnings-call date,
+ * this returns the same epoch every time, so caching behaves exactly as
+ * before (normal TTL). The moment a NEW earnings date is crossed — e.g.
+ * Microsoft reporting on 2026-07-30 — the epoch string changes, which
+ * means the *next* request for that symbol naturally misses the cache
+ * (the old key is also explicitly evicted, see getFundamentals below) and
+ * triggers a real, fresh, cross-source-validated multi-source fetch
+ * instead of serving a bundle built before the report existed.
+ *
+ * Honest limitation: this guarantees FinLens ASKS its upstream providers
+ * again as soon as the calendar date arrives — it can't guarantee Yahoo/
+ * SEC EDGAR/FMP have already indexed the brand-new quarter at that exact
+ * moment (that indexing lag lives entirely on their end, not something a
+ * client-side cache policy can close). What it fixes is FinLens's *own*
+ * up-to-15-cache-cycle (~5 minute in current config) delay on top of
+ * whatever the providers already have — the actual bug behind "we're
+ * still showing last quarter's numbers days after earnings dropped."
+ *
+ * Wrapped in its own short-lived (60s) cache so a burst of requests for
+ * the same symbol (multiple components/tabs on one page load) triggers
+ * only one probe fetch, not one per request. Fails open to "unknown" —
+ * a fixed, stable epoch — on any error or when calendarEvents has no past
+ * earnings date to report (thinly-covered tickers, indices, ETFs), so a
+ * flaky probe degrades to ordinary TTL-based caching rather than either
+ * erroring the whole request or forcing a full refetch on every call.
+ */
+async function getEarningsFreshnessEpoch(symbol: string): Promise<string> {
+  return earningsFreshnessProbeCache.getOrSet(symbol.toUpperCase(), async () => {
+    try {
+      const probe = await yahooFinance.quoteSummary(symbol, { modules: ["calendarEvents"] });
+      const dates = probe.calendarEvents?.earnings?.earningsDate ?? [];
+      const now = Date.now();
+      const pastDates = dates
+        .filter((d): d is Date => d instanceof Date && d.getTime() <= now)
+        .map((d) => d.getTime());
+      if (pastDates.length === 0) return "unknown";
+      return new Date(Math.max(...pastDates)).toISOString().slice(0, 10); // "YYYY-MM-DD"
+    } catch {
+      return "unknown";
+    }
+  });
+}
+
+/**
  * Full ticker analysis bundle: quote, company profile, valuation metrics,
  * income statement history, and ~10y of daily price bars. Falls back to
  * curated mock data (AAPL, NVDA, TEVA.TA only) if the live provider is
@@ -999,8 +1055,23 @@ function toPricePoints(chart: ChartResultArray): PricePoint[] {
 export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBundle> {
   const symbol = symbolRaw.trim();
   if (!symbol) throw new MarketDataError("No symbol provided");
+  const upperSymbol = symbol.toUpperCase();
 
-  const bundle = await fundamentalsCache.getOrSet(`fundamentals:${symbol.toUpperCase()}`, async () => {
+  // See getEarningsFreshnessEpoch's doc comment above for the full
+  // mechanism. Evicting the previous epoch's key explicitly (rather than
+  // leaving it to its own TTL, which may never be re-checked once nothing
+  // requests that exact key again) keeps the cache's footprint bounded to
+  // "currently relevant keys" across a long-running server process that
+  // lives through many earnings cycles for many symbols.
+  const freshnessEpoch = await getEarningsFreshnessEpoch(symbol);
+  const cacheKey = `fundamentals:${upperSymbol}:${freshnessEpoch}`;
+  const previousKey = lastFundamentalsCacheKeyBySymbol.get(upperSymbol);
+  if (previousKey && previousKey !== cacheKey) {
+    fundamentalsCache.delete(previousKey);
+  }
+  lastFundamentalsCacheKeyBySymbol.set(upperSymbol, cacheKey);
+
+  const bundle = await fundamentalsCache.getOrSet(cacheKey, async () => {
     try {
       const period1 = new Date();
       period1.setFullYear(period1.getFullYear() - 10);
@@ -1075,6 +1146,11 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             // targets themselves (mean/high/low/median) come from
             // financialData above, already fetched.
             "recommendationTrend",
+            // Next/most-recent earnings-call date — powers the
+            // earnings-aware cache bypass below (getEarningsFreshnessEpoch).
+            // Fetched here too (not just in the lightweight probe) so the
+            // full bundle's own `summary` carries it for any future UI use.
+            "calendarEvents",
           ],
         }),
         yahooFinance.chart(symbol, { period1, interval: "1d" }),

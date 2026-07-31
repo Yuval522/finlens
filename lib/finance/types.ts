@@ -121,6 +121,19 @@ export interface TickerMetrics {
  */
 export type FinancialDataSource = "sec-edgar" | "yahoo" | "fmp";
 
+/**
+ * Set by mergeYearsBySource (aggregate.ts) when 2+ independently-fetched
+ * sources report this same fiscal period but disagree on the statement's
+ * `anchorField` (e.g. totalRevenue for income) beyond the normal
+ * provider-to-provider noise tolerance — a real, visible "these providers
+ * don't agree yet" signal (e.g. one provider has already indexed a
+ * just-released quarter and another hasn't), surfaced by
+ * SourceAttributionBadge rather than only logged to the server console.
+ * Omitted (undefined) — not `false` — for every row where either only one
+ * source had data, or the sources that did agreed within tolerance, so a
+ * missing field always means "nothing to flag" without needing a
+ * three-way boolean.
+ */
 export interface IncomeStatementYear {
   fiscalYear: string;
   totalRevenue: number;
@@ -131,6 +144,7 @@ export interface IncomeStatementYear {
   sharesOutstandingDiluted: number;
   dividendsPerShare: number;
   dataSource?: FinancialDataSource;
+  dataDiscrepancy?: boolean;
 }
 
 export interface BalanceSheetYear {
@@ -146,6 +160,7 @@ export interface BalanceSheetYear {
   totalCash: number;
   totalDebt: number;
   dataSource?: FinancialDataSource;
+  dataDiscrepancy?: boolean;
 }
 
 export interface CashFlowYear {
@@ -162,6 +177,7 @@ export interface CashFlowYear {
    *  guaranteed to cover identical fiscal years. */
   netIncome: number;
   dataSource?: FinancialDataSource;
+  dataDiscrepancy?: boolean;
 }
 
 export interface EstimateRow {

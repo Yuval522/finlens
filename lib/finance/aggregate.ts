@@ -30,6 +30,19 @@
  * providers against each other for years all three cover, and demote a
  * clear 2-against-1 outlier instead of trusting priority blindly — see
  * that function's doc comment for the exact mechanism and thresholds.
+ *
+ * Discrepancy flagging: separately from the 2-against-1 demotion above
+ * (which needs 3 sources to know which one is likely wrong), ANY period
+ * where 2+ sources disagree beyond tolerance on `anchorField` gets a
+ * `dataDiscrepancy: true` tag on the merged row — this is deliberately
+ * "flag, don't guess": with only 2 disagreeing sources there's no
+ * majority to trust, so rather than silently picking the priority winner
+ * and saying nothing, the row carries a visible signal (rendered by
+ * SourceAttributionBadge) that this period's figures haven't been
+ * corroborated yet. The most common real-world trigger is exactly the
+ * freshness case this exists for: a just-released quarter where one
+ * provider has already indexed the new numbers and another hasn't caught
+ * up, so their same-labeled period genuinely differs.
  */
 
 import type { FinancialDataSource } from "./types";
@@ -37,6 +50,8 @@ import type { FinancialDataSource } from "./types";
 export interface YearRow {
   fiscalYear: string;
   dataSource?: FinancialDataSource;
+  /** See the doc comment on this same field in types.ts (IncomeStatementYear et al.) for the full mechanism. */
+  dataDiscrepancy?: boolean;
 }
 
 export interface SourceLayer<T extends YearRow> {
@@ -141,6 +156,34 @@ export function mergeYearsBySource<T extends YearRow>(
   for (const [fiscalYear, candidates] of candidatesByYear) {
     let winner = candidates[0]; // highest-priority source that has this year — default/original behavior
 
+    // Discrepancy flag: independent of (and computed before) the 3-source
+    // outlier-demotion below — even a plain 2-source disagreement, which
+    // isn't enough evidence to know which provider is right, is still
+    // worth surfacing rather than silently picking the priority winner and
+    // saying nothing. Computed across ALL candidates for this period, not
+    // just the eventual winner, so it also catches disagreement between
+    // two lower-priority sources the demotion logic never even inspects.
+    let dataDiscrepancy = false;
+    if (anchorField) {
+      const anchorValues = candidates
+        .map((c) => Number(c.row[anchorField]))
+        .filter((v) => Number.isFinite(v) && Math.abs(v) >= CROSS_VALIDATION_MIN_MAGNITUDE);
+      outer: for (let i = 0; i < anchorValues.length; i++) {
+        for (let j = i + 1; j < anchorValues.length; j++) {
+          if (relativeDifference(anchorValues[i], anchorValues[j]) > CROSS_VALIDATION_OUTLIER_TOLERANCE) {
+            dataDiscrepancy = true;
+            break outer;
+          }
+        }
+      }
+      if (dataDiscrepancy && process.env.NODE_ENV !== "production") {
+        console.warn(
+          `[FinLens] ${label}(${symbol}) ${fiscalYear}: sources disagree on "${anchorField}" beyond ` +
+            `tolerance — ${candidates.map((c) => `${c.source}=${Number(c.row[anchorField]).toLocaleString("en-US")}`).join(", ")}.`
+        );
+      }
+    }
+
     if (anchorField && candidates.length >= 3) {
       const withAnchor = candidates
         .map((c) => ({ ...c, value: Number(c.row[anchorField]) }))
@@ -191,7 +234,11 @@ export function mergeYearsBySource<T extends YearRow>(
       if (patchedRow) winner = { source: winner.source, row: patchedRow };
     }
 
-    byYear.set(fiscalYear, { ...winner.row, dataSource: winner.source });
+    byYear.set(fiscalYear, {
+      ...winner.row,
+      dataSource: winner.source,
+      dataDiscrepancy: dataDiscrepancy || undefined,
+    });
   }
 
   // String comparison, not Number() subtraction — `fiscalYear` is either a

@@ -1,8 +1,8 @@
 # Alternative Data Sources & Cross-Validation — Feasibility Evaluation
 
-**Scope:** Google Finance integration feasibility, Apple Stocks app backend benchmark, and a multi-source data-triangulation/conflict-resolution design for `lib/finance/`.
+**Scope:** Google Finance integration feasibility, Apple Stocks app backend benchmark, a multi-source data-triangulation/conflict-resolution design, investing.com scraping feasibility, and earnings-freshness/discrepancy-flagging mechanisms for `lib/finance/`.
 
-**Status:** research and evaluation complete for items 1–2 (recommendation: do not integrate Google Finance; Apple Stocks confirms our existing choice of Yahoo, not a new option). Item 3 (cross-validation) is implemented and shipped in `lib/finance/aggregate.ts` + wired into `yahoo.ts`.
+**Status:** research and evaluation complete for items 1–2 (recommendation: do not integrate Google Finance; Apple Stocks confirms our existing choice of Yahoo, not a new option) and item 4 (recommendation: do not scrape investing.com, same ToS/legal reasoning as item 1). Items 3, 5, and 6 (cross-source triangulation, earnings-aware cache bypass, and discrepancy flagging) are implemented and shipped in `lib/finance/aggregate.ts`, `lib/finance/cache.ts`, `lib/finance/yahoo.ts`, and `components/ticker/SourceAttributionBadge.tsx`.
 
 ---
 
@@ -59,6 +59,26 @@ FMP is opt-in (`FMP_API_KEY`) and most deployments won't have it configured, so 
 ### Verified
 
 `npx tsc --noEmit`, `npx next lint`, and `npx next build` all pass clean against this change (see commit for `lib/finance/aggregate.ts` and `lib/finance/yahoo.ts`).
+
+---
+
+## 4. investing.com as a secondary source — not integrated (ToS/legal risk)
+
+A later request asked for `investing.com` specifically as a scraping fallback to catch fresh earnings faster. Declined for the same reason Google Finance was declined in §1: investing.com's Terms of Service explicitly prohibit automated scraping of their data, and this project already has a documented policy (§1 above) of not building production features on top of unauthorized scraping — the risk profile is identical (fragile markup-dependent parsing, no stable contract, real legal exposure), not a new consideration specific to this site. Confirmed with the user directly before any implementation work started; the two mechanisms below (already-integrated, ToS-compliant sources only) were built instead.
+
+## 5. Earnings-aware cache bypass — implemented
+
+**The actual problem this solves:** `getFundamentals()`'s cache (`fundamentalsCache` in `yahoo.ts`) is fine-grained enough (~5 minutes) that it was never the real cause of "we're still showing last quarter's numbers days after earnings." The real cause is a client-side cache that has no way to know a new quarter now exists upstream — it just serves whatever it last fetched until the TTL naturally expires, then re-fetches (and may well get the same stale answer again if nothing changed in between).
+
+**The fix:** `getEarningsFreshnessEpoch()` runs a cheap, single-module `quoteSummary` probe (`calendarEvents` only — a small fraction of the cost of the full multi-source fetch) ahead of every `getFundamentals()` call, deriving an ISO-date "freshness epoch" from the most recent PAST earnings-call date Yahoo reports. That epoch is folded directly into the cache key (`fundamentals:{SYMBOL}:{epoch}`). As long as a symbol hasn't crossed a new earnings date, the epoch — and therefore the key — stays constant, so caching behaves exactly as before. The moment a new earnings date is crossed, the key changes, `fundamentalsCache.getOrSet` naturally treats it as a miss, and a real, fresh, cross-source-validated fetch runs — with the now-superseded previous key explicitly evicted (`TtlCache.delete`, added for this) so long-lived server processes don't leak stale-keyed entries across many earnings cycles. The probe itself is wrapped in its own 60-second cache so a burst of page loads for the same symbol doesn't trigger a probe per request.
+
+**Honest limitation, stated plainly:** this guarantees FinLens *asks* its upstream providers again as soon as the calendar date arrives — it cannot guarantee Yahoo/SEC EDGAR/FMP have already indexed the brand-new quarter at that exact moment; that indexing lag lives entirely on the provider side and no client-side cache policy can close it. What this closes is FinLens's *own* added delay on top of whatever the providers already have. A genuinely sub-minute, guaranteed-fresh feed (matching a real institutional terminal) would require a paid low-latency provider (Polygon.io, Finnhub, etc.) as a fourth source — not implemented here since no such credential was provided; the architecture (`mergeYearsBySource`'s layer/priority model) already supports adding one the same way SEC EDGAR/Yahoo/FMP were added, whenever a key becomes available.
+
+## 6. Cross-source discrepancy flagging — implemented
+
+`mergeYearsBySource`'s existing triangulation (§3) only acts when *three* sources are present and two of them corroborate each other against a clear outlier — by design, since a 2-against-1 majority is real evidence, while a plain 2-source disagreement isn't enough to know which one is right. That left a real gap: when exactly two sources report the same period with materially different figures (the most common real-world trigger being exactly the freshness case above — one provider has already indexed a just-released quarter and the other hasn't caught up), the merge silently picked the priority winner and said nothing.
+
+**The fix:** every merged row now carries an optional `dataDiscrepancy: boolean` field, set whenever 2+ sources' `anchorField` values for that period differ beyond the existing 8% outlier tolerance — independent of, and computed before, the 3-source demotion check, so it also catches disagreement the demotion logic never even looks at (e.g. two lower-priority sources disagreeing with each other while the winner is untouched). This is deliberately "flag, don't guess": with no third corroborating source, there's no principled way to auto-correct, so the mismatch is surfaced instead — both as a dev-console `console.warn` (matching this file's existing diagnostic conventions) and, for the first time, as a real user-visible signal: `SourceAttributionBadge` now renders an amber "Sources disagree: {period(s)} — verify before relying on it" line whenever any rendered period carries the flag, directly on the Income/Balance/Cash Flow panels rather than only in server logs a user never sees.
 
 ---
 
