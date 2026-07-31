@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { formatPercent } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,7 @@ function money(v: number): string {
  * the confirmed-sortable "Gain/Loss" header behavior from the reference.
  */
 export function HoldingsTable({ holdings, onRemove, ticks }: HoldingsTableProps) {
+  const router = useRouter();
   const [sortKey, setSortKey] = useState<SortKey>("positionValue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
@@ -131,7 +133,11 @@ export function HoldingsTable({ holdings, onRemove, ticks }: HoldingsTableProps)
                     ? "price-flash-down"
                     : undefined;
               return (
-                <tr key={h.symbol} className="border-b border-slate-800/60 last:border-0">
+                <tr
+                  key={h.symbol}
+                  onClick={() => router.push(`/analysis/${encodeURIComponent(h.symbol)}`)}
+                  className="cursor-pointer border-b border-slate-800/60 transition-colors last:border-0 hover:bg-accent/60"
+                >
                   <td className="px-2 py-2.5">
                     <div className="flex items-center gap-2">
                       <CompanyLogo symbol={h.symbol} name={h.name} size={22} />
@@ -171,7 +177,13 @@ export function HoldingsTable({ holdings, onRemove, ticks }: HoldingsTableProps)
                   <td className="px-2 py-2.5 text-right">
                     <button
                       type="button"
-                      onClick={() => onRemove(h.symbol)}
+                      onClick={(e) => {
+                        // Row navigation lives on the parent <tr> — stop this
+                        // click from bubbling up and triggering it too, so
+                        // deleting a holding doesn't also navigate away.
+                        e.stopPropagation();
+                        onRemove(h.symbol);
+                      }}
                       className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                       title={`Remove ${h.symbol}`}
                       aria-label={`Remove ${h.symbol} from portfolio`}
