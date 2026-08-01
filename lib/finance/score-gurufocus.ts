@@ -1,14 +1,14 @@
 import { splitTrailingRow } from "./chart-transform";
 import { average, computePiotroskiScore, fmtPct, fmtRatio, scaleScore } from "./score";
-import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear, TickerMetrics } from "./types";
+import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear, PricePoint, TickerMetrics } from "./types";
 
 /**
  * "GuruFocus-style" multi-pillar rating model — a second, independent lens
  * on the Score tab alongside the existing 4-category Composite Financial
- * Health Score (see score.ts). Modeled after the four rating *pillars*
- * GuruFocus.com publicly shows on its own stock pages (Financial Strength,
- * Profitability Rank, Growth Rank, and a valuation/"GF Value" indicator),
- * each displayed there as a 1-10 rank.
+ * Health Score (see score.ts). Modeled after the five rating *pillars*
+ * GuruFocus.com publicly shows on its own stock pages' GF Score radar
+ * chart (Financial Strength, Profitability, Growth, a valuation/"GF Value"
+ * indicator, and Momentum), each displayed there as a 1-10 rank.
  *
  * IMPORTANT — this is NOT a reproduction of GuruFocus's proprietary
  * algorithm, which they don't publish. Their real formulas use inputs this
@@ -16,14 +16,17 @@ import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear, TickerMetrics
  * in interest coverage and a full Altman Z-Score, which needs retained
  * earnings broken out from equity — the same limitation already documented
  * in score.ts's module comment for the Composite Score's Financial
- * Strength category) and their GF Value is a proprietary intrinsic-value
- * regression against historical median multiples and analyst estimates
- * that can't be reconstructed without their model. This file is FinLens's
- * own, independently-derived approximation of the *shape* of that rating
- * system (four 1-10 pillar ranks), computed purely from data already in
- * this app's fundamentals bundle, with every threshold documented below
- * the same way score.ts documents its own. Not affiliated with, endorsed
- * by, or sourced from GuruFocus LLC. Not investment advice.
+ * Strength category; their Momentum rank divides trailing returns by the
+ * stock's beta, which this app doesn't compute anywhere — see the Momentum
+ * pillar below for what's used instead) and their GF Value is a
+ * proprietary intrinsic-value regression against historical median
+ * multiples and analyst estimates that can't be reconstructed without
+ * their model. This file is FinLens's own, independently-derived
+ * approximation of the *shape* of that rating system (five 1-10 pillar
+ * ranks), computed purely from data already in this app's fundamentals
+ * bundle, with every threshold documented below the same way score.ts
+ * documents its own. Not affiliated with, endorsed by, or sourced from
+ * GuruFocus LLC. Not investment advice.
  */
 
 export interface GuruRankItem {
@@ -80,12 +83,29 @@ function cagrPct(current: number, base: number, years: number): number | null {
   return (Math.pow(current / base, 1 / years) - 1) * 100;
 }
 
+/** Trailing percent return from `tradingDaysBack` days before the last
+ *  close to the last close itself. Works on raw provider units (no
+ *  toDisplayUnit conversion needed) since a ratio of two closes in the
+ *  same subunit convention is unaffected by that convention's constant
+ *  divisor. Null when there isn't enough history to look that far back. */
+function trailingReturnPct(history: PricePoint[], tradingDaysBack: number): number | null {
+  if (history.length === 0) return null;
+  const lastIdx = history.length - 1;
+  const baseIdx = lastIdx - tradingDaysBack;
+  if (baseIdx < 0) return null;
+  const base = history[baseIdx].close;
+  if (base <= 0) return null;
+  return ((history[lastIdx].close - base) / base) * 100;
+}
+
 interface ComputeGuruInput {
   metrics: TickerMetrics;
   income: IncomeStatementYear[];
   balance: BalanceSheetYear[];
   cashFlow: CashFlowYear[];
   currency: string;
+  /** Daily closes, oldest first — for the Momentum pillar's trailing return calculations. */
+  history: PricePoint[];
 }
 
 export function computeGuruFocusRating({
@@ -94,6 +114,7 @@ export function computeGuruFocusRating({
   balance,
   cashFlow,
   currency,
+  history,
 }: ComputeGuruInput): GuruFocusRatingResult {
   const inc = splitTrailingRow(income).historical;
   const bal = splitTrailingRow(balance).historical;
@@ -221,11 +242,44 @@ export function computeGuruFocusRating({
     ],
   };
 
-  const pillars = [financialStrength, profitability, growth, valuation];
+  // --- Momentum: trailing 1/6/12-month price return, higher is better.
+  // GuruFocus's own Momentum rank additionally divides these returns by
+  // the stock's beta (volatility relative to the market) — this app
+  // doesn't compute a market beta anywhere (no benchmark index return
+  // series is fetched for any ticker), so these are raw, not
+  // beta-adjusted, trailing returns. Day counts (22/126/252) mirror the
+  // same 1M/6M/1Y trading-day approximations ChartPanel.tsx already uses
+  // for its own time-range slicing.
+  const return1M = trailingReturnPct(history, 22);
+  const return6M = trailingReturnPct(history, 126);
+  const return12M = trailingReturnPct(history, 252);
+  const return1MScore = scaleScore(return1M, -15, 15);
+  const return6MScore = scaleScore(return6M, -25, 25);
+  const return12MScore = scaleScore(return12M, -30, 40);
+  const momentumScore = average([return1MScore, return6MScore, return12MScore]);
+  const momentum: GuruPillar = {
+    name: "Momentum",
+    rank: rankFromScore(momentumScore),
+    explanation:
+      "Trailing price return over the last 1, 6, and 12 months. GuruFocus's own Momentum rank additionally divides these returns by the stock's beta (volatility relative to the market) — this app doesn't compute a market beta for any ticker, so these are raw (not beta-adjusted) trailing returns instead.",
+    items: [
+      { label: "1-Month Return", displayValue: fmtPct(return1M), score: return1MScore },
+      { label: "6-Month Return", displayValue: fmtPct(return6M), score: return6MScore },
+      { label: "12-Month Return", displayValue: fmtPct(return12M), score: return12MScore },
+    ],
+  };
+
+  const pillars = [financialStrength, profitability, growth, valuation, momentum];
   // Recomputed straight from each pillar's own 0-100 score (not from the
   // already-rounded 1-10 ranks below), so the overall figure doesn't
   // compound two separate rounding passes.
-  const overallScore = average([financialStrengthScore, profitabilityScore, growthScore, valuationScore]);
+  const overallScore = average([
+    financialStrengthScore,
+    profitabilityScore,
+    growthScore,
+    valuationScore,
+    momentumScore,
+  ]);
   const overallRank = rankFromScore(overallScore);
 
   return {

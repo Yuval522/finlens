@@ -265,7 +265,7 @@ export function ScorePanel({
   const [model, setModel] = useState<RatingModel>("composite");
   const composite = computeCompositeScore({ metrics, income, balance, cashFlow });
   const piotroski = computePiotroskiScore(income, balance, cashFlow, currency);
-  const guru = computeGuruFocusRating({ metrics, income, balance, cashFlow, currency });
+  const guru = computeGuruFocusRating({ metrics, income, balance, cashFlow, currency, history });
   const fairValue = computeFairValueBand({
     income,
     history,
@@ -308,10 +308,10 @@ export function ScorePanel({
               </>
             ) : (
               <>
-                A second, independent rating lens modeled after the four rating pillars GuruFocus.com publicly shows
-                on its own stock pages (Financial Strength, Profitability, Growth, and a valuation indicator), each
-                shown here as a 1-10 rank. This is FinLens&apos;s own approximation computed from this company&apos;s
-                reported fundamentals — not a reproduction of GuruFocus&apos;s proprietary algorithm, and not
+                A second, independent rating lens modeled after the five rating pillars GuruFocus.com publicly shows
+                on its own GF Score radar chart (Financial Strength, Profitability, Growth, a valuation indicator,
+                and Momentum), each shown here as a 1-10 rank. This is FinLens&apos;s own approximation computed from
+                this company&apos;s reported fundamentals — not a reproduction of GuruFocus&apos;s proprietary algorithm, and not
                 affiliated with, endorsed by, or sourced from GuruFocus LLC. Not investment advice.
               </>
             )}
@@ -421,7 +421,10 @@ export function ScorePanel({
             </div>
           </div>
 
-          {/* 4 pillar cards */}
+          {/* 5 pillar cards (Financial Strength, Profitability, Growth,
+              Valuation, Momentum) — wraps to its own row on the 2-col
+              grid since 5 is odd, same as any dashboard with an
+              odd-numbered card count. */}
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
             {guru.pillars.map((pillar) => (
               <GuruPillarCard

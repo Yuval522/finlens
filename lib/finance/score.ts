@@ -58,6 +58,17 @@ function compactMoney(value: number, currency: string): string {
  * fiscal years. Returns null when there isn't enough historical depth (needs
  * 2 real fiscal years — the TTM/MRQ trailing appendix is excluded via
  * splitTrailingRow, same as every chart panel).
+ *
+ * QA fix: this used to also carry a "Positive Net Income" criterion,
+ * bringing the list to 10 items while `score`/`maxScore` were still
+ * computed and labeled as a 9-point test — a numerator/denominator
+ * mismatch that could show e.g. "10/9". That criterion wasn't part of the
+ * classic Piotroski signal set to begin with, and was mathematically
+ * redundant with "Positive Return on Assets" directly below it (ROA =
+ * netIncome/totalAssets, so for any company with positive total assets the
+ * two always agree in sign) — removed rather than bumping maxScore to 10,
+ * to restore the textbook 9-signal test this function is documented as
+ * computing.
  */
 export function computePiotroskiScore(
   income: IncomeStatementYear[],
@@ -91,11 +102,6 @@ export function computePiotroskiScore(
   const assetTurnoverPrev = prevBal.totalAssets > 0 ? prevInc.totalRevenue / prevBal.totalAssets : null;
 
   const criteria: PiotroskiCriterion[] = [
-    {
-      label: "Positive Net Income",
-      passed: curInc.netIncome > 0,
-      detail: `Net income of ${compactMoney(curInc.netIncome, currency)} in FY${curInc.fiscalYear}.`,
-    },
     {
       label: "Positive Return on Assets",
       passed: roaCur != null && roaCur > 0,

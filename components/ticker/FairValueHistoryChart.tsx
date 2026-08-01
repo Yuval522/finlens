@@ -1,9 +1,20 @@
 "use client";
 
 import { useMemo } from "react";
-import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Area,
+  CartesianGrid,
+  ComposedChart,
+  Line,
+  ReferenceDot,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import type { FairValueHistoryPoint, FairValueHistoryResult } from "@/lib/finance/valuation-history";
-import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE } from "@/lib/format/chart";
+import { CHART_TOOLTIP_STYLE, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
+import { currencySymbol } from "@/lib/format/currency";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { cn } from "@/lib/utils";
 
@@ -144,6 +155,20 @@ export function FairValueHistoryChart({ data }: FairValueHistoryChartProps) {
   const tone = historyTone(data.premiumDiscountPct);
   const chartData = useMemo(() => data.points.map(buildBands), [data.points]);
 
+  // "Now" marker — the last real (non-projected) point with a price, so the
+  // dot sits exactly on the price line's own last plotted value rather than
+  // the live quote price (which can differ slightly from the last daily
+  // close — see FairValueHistoryResult.currentPrice's own doc comment).
+  const lastActual = useMemo(() => {
+    for (let i = data.points.length - 1; i >= 0; i--) {
+      const p = data.points[i];
+      if (!p.projected && p.price != null) return p;
+    }
+    return null;
+  }, [data.points]);
+
+  const currencySym = currencySymbol(data.quoteCurrency);
+
   return (
     <div className="glass-card rounded-xl p-4 sm:p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -163,7 +188,33 @@ export function FairValueHistoryChart({ data }: FairValueHistoryChartProps) {
         </span>
       </div>
 
-      <div className="h-[280px] w-full sm:h-[340px]">
+      {/* Prominent numeric readout — added so the chart's headline numbers
+          are stated in plain, legible text rather than only implied by
+          reading line positions off a dense multi-series chart. */}
+      <div className="mb-4 grid grid-cols-3 gap-3 rounded-lg border border-border bg-card/40 p-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Current Price</p>
+          <p className="font-mono text-base font-bold text-foreground sm:text-lg">
+            {data.currentPrice != null ? `${currencySym}${data.currentPrice.toFixed(2)}` : "—"}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Fair Value</p>
+          <p className="font-mono text-base font-bold text-foreground sm:text-lg">
+            {data.currentFairValue != null ? `${currencySym}${data.currentFairValue.toFixed(2)}` : "—"}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">vs. Fair Value</p>
+          <p className={cn("font-mono text-base font-bold sm:text-lg", TONE_TEXT[tone])}>
+            {data.premiumDiscountPct != null
+              ? `${data.premiumDiscountPct >= 0 ? "+" : ""}${data.premiumDiscountPct.toFixed(1)}%`
+              : "—"}
+          </p>
+        </div>
+      </div>
+
+      <div className="h-[300px] w-full sm:h-[380px]">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
@@ -182,7 +233,8 @@ export function FairValueHistoryChart({ data }: FairValueHistoryChartProps) {
               tickLine={false}
               axisLine={false}
               domain={["auto", "auto"]}
-              width={56}
+              width={64}
+              tickFormatter={(v: number) => `${currencySym}${compactAxis(v)}`}
             />
             <Tooltip
               content={<HistoryTooltip currency={data.quoteCurrency} />}
@@ -227,17 +279,17 @@ export function FairValueHistoryChart({ data }: FairValueHistoryChartProps) {
             />
             <Line
               dataKey="fairValueActual"
-              stroke="#e2e8f0"
-              strokeWidth={1.5}
+              stroke="#f8fafc"
+              strokeWidth={2}
               dot={false}
               isAnimationActive={false}
               connectNulls={false}
             />
             <Line
               dataKey="fairValueProjected"
-              stroke="#e2e8f0"
-              strokeWidth={1.5}
-              strokeDasharray="4 4"
+              stroke="#f8fafc"
+              strokeWidth={2}
+              strokeDasharray="5 4"
               dot={false}
               isAnimationActive={false}
               connectNulls={false}
@@ -245,28 +297,41 @@ export function FairValueHistoryChart({ data }: FairValueHistoryChartProps) {
             <Line
               dataKey="price"
               stroke="#38BDF8"
-              strokeWidth={2}
+              strokeWidth={2.5}
               dot={false}
+              activeDot={{ r: 4 }}
               isAnimationActive={false}
               connectNulls={false}
             />
+            {lastActual && lastActual.price != null && (
+              <ReferenceDot
+                x={lastActual.date}
+                y={lastActual.price}
+                r={4}
+                fill="#38BDF8"
+                stroke="#0f1420"
+                strokeWidth={2}
+                label={{ value: "Now", position: "top", fill: "#e2e8f0", fontSize: 10 }}
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-sky-400" /> Price
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-slate-300" /> Fair Value (dashed = projected)
+          <span className="h-2 w-2 rounded-full bg-slate-100" /> Fair Value (dashed = 1yr projection)
         </span>
-        {data.currentPrice != null && data.currentFairValue != null && data.premiumDiscountPct != null && (
-          <span className={cn("font-mono font-semibold", TONE_TEXT[tone])}>
-            {data.premiumDiscountPct >= 0 ? "+" : ""}
-            {data.premiumDiscountPct.toFixed(1)}% vs. fair value
+        <span className="flex items-center gap-1.5">
+          <span className="flex h-2 w-6 overflow-hidden rounded-full">
+            <span className="w-1/2 bg-emerald-500/70" />
+            <span className="w-1/2 bg-rose-500/70" />
           </span>
-        )}
+          Shaded bands = undervalued / overvalued zones
+        </span>
       </div>
 
       {data.currencyDiffers && (
