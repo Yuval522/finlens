@@ -5,8 +5,12 @@ import { CheckCircle2, Gauge, XCircle } from "lucide-react";
 import { computeCompositeScore, computePiotroskiScore } from "@/lib/finance/score";
 import { computeGuruFocusRating, type GuruPillar } from "@/lib/finance/score-gurufocus";
 import { computeFairValueBand, type FairValueBandResult } from "@/lib/finance/fair-value";
+import { computeFairValueHistory } from "@/lib/finance/valuation-history";
+import { computeValuationMethods } from "@/lib/finance/valuation-methods";
 import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear, PricePoint, TickerMetrics } from "@/lib/finance/types";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
+import { FairValueHistoryChart } from "./FairValueHistoryChart";
+import { ValuationMethodsChart } from "./ValuationMethodsChart";
 import { cn } from "@/lib/utils";
 
 interface ScorePanelProps {
@@ -269,6 +273,23 @@ export function ScorePanel({
     quoteCurrency,
     reportingCurrency: currency,
   });
+  const fairValueHistory = computeFairValueHistory({
+    income,
+    history,
+    quoteCurrency,
+    reportingCurrency: currency,
+    fairValue,
+  });
+  const valuationMethods = computeValuationMethods({
+    income,
+    balance,
+    cashFlow,
+    history,
+    quotePrice,
+    quoteCurrency,
+    reportingCurrency: currency,
+    fairValue,
+  });
   const overallTone = scoreTone(composite.overall);
   const guruTone = rankTone(guru.overallRank);
 
@@ -410,6 +431,20 @@ export function ScorePanel({
               />
             ))}
           </div>
+
+          {/* Valuation view detail — the two GuruFocus-style charts
+              (historical fair-value band, multi-method comparison), shown
+              only when there's enough data to compute them. Full-width
+              rather than squeezed into the half-width Valuation pillar
+              card above, since both are substantial charts in their own
+              right (see lib/finance/valuation-history.ts and
+              lib/finance/valuation-methods.ts for the methodology). */}
+          {(fairValueHistory || valuationMethods) && (
+            <div className="space-y-4">
+              {fairValueHistory && <FairValueHistoryChart data={fairValueHistory} />}
+              {valuationMethods && <ValuationMethodsChart data={valuationMethods} />}
+            </div>
+          )}
         </>
       )}
 
