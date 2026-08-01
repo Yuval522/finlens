@@ -105,23 +105,42 @@ function formatAxisDate(date: string): string {
   return new Date(date).toLocaleDateString("en-US", { year: "numeric", month: "short" });
 }
 
+/** Same index-based boundary-flip idiom as lib/format/chart.ts's own
+ *  shouldFlipTooltip, just matched on `date` instead of `fiscalYear` —
+ *  that helper is generic over `{ fiscalYear: string }[]` rows, which this
+ *  chart's date-keyed rows don't have, so this is a small local variant
+ *  rather than a shared cross-file dependency (same duplication
+ *  convention already established elsewhere, e.g. fair-value.ts's own
+ *  cagrPct doc comment). QA fix: this chart's tooltip previously had NO
+ *  boundary-awareness at all (unlike every other chart panel in this
+ *  codebase), so hovering the right ~40% of the chart — including right
+ *  around the "Now" marker, exactly where a user is most likely to
+ *  hover — grew the tooltip box off the right edge of its card/viewport. */
+function shouldFlipHistoryTooltip(label: string | undefined, data: { date: string }[]): boolean {
+  if (!label || data.length <= 1) return false;
+  const index = data.findIndex((row) => row.date === label);
+  return index >= 0 && index / (data.length - 1) > 0.6;
+}
+
 interface HistoryTooltipProps {
   active?: boolean;
   label?: string;
   payload?: { payload?: ChartRow }[];
   currency: string;
+  data: ChartRow[];
 }
 
 /** Passed as a JSX element (not a function) to `content` — same convention
  *  used by every other custom Recharts tooltip in this codebase (see
  *  ChartTooltip.tsx's doc comment). */
-function HistoryTooltip({ active, label, payload, currency }: HistoryTooltipProps) {
+function HistoryTooltip({ active, label, payload, currency, data }: HistoryTooltipProps) {
   if (!active || !label || !payload || payload.length === 0) return null;
   const row = payload[0]?.payload;
   if (!row) return null;
   const fv = row.fairValueActual ?? row.fairValueProjected;
+  const flip = shouldFlipHistoryTooltip(label, data);
   return (
-    <div style={CHART_TOOLTIP_STYLE}>
+    <div style={{ ...CHART_TOOLTIP_STYLE, transform: flip ? "translateX(-100%)" : undefined }}>
       <p className="mb-1.5 font-semibold text-foreground">{formatAxisDate(label)}</p>
       <div className="space-y-1">
         {row.price != null && (
@@ -237,7 +256,7 @@ export function FairValueHistoryChart({ data }: FairValueHistoryChartProps) {
               tickFormatter={(v: number) => `${currencySym}${compactAxis(v)}`}
             />
             <Tooltip
-              content={<HistoryTooltip currency={data.quoteCurrency} />}
+              content={<HistoryTooltip currency={data.quoteCurrency} data={chartData} />}
               wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
               allowEscapeViewBox={{ x: true, y: true }}
             />

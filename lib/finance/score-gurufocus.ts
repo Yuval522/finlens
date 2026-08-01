@@ -51,6 +51,12 @@ export interface GuruFocusRatingResult {
   pillars: GuruPillar[];
   /** Valuation pillar's qualitative band, e.g. "Undervalued" — GuruFocus shows a similar band next to its own GF Value indicator. */
   valuationLabel: string;
+  /** 0-100, the un-rounded average this app's overallRank is itself derived
+   *  from — exposed separately for the radar chart's badge, which mirrors
+   *  GuruFocus's own "/100" GF Score display (shown alongside, not instead
+   *  of, their 1-10 pentagon axes). Null only when every pillar was
+   *  unavailable, same condition as overallRank being null. */
+  overallScore: number | null;
 }
 
 /** Maps a 0-100 score onto GuruFocus' 1-10 rank scale. A rank is only null when the underlying score itself is null — otherwise it's clamped to at least 1, never 0. */
@@ -287,5 +293,6 @@ export function computeGuruFocusRating({
     overallLabel: overallLabelFromRank(overallRank),
     pillars,
     valuationLabel: valuationLabelFromRank(valuationRank),
+    overallScore,
   };
 }

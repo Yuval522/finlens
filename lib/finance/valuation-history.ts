@@ -39,6 +39,22 @@ import type { FairValueBandResult } from "./fair-value";
  *     single band used by the Score tab's spectrum bar (fair-value.ts),
  *     kept local to the presentational chart component rather than
  *     changing that already-shipped widget's band width.
+ *
+ * QA fix (live comparison flagged the chart "stretching wildly" for older
+ * years, e.g. around a stock split): every anchor is now sanity-bounded
+ * against a real nearby price rather than trusted blindly. The
+ * growth-adjusted multiple was DERIVED from historical prices, so applying
+ * it back to that same year's EPS/revenue should land in the same
+ * ballpark as that year's real price — a wild divergence signals a
+ * data-quality artifact for that one fiscal year (a unit-scale mismatch,
+ * or a split reflected in the price history but not consistently in that
+ * year's as-filed EPS/shares, etc.), not a genuine valuation signal.
+ * Clamping (not dropping) that one anchor to a generous multiple of the
+ * nearby real price keeps the line continuous without letting one bad
+ * year's figure dominate the whole chart's Y-axis scale via linear
+ * interpolation. Years with no nearby real price to check against are
+ * skipped entirely instead — same requirement fair-value.ts's own
+ * median-multiple sample loop already applies.
  */
 
 export interface FairValueHistoryPoint {
@@ -70,10 +86,32 @@ export interface FairValueHistoryResult {
 const MAX_POINTS = 260;
 const FUTURE_STEPS = 8;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+/** A "closest" price match beyond this window isn't a real fiscal-year-end price — same tolerance fair-value.ts uses for its own median-multiple sample loop. */
+const PRICE_MATCH_TOLERANCE_DAYS = 45;
+/** Sanity bounds for a per-year anchor relative to that year's own real price — generous (0.15x-6x) since a genuine multiple-derived fair value can legitimately diverge from price during e.g. a bubble or a crash year, but wide enough to still catch an order-of-magnitude data artifact. */
+const ANCHOR_MIN_MULTIPLE = 0.15;
+const ANCHOR_MAX_MULTIPLE = 6;
 
 function fiscalYearEndDate(fiscalYear: string): Date | null {
   const year = Number(fiscalYear);
   return Number.isFinite(year) ? new Date(year, 11, 31) : null;
+}
+
+/** Same "running best-by-diff" linear scan as fair-value.ts's own findClosestPricePoint. */
+function findClosestPricePoint(history: PricePoint[], target: Date, toleranceDays: number): PricePoint | null {
+  const toleranceMs = toleranceDays * 24 * 60 * 60 * 1000;
+  const targetMs = target.getTime();
+  let best: { point: PricePoint; diff: number } | null = null;
+  for (const point of history) {
+    const diff = Math.abs(new Date(point.date).getTime() - targetMs);
+    if (diff > toleranceMs) continue;
+    if (!best || diff < best.diff) best = { point, diff };
+  }
+  return best?.point ?? null;
+}
+
+function clampToPrice(value: number, priceDisplay: number): number {
+  return Math.min(priceDisplay * ANCHOR_MAX_MULTIPLE, Math.max(priceDisplay * ANCHOR_MIN_MULTIPLE, value));
 }
 
 function blend(a: number | null, b: number | null): number | null {
@@ -147,15 +185,23 @@ export function computeFairValueHistory({
   const anchors: Anchor[] = [];
   for (const row of window) {
     const date = fiscalYearEndDate(row.fiscalYear);
-    const value = fairValueFor(row.eps, row.totalRevenue, row.sharesOutstandingDiluted);
-    if (date && value != null) anchors.push({ time: date.getTime(), value });
+    if (!date) continue;
+    const pricePoint = findClosestPricePoint(history, date, PRICE_MATCH_TOLERANCE_DAYS);
+    if (!pricePoint) continue;
+    const rawValue = fairValueFor(row.eps, row.totalRevenue, row.sharesOutstandingDiluted);
+    if (rawValue == null) continue;
+    const priceDisplay = toDisplayUnit(pricePoint.close, quoteCurrency);
+    anchors.push({ time: date.getTime(), value: clampToPrice(rawValue, priceDisplay) });
   }
 
   const currentRow = trailing ?? window[window.length - 1] ?? null;
-  const lastPriceDate = new Date(history[history.length - 1].date).getTime();
-  const currentValue = currentRow
+  const lastPricePoint = history[history.length - 1];
+  const lastPriceDate = new Date(lastPricePoint.date).getTime();
+  const lastPriceDisplay = toDisplayUnit(lastPricePoint.close, quoteCurrency);
+  const rawCurrentValue = currentRow
     ? fairValueFor(currentRow.eps, currentRow.totalRevenue, currentRow.sharesOutstandingDiluted)
     : null;
+  const currentValue = rawCurrentValue != null ? clampToPrice(rawCurrentValue, lastPriceDisplay) : null;
   if (currentValue != null) {
     anchors.push({ time: lastPriceDate, value: currentValue });
   }
@@ -181,12 +227,17 @@ export function computeFairValueHistory({
   // the same rate as EPS (this codebase doesn't compute a separate revenue
   // CAGR anywhere to reuse instead) — a disclosed simplification.
   let projectedAnchor: Anchor | null = null;
-  if (currentRow) {
+  if (currentRow && currentValue != null) {
     const g = Math.min(0.2, Math.max(-0.2, (fairValue.epsCagrPct ?? 0) / 100));
     const projectedEps = currentRow.eps * (1 + g);
     const projectedRevenue = currentRow.totalRevenue * (1 + g);
-    const projectedValue = fairValueFor(projectedEps, projectedRevenue, currentRow.sharesOutstandingDiluted);
-    if (projectedValue != null) {
+    const rawProjectedValue = fairValueFor(projectedEps, projectedRevenue, currentRow.sharesOutstandingDiluted);
+    if (rawProjectedValue != null) {
+      // Bounded relative to the "today" anchor rather than a real price
+      // (there isn't one for a future date) — a 1-year projection at a
+      // growth rate already capped at +-20% shouldn't plausibly land
+      // outside 0.5x-2x of today's value either.
+      const projectedValue = Math.min(currentValue * 2, Math.max(currentValue * 0.5, rawProjectedValue));
       projectedAnchor = { time: lastPriceDate + 365 * MS_PER_DAY, value: projectedValue };
     }
   }

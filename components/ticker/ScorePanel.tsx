@@ -11,6 +11,7 @@ import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear, PricePoint, T
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { FairValueHistoryChart } from "./FairValueHistoryChart";
 import { ValuationMethodsChart } from "./ValuationMethodsChart";
+import { GuruScoreRadarChart } from "./GuruScoreRadarChart";
 import { cn } from "@/lib/utils";
 
 interface ScorePanelProps {
@@ -415,11 +416,18 @@ export function ScorePanel({
                 <h3 className="text-sm font-semibold text-foreground">Multi-Factor Rating Model</h3>
                 <p className="text-xs text-muted-foreground">
                   {guru.overallLabel} overall — equal-weighted average across Financial Strength, Profitability,
-                  Growth, and Valuation ({guru.valuationLabel}).
+                  Growth, Valuation ({guru.valuationLabel}), and Momentum.
                 </p>
               </div>
             </div>
           </div>
+
+          <GuruScoreRadarChart
+            pillars={guru.pillars}
+            overallScore={guru.overallScore}
+            overallRank={guru.overallRank}
+            overallLabel={guru.overallLabel}
+          />
 
           {/* 5 pillar cards (Financial Strength, Profitability, Growth,
               Valuation, Momentum) — wraps to its own row on the 2-col
