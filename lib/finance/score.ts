@@ -196,23 +196,28 @@ export interface CompositeScoreResult {
   categories: ScoreCategory[];
 }
 
+// Exported (not just used locally) so lib/finance/score-gurufocus.ts can
+// share the exact same scaling/averaging/formatting conventions instead of
+// re-deriving a second, possibly-drifting copy — see that file's module
+// doc comment.
+
 /** Clamps `value` into [worst, best] (order-independent — `best` may be less than `worst` for "lower is better" metrics) and linearly maps it to 0-100. */
-function scaleScore(value: number | null, worst: number, best: number): number | null {
+export function scaleScore(value: number | null, worst: number, best: number): number | null {
   if (value == null || !Number.isFinite(value)) return null;
   const t = (value - worst) / (best - worst);
   return Math.round(Math.min(1, Math.max(0, t)) * 100);
 }
 
-function average(scores: (number | null)[]): number | null {
+export function average(scores: (number | null)[]): number | null {
   const present = scores.filter((s): s is number => s != null);
   if (present.length === 0) return null;
   return Math.round(present.reduce((a, b) => a + b, 0) / present.length);
 }
 
-function fmtRatio(value: number | null): string {
+export function fmtRatio(value: number | null): string {
   return value == null ? "—" : `${value.toFixed(1)}x`;
 }
-function fmtPct(value: number | null): string {
+export function fmtPct(value: number | null): string {
   if (value == null) return "—";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}%`;
