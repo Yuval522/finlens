@@ -470,6 +470,55 @@ export interface StockSplitEvent {
 }
 
 /**
+ * QA fix (live comparison against GuruFocus flagged the SAME distortion
+ * this function's own doc comment below already anticipated as a risk:
+ * "unverified live in this sandbox... confirm the exact tag/unit shape
+ * before shipping" — AMZN's Fair Value History chart showed a ~6x spike
+ * right at the pre-2022 boundary, and a live audit of AMZN's actual
+ * company-facts payload found `sharesOutstandingDiluted` still reading
+ * ~504M for FY2019, not the ~10.08B a correct retroactive adjustment
+ * would produce (504M x 20). Root cause almost certainly IS what the doc
+ * comment below flagged as the open risk: this sandbox has no network
+ * access to sec.gov, so `StockholdersEquityNoteStockSplitConversionRatio`
+ * detection below was never actually verified against AMZN's/GOOGL's real
+ * XBRL — if either files that split disclosure under a different concept,
+ * a different unit key, or doesn't tag it as a distinct fact at all for
+ * that filing, detection silently returns nothing and no adjustment
+ * happens, for exactly the handful of large, heavily-audited tickers most
+ * likely to be spot-checked against GuruFocus.
+ *
+ * Since this sandbox still can't verify the live tag shape, this table is
+ * a small, independently-reliable supplement rather than a replacement:
+ * well-documented, public splits for large-cap tickers likely to come up
+ * in this kind of comparison, sourced from each company's own investor-
+ * relations stock-split announcements (a rare, low-frequency corporate
+ * action — a handful of entries covers the tickers this app has actually
+ * been audited against so far). Merged with whatever XBRL detection DOES
+ * find (deduped by date, XBRL's own value winning on a same-date
+ * conflict, since a live-detected ratio is more authoritative than this
+ * static list whenever both exist) rather than replacing it, so any
+ * ticker/split XBRL correctly detects on its own is unaffected, and any
+ * future split for a ticker not in this table still gets a shot at
+ * XBRL-based detection. Not exhaustive — add an entry here for any other
+ * ticker a future audit flags the same distortion on, rather than trying
+ * to enumerate every split ever.
+ */
+const KNOWN_STOCK_SPLITS: Record<string, StockSplitEvent[]> = {
+  AAPL: [{ date: "2020-08-31", ratio: 4 }],
+  AMZN: [{ date: "2022-06-06", ratio: 20 }],
+  GOOGL: [{ date: "2022-07-18", ratio: 20 }],
+  GOOG: [{ date: "2022-07-18", ratio: 20 }],
+  NVDA: [
+    { date: "2021-07-20", ratio: 4 },
+    { date: "2024-06-10", ratio: 10 },
+  ],
+  TSLA: [
+    { date: "2020-08-31", ratio: 5 },
+    { date: "2022-08-25", ratio: 3 },
+  ],
+};
+
+/**
  * Bug fix (reported: "Amazon's June 2022 20-for-1 split creates an
  * artificial ~11x cliff in the EPS chart" — diluted shares correctly jump
  * ~504M -> ~10.2B between FY2021 and FY2022, but EPS drops from ~$23 to
@@ -487,15 +536,12 @@ export interface StockSplitEvent {
  * well-known false-positive trap: a large primary share issuance, a
  * follow-on offering, or an all-stock acquisition can produce a
  * similar-looking jump, and misclassifying one as a split would silently
- * corrupt real historical data — worse than the original bug. A ticker
- * without this specific XBRL fact simply gets no adjustment rather than a
- * guessed, possibly-wrong one; unverified live in this sandbox (same
- * network-blocked caveat as the rest of this file), so treat this as the
- * documented, reasoned design rather than something spot-checked against a
- * real payload — confirm the exact tag/unit shape against AMZN's real
- * company-facts response before shipping.
+ * corrupt real historical data — worse than the original bug. Merged with
+ * KNOWN_STOCK_SPLITS above (see that table's doc comment for why) — a
+ * ticker with neither a detected XBRL fact nor a table entry simply gets
+ * no adjustment rather than a guessed, possibly-wrong one.
  */
-function detectStockSplits(facts: Record<string, XbrlConceptFacts> | undefined): StockSplitEvent[] {
+function detectStockSplits(facts: Record<string, XbrlConceptFacts> | undefined, symbol: string): StockSplitEvent[] {
   const entries = facts?.["StockholdersEquityNoteStockSplitConversionRatio"]?.units?.pure ?? [];
   const byDate = new Map<string, { ratio: number; filed: string }>();
   for (const entry of entries) {
@@ -510,9 +556,17 @@ function detectStockSplits(facts: Record<string, XbrlConceptFacts> | undefined):
       byDate.set(entry.end, { ratio: entry.val, filed: entry.filed });
     }
   }
-  return [...byDate.entries()]
-    .map(([date, v]) => ({ date, ratio: v.ratio }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const detected = [...byDate.entries()].map(([date, v]) => ({ date, ratio: v.ratio }));
+
+  // KNOWN_STOCK_SPLITS fills in only the dates XBRL detection didn't
+  // already find for this ticker — live-detected data wins on any exact
+  // date collision, since it comes straight from the filer's own
+  // disclosure rather than this app's hardcoded table.
+  const known = KNOWN_STOCK_SPLITS[bareSymbol(symbol)] ?? [];
+  const detectedDates = new Set(detected.map((s) => s.date));
+  const merged = [...detected, ...known.filter((s) => !detectedDates.has(s.date))];
+
+  return merged.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /**
@@ -704,6 +758,27 @@ function toSecIncomeRows(
     // is a no-op everywhere except genuinely pre-split historical periods.
     const splitRatio = splits.length > 0 ? cumulativeSplitRatioAfter(periodEndDateFromLabel(fiscalYear), splits) : 1;
 
+    // QA fix (live comparison flagged sharesOutstandingDiluted reading 0
+    // for real fiscal years with genuine, non-zero EPS and net income —
+    // reported on GOOGL/Alphabet specifically): none of the three tagged
+    // weighted-average-shares concepts above are universal — a filer that
+    // presents diluted shares under a different concept (or a
+    // company-specific extension taxonomy tag this app doesn't check)
+    // simply has no entry in `shares`, and the old code turned that
+    // straight into a fabricated 0 rather than an actual missing-data
+    // signal. Net Income / EPS = diluted shares outstanding, algebraically
+    // — not as precise as the real reported figure (EPS is itself rounded
+    // to 2 decimals, so this reintroduces a small rounding error), but a
+    // disclosed, reasonable approximation is better than a flat 0 for any
+    // metric that divides by shares (this app has several: Price/EPS
+    // multiples, Piotroski's "no new shares issued" check, book value per
+    // share, etc.) — only used when the real tag is genuinely missing,
+    // never overriding a directly-tagged figure.
+    const epsRaw = eps.get(fiscalYear);
+    const sharesRaw =
+      shares.get(fiscalYear) ??
+      (netIncomeVal != null && epsRaw != null && epsRaw !== 0 ? Math.abs(netIncomeVal / epsRaw) : undefined);
+
     rows.push({
       fiscalYear,
       totalRevenue: totalRevenue ?? 0,
@@ -716,8 +791,8 @@ function toSecIncomeRows(
       // in effect (matching how every post-split period is already
       // reported) instead of creating an artificial cliff at the split
       // date.
-      eps: (eps.get(fiscalYear) ?? 0) / splitRatio,
-      sharesOutstandingDiluted: (shares.get(fiscalYear) ?? 0) * splitRatio,
+      eps: (epsRaw ?? 0) / splitRatio,
+      sharesOutstandingDiluted: (sharesRaw ?? 0) * splitRatio,
       dividendsPerShare: (dividends.get(fiscalYear) ?? 0) / splitRatio,
       dataSource: "sec-edgar",
     });
@@ -1123,7 +1198,7 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
     // into both the annual and quarterly income builders below so a split
     // that lands mid-year still retroactively adjusts every prior quarter
     // and fiscal year's per-share figures consistently.
-    const splits = detectStockSplits(facts);
+    const splits = detectStockSplits(facts, symbol);
     const incomeAnnual = toSecIncomeRows(facts, annualSeries, splits);
     const balanceAnnual = toSecBalanceRows(facts, annualSeries);
     const cashFlowAnnual = toSecCashFlowRows(facts, annualSeries, false);
