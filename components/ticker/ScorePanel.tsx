@@ -4,7 +4,8 @@ import { useState } from "react";
 import { CheckCircle2, Gauge, XCircle } from "lucide-react";
 import { computeCompositeScore, computePiotroskiScore } from "@/lib/finance/score";
 import { computeGuruFocusRating, type GuruPillar } from "@/lib/finance/score-gurufocus";
-import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear, TickerMetrics } from "@/lib/finance/types";
+import { computeFairValueBand, type FairValueBandResult } from "@/lib/finance/fair-value";
+import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear, PricePoint, TickerMetrics } from "@/lib/finance/types";
 import { InfoTooltip } from "@/components/shared/InfoTooltip";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,11 @@ interface ScorePanelProps {
   cashFlow: CashFlowYear[];
   metrics: TickerMetrics;
   currency: string;
+  /** Daily closes, oldest first — needed only for the Multi-Factor Rating's
+   *  fair-value band (see lib/finance/fair-value.ts). */
+  history: PricePoint[];
+  quotePrice: number | null;
+  quoteCurrency: string;
 }
 
 type RatingModel = "composite" | "multiFactor";
@@ -98,13 +104,116 @@ function RankBar({ rank }: { rank: number | null }) {
   );
 }
 
+function fairValueTone(pct: number | null): "good" | "ok" | "bad" | "none" {
+  if (pct == null) return "none";
+  if (pct <= -5) return "good"; // trading below fair value -> cheap -> green, same "good = opportunity" convention as scoreTone
+  if (pct < 5) return "ok";
+  return "bad";
+}
+
+function money(v: number): string {
+  return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/**
+ * Fair-value spectrum bar for the Valuation pillar — see
+ * lib/finance/fair-value.ts for the full growth-adjusted historical-
+ * multiple methodology and its GuruFocus-non-affiliation disclaimer
+ * (repeated in the InfoTooltip text here too, not just in code comments,
+ * since real users see this view). The track spans 0.6x-1.4x fair value
+ * (wider than the +-20% band itself) so a price already outside the band
+ * still lands as a clearly-past-the-edge marker instead of clipping flush
+ * against it.
+ */
+function FairValueBand({ fv }: { fv: FairValueBandResult }) {
+  const tone = fairValueTone(fv.premiumDiscountPct);
+  const trackMin = fv.fairValue * 0.6;
+  const trackMax = fv.fairValue * 1.4;
+  const pctOnTrack = (v: number) => Math.min(100, Math.max(0, ((v - trackMin) / (trackMax - trackMin)) * 100));
+  const lowerPct = pctOnTrack(fv.lowerBand);
+  const upperPct = pctOnTrack(fv.upperBand);
+  const fairPct = pctOnTrack(fv.fairValue);
+  const pricePct = fv.currentPrice != null ? pctOnTrack(fv.currentPrice) : null;
+
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h4 className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+          Fair Value Estimate
+          <InfoTooltip
+            text={`Growth-adjusted median of historical P/E (${
+              fv.medianHistoricalPE != null ? `${fv.medianHistoricalPE.toFixed(1)}x` : "—"
+            }) and P/S (${
+              fv.medianHistoricalPS != null ? `${fv.medianHistoricalPS.toFixed(1)}x` : "—"
+            }) multiples over the trailing ${fv.yearsUsed} fiscal year(s) with matching price data, adjusted ${fv.growthAdjustmentFactor.toFixed(
+              2
+            )}x by trailing EPS CAGR, applied to current EPS/revenue-per-share. FinLens's own approximation of a GuruFocus-style fair-value band — not GuruFocus's proprietary GF Value formula, and not affiliated with, endorsed by, or sourced from GuruFocus LLC. Not investment advice.`}
+          />
+        </h4>
+        <span className={cn("font-mono text-xs font-semibold", TONE_TEXT[tone])}>{fv.label}</span>
+      </div>
+
+      <div className="relative h-2 w-full rounded-full bg-muted">
+        <div className="absolute inset-y-0 left-0 rounded-l-full bg-emerald-500/20" style={{ width: `${lowerPct}%` }} />
+        <div
+          className="absolute inset-y-0 bg-amber-500/25"
+          style={{ left: `${lowerPct}%`, width: `${Math.max(0, upperPct - lowerPct)}%` }}
+        />
+        <div
+          className="absolute inset-y-0 rounded-r-full bg-rose-500/20"
+          style={{ left: `${upperPct}%`, width: `${Math.max(0, 100 - upperPct)}%` }}
+        />
+        <div className="absolute inset-y-0 w-0.5 bg-foreground/60" style={{ left: `${fairPct}%` }} />
+        {pricePct != null && (
+          <div
+            className={cn("absolute -top-1 h-4 w-1 -translate-x-1/2 rounded-full", TONE_BAR[tone])}
+            style={{ left: `${pricePct}%` }}
+          />
+        )}
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+        <span>Low {money(fv.lowerBand)}</span>
+        <span className="font-mono font-medium text-foreground">
+          Fair {money(fv.fairValue)} {fv.reportingCurrency}
+        </span>
+        <span>High {money(fv.upperBand)}</span>
+      </div>
+
+      {fv.currentPrice != null && fv.premiumDiscountPct != null && (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Trading at{" "}
+          <span className="font-mono font-medium text-foreground">
+            {money(fv.currentPrice)} {fv.quoteCurrency}
+          </span>{" "}
+          — <span className={cn("font-semibold", TONE_TEXT[tone])}>
+            {fv.premiumDiscountPct >= 0 ? "+" : ""}
+            {fv.premiumDiscountPct.toFixed(1)}%
+          </span>{" "}
+          {fv.premiumDiscountPct >= 0 ? "premium" : "discount"} to fair value.
+        </p>
+      )}
+
+      {fv.currencyDiffers && (
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+          Note: fair value is computed in {fv.reportingCurrency}, but the live share price trades in{" "}
+          {fv.quoteCurrency} — not FX-adjusted.
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** One pillar card for the Multi-Factor Rating Model — visually mirrors the
  *  Composite Score's category cards (same glass-card shell, bar, and dl of
  *  sub-metrics) but keyed to a 1-10 rank instead of a 0-100 score, plus an
  *  InfoTooltip carrying the pillar's own explanation (including, where
  *  relevant, what GuruFocus's real methodology additionally uses that this
- *  app's data model can't reproduce — see score-gurufocus.ts). */
-function GuruPillarCard({ pillar }: { pillar: GuruPillar }) {
+ *  app's data model can't reproduce — see score-gurufocus.ts). The
+ *  Valuation pillar additionally gets the Fair Value Band (see
+ *  lib/finance/fair-value.ts) when enough historical price/fundamentals
+ *  overlap exists to compute one. */
+function GuruPillarCard({ pillar, fairValue }: { pillar: GuruPillar; fairValue?: FairValueBandResult | null }) {
   const tone = rankTone(pillar.rank);
   return (
     <div className="glass-card min-w-0 rounded-xl p-4">
@@ -127,15 +236,39 @@ function GuruPillarCard({ pillar }: { pillar: GuruPillar }) {
           </div>
         ))}
       </dl>
+      {pillar.name === "Valuation" &&
+        (fairValue ? (
+          <FairValueBand fv={fairValue} />
+        ) : (
+          <p className="mt-3 border-t border-border pt-3 text-[11px] text-muted-foreground">
+            Not enough historical price and fundamentals overlap to estimate a fair value band.
+          </p>
+        ))}
     </div>
   );
 }
 
-export function ScorePanel({ income, balance, cashFlow, metrics, currency }: ScorePanelProps) {
+export function ScorePanel({
+  income,
+  balance,
+  cashFlow,
+  metrics,
+  currency,
+  history,
+  quotePrice,
+  quoteCurrency,
+}: ScorePanelProps) {
   const [model, setModel] = useState<RatingModel>("composite");
   const composite = computeCompositeScore({ metrics, income, balance, cashFlow });
   const piotroski = computePiotroskiScore(income, balance, cashFlow, currency);
   const guru = computeGuruFocusRating({ metrics, income, balance, cashFlow, currency });
+  const fairValue = computeFairValueBand({
+    income,
+    history,
+    quotePrice,
+    quoteCurrency,
+    reportingCurrency: currency,
+  });
   const overallTone = scoreTone(composite.overall);
   const guruTone = rankTone(guru.overallRank);
 
@@ -270,7 +403,11 @@ export function ScorePanel({ income, balance, cashFlow, metrics, currency }: Sco
           {/* 4 pillar cards */}
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
             {guru.pillars.map((pillar) => (
-              <GuruPillarCard key={pillar.name} pillar={pillar} />
+              <GuruPillarCard
+                key={pillar.name}
+                pillar={pillar}
+                fairValue={pillar.name === "Valuation" ? fairValue : undefined}
+              />
             ))}
           </div>
         </>

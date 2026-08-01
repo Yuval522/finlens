@@ -130,6 +130,7 @@ export default async function AnalysisPage({
               reportingCurrency={reportingCurrency}
               quote={quote}
               metrics={metrics}
+              history={history}
             />
           )}
         </div>

@@ -32,6 +32,7 @@ import type {
   EstimatesBundle,
   IncomeStatementYear,
   MarketQuote,
+  PricePoint,
   TickerMetrics,
 } from "@/lib/finance/types";
 
@@ -101,6 +102,14 @@ interface DataExplorerTabsProps {
   reportingCurrency: string;
   quote: MarketQuote;
   metrics: TickerMetrics;
+  /** Daily closes, oldest first — see FundamentalsBundle.history in
+   *  lib/finance/types.ts. Threaded down only for the Score tab's
+   *  Multi-Factor Rating fair-value band (lib/finance/fair-value.ts),
+   *  which needs historical prices to derive historical P/E and P/S
+   *  multiples; every other tab already gets its own price context
+   *  elsewhere (ChartPanel, rendered as a sibling of this component in
+   *  page.tsx, not through here). */
+  history: PricePoint[];
 }
 
 export function DataExplorerTabs({
@@ -115,6 +124,7 @@ export function DataExplorerTabs({
   reportingCurrency,
   quote,
   metrics,
+  history,
 }: DataExplorerTabsProps) {
   const [tab, setTab] = useState<Tab>("Income");
   const latestIncome = income[income.length - 1];
@@ -283,7 +293,16 @@ export function DataExplorerTabs({
         )}
         {visitedTabs.has("Score") && (
           <div className={tab === "Score" ? undefined : "hidden"}>
-            <ScorePanel income={income} balance={balance} cashFlow={cashFlow} metrics={metrics} currency={reportingCurrency} />
+            <ScorePanel
+              income={income}
+              balance={balance}
+              cashFlow={cashFlow}
+              metrics={metrics}
+              currency={reportingCurrency}
+              history={history}
+              quotePrice={quote.price}
+              quoteCurrency={quote.currency}
+            />
           </div>
         )}
         {visitedTabs.has("Valuation") && latestIncome && (
