@@ -466,3 +466,44 @@ export function warnIfTrailingRowImplausible<T extends YearRow>(
     );
   }
 }
+
+/**
+ * Defensive backstop for the class of bug applyKnownSplitAdjustmentToNonSecRows
+ * (sec-edgar.ts) and the filed-date fix inside toSecIncomeRows both target —
+ * an adjacent-fiscal-year diluted-share-count ratio outside a plausible
+ * organic range (buybacks/issuance/secondary offerings don't move share
+ * count 5x in a year; only a stock split, a mis-scaled unit, or a
+ * still-undetected split boundary does). "Flag, don't guess" — same
+ * philosophy as this file's dataDiscrepancy tagging above: this only warns
+ * in development, it never drops, zeroes, or silently "corrects" a row,
+ * since a false positive here (a genuine, if unusual, large secondary
+ * offering) would be worse than a missed true positive. Run AFTER any
+ * split-adjustment step, so a correctly-adjusted series should almost never
+ * trip this — if it still does, that's a real signal something's still
+ * off (an unknown split, a bad tag, a genuine unit-scale bug) worth
+ * checking against the raw payload.
+ */
+export function warnIfShareCountDiscontinuity<T extends YearRow & { sharesOutstandingDiluted: number }>(
+  label: string,
+  symbol: string,
+  rows: T[],
+  /** Ratio bounds outside which an adjacent-year jump is flagged — 5x up or 0.2x down by default, matching the range an organic buyback/issuance program never crosses in a single fiscal year. */
+  maxRatio = 5
+): void {
+  if (process.env.NODE_ENV === "production") return;
+  for (let i = 1; i < rows.length; i++) {
+    const prev = rows[i - 1].sharesOutstandingDiluted;
+    const cur = rows[i].sharesOutstandingDiluted;
+    if (!Number.isFinite(prev) || !Number.isFinite(cur) || prev <= 0 || cur <= 0) continue;
+    const ratio = cur / prev;
+    if (ratio > maxRatio || ratio < 1 / maxRatio) {
+      console.warn(
+        `[FinLens] ${label}(${symbol}): sharesOutstandingDiluted moved from ` +
+          `${prev.toLocaleString("en-US")} (${rows[i - 1].fiscalYear}) to ${cur.toLocaleString("en-US")} ` +
+          `(${rows[i].fiscalYear}) — a ${ratio.toFixed(1)}x change in one period, outside the range an ` +
+          `organic buyback/issuance program ever produces. Likely an undetected/mistimed stock split or a ` +
+          `unit-scale tag mismatch — verify against the raw SEC EDGAR/Yahoo payload for these two years.`
+      );
+    }
+  }
+}

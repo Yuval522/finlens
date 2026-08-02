@@ -690,6 +690,116 @@ function cumulativeSplitRatioForFiling(filed: string, splits: StockSplitEvent[])
 }
 
 /**
+ * Approximates a fiscal-period label ("2022" or "2022-Q3") as its calendar
+ * period-end date, purely for ordering against a split's exact date — "did
+ * this reporting period end before or after the split." Deliberately
+ * calendar-based, unlike cumulativeSplitRatioForFiling's per-fact filed-date
+ * approach above — see applyKnownSplitAdjustment's doc comment for why a
+ * calendar-based ratio is actually the RIGHT (and safe) tool for the rows
+ * this function adjusts, not a regression back to the bug that function
+ * fixed.
+ */
+function fiscalLabelToDate(fiscalYear: string): Date {
+  const quarterMatch = /^(\d{4})-Q([1-4])$/.exec(fiscalYear);
+  if (quarterMatch) {
+    const year = Number(quarterMatch[1]);
+    const quarter = Number(quarterMatch[2]);
+    return new Date(year, quarter * 3, 0);
+  }
+  const year = Number(fiscalYear);
+  return Number.isFinite(year) ? new Date(year, 11, 31) : new Date(0);
+}
+
+/**
+ * Root-cause fix for a THIRD split-adjustment gap (live audit, checked
+ * against a merged/live app rather than this file in isolation): NVDA's
+ * earliest two fiscal years (pre-dating SEC's June 2009 structured-XBRL
+ * mandate — see the "Historical-depth note" doc comment on
+ * fetchSecFinancials below) showed diluted shares far out of line with
+ * every later year, even though those later years were correctly
+ * split-adjusted by the filed-date fix above.
+ *
+ * Root cause: the filed-date-based fix in toSecIncomeRows only runs on rows
+ * IT builds — i.e. only on years SEC EDGAR's XBRL payload actually covers.
+ * mergeYearsBySource (aggregate.ts) merges SEC EDGAR with Yahoo/FMP in
+ * priority order per fiscal year; for years outside SEC's XBRL coverage
+ * (most commonly the oldest years for a long-tenured filer, before the 2009
+ * mandate), Yahoo or FMP's row wins instead — and neither of those
+ * providers' historical fundamentals get any split-adjustment treatment
+ * anywhere in this codebase, since that logic has only ever lived inside
+ * this file's SEC-specific row builder. So a ticker whose SEC coverage
+ * starts AFTER a stock split (not the case for most of KNOWN_STOCK_SPLITS'
+ * tickers, but the case for NVDA's 2 earliest fiscal years) ends up with a
+ * visible seam exactly where the winning source switches from Yahoo/FMP to
+ * SEC EDGAR.
+ *
+ * Fix: apply the SAME known-splits table this file already uses, as a
+ * calendar-date-based (not filed-date-based) retroactive adjustment, to
+ * whichever rows in the FINAL MERGED series came from a non-SEC source.
+ * Calendar-date-based is deliberately fine here — unlike the bug
+ * cumulativeSplitRatioForFiling fixed — because mergeYearsBySource's
+ * priority order *guarantees* a non-SEC row only wins for a fiscal year SEC
+ * EDGAR has no data for at all, which for every ticker in KNOWN_STOCK_SPLITS
+ * only happens for years well before that ticker's split (SEC's XBRL
+ * coverage reliably starts well before any of these companies' splits) —
+ * there's no "already-restated-by-a-later-filing's-comparative-column"
+ * ambiguity to worry about the way there was for SEC's own multi-year
+ * comparative-column filings, because Yahoo/FMP's historical fundamentals
+ * for old fiscal years aren't retroactively restated by newer filings the
+ * way XBRL comparative columns are.
+ *
+ * Exported so yahoo.ts can call this on the post-merge income arrays,
+ * filtered to `dataSource !== "sec-edgar"` rows only (SEC rows already got
+ * the correct, more precise per-fact treatment and must NOT be adjusted
+ * again here).
+ */
+export function applyKnownSplitAdjustment<
+  T extends { fiscalYear: string; eps: number; sharesOutstandingDiluted: number; dividendsPerShare: number }
+>(rows: T[], splits: StockSplitEvent[]): T[] {
+  if (splits.length === 0) return rows;
+  return rows.map((row) => {
+    const periodEnd = fiscalLabelToDate(row.fiscalYear);
+    let ratio = 1;
+    for (const split of splits) {
+      if (new Date(split.date).getTime() > periodEnd.getTime()) ratio *= split.ratio;
+    }
+    if (ratio === 1) return row;
+    return {
+      ...row,
+      eps: row.eps / ratio,
+      sharesOutstandingDiluted: row.sharesOutstandingDiluted * ratio,
+      dividendsPerShare: row.dividendsPerShare / ratio,
+    };
+  });
+}
+
+/**
+ * Convenience wrapper over applyKnownSplitAdjustment for a post-merge
+ * (aggregate.ts's mergeYearsBySource) row array that carries a `dataSource`
+ * tag — adjusts only the rows NOT sourced from sec-edgar (whose per-share
+ * figures already got the more precise, per-fact filed-date treatment
+ * inside toSecIncomeRows, and must not be adjusted a second time here),
+ * preserving the original row order.
+ */
+export function applyKnownSplitAdjustmentToNonSecRows<
+  T extends {
+    fiscalYear: string;
+    eps: number;
+    sharesOutstandingDiluted: number;
+    dividendsPerShare: number;
+    dataSource?: string;
+  }
+>(rows: T[], splits: StockSplitEvent[]): T[] {
+  if (splits.length === 0) return rows;
+  const secRows = rows.filter((r) => r.dataSource === "sec-edgar");
+  const nonSecRows = rows.filter((r) => r.dataSource !== "sec-edgar");
+  const adjustedNonSec = applyKnownSplitAdjustment(nonSecRows, splits);
+  const adjustedByFiscalYear = new Map(adjustedNonSec.map((r) => [r.fiscalYear, r]));
+  const secByFiscalYear = new Map(secRows.map((r) => [r.fiscalYear, r]));
+  return rows.map((r) => adjustedByFiscalYear.get(r.fiscalYear) ?? secByFiscalYear.get(r.fiscalYear) ?? r);
+}
+
+/**
  * Builds either the annual or quarterly Income Statement series, depending
  * on which `series` function (annualSeries/quarterlySeries) is passed —
  * same tag list and merge logic either way, just a different period filter.
@@ -907,7 +1017,72 @@ function toSecIncomeRows(
       dataSource: "sec-edgar",
     });
   }
-  return rows.sort((a, b) => a.fiscalYear.localeCompare(b.fiscalYear));
+  return backfillMissingSharesFromNeighbors(rows.sort((a, b) => a.fiscalYear.localeCompare(b.fiscalYear)));
+}
+
+/**
+ * QA fix (live audit: GOOGL's FY2015 row showed eps=0 and
+ * sharesOutstandingDiluted=0 despite a real, populated ~$16.3B netIncome —
+ * an isolated missing-field year, not the widespread 0-diluted-shares bug
+ * the netIncome/epsRaw fallback above already fixed). Root cause is almost
+ * certainly a still-unverified XBRL tag-shape gap this sandbox can't
+ * confirm live (no sec.gov access — see this file's other "unverified live"
+ * caveats): a filer with multiple common-stock classes (Alphabet has traded
+ * dual-class since its 2014 Class C issuance) sometimes reports EPS and/or
+ * weighted-average-shares under a company-specific EXTENSION taxonomy
+ * concept for the fiscal years nearest that kind of restructuring, rather
+ * than the standard `us-gaap` tags this file's fixed tag lists check —
+ * extension tags are per-filer, so no generic tag-list widening could ever
+ * enumerate them all. NetIncomeLoss itself (a single, unified concept
+ * regardless of share class) still tags normally in that scenario, which is
+ * why netIncome can be populated while eps/shares are both genuinely
+ * absent — and why the netIncome/epsRaw derivation above can't help
+ * either, since it needs epsRaw to already be present.
+ *
+ * Last-resort fallback for exactly this shape of gap: carry forward the
+ * nearest ADJACENT fiscal year's (already split-adjusted, by this point in
+ * the pipeline) diluted share count — averaging both neighbors when both
+ * are available, otherwise whichever single side has one — as an
+ * approximation, rather than a fabricated 0. A large public company's
+ * diluted share count rarely moves more than a few percent year-over-year
+ * outside a split (handled separately, upstream of this function), so a
+ * neighboring year is a reasonable stand-in — nowhere near as precise as
+ * the real reported figure, but a disclosed, sane approximation is better
+ * than a flat 0 for any metric that divides by shares. Deliberately
+ * narrow: only fires when sharesOutstandingDiluted is still exactly 0 after
+ * every tag-based and derived attempt above AND there's real netIncome for
+ * that year (a period with no netIncome either isn't a real data point to
+ * begin with), and never overrides a directly-tagged or algebraically
+ * derived figure.
+ */
+function backfillMissingSharesFromNeighbors(rows: IncomeStatementYear[]): IncomeStatementYear[] {
+  const result = rows.map((r) => ({ ...r }));
+  for (let i = 0; i < result.length; i++) {
+    if (result[i].sharesOutstandingDiluted !== 0 || result[i].netIncome === 0) continue;
+    let before: number | null = null;
+    for (let j = i - 1; j >= 0; j--) {
+      if (result[j].sharesOutstandingDiluted > 0) {
+        before = result[j].sharesOutstandingDiluted;
+        break;
+      }
+    }
+    let after: number | null = null;
+    for (let j = i + 1; j < result.length; j++) {
+      if (result[j].sharesOutstandingDiluted > 0) {
+        after = result[j].sharesOutstandingDiluted;
+        break;
+      }
+    }
+    const borrowed = before != null && after != null ? (before + after) / 2 : (before ?? after);
+    if (borrowed == null) continue;
+    result[i].sharesOutstandingDiluted = borrowed;
+    // EPS can now be derived from the borrowed share count too, if it was
+    // also missing (GOOGL FY2015's actual reported shape).
+    if (result[i].eps === 0) {
+      result[i].eps = result[i].netIncome / borrowed;
+    }
+  }
+  return result;
 }
 
 /**
@@ -1242,6 +1417,18 @@ export interface SecFinancials {
   incomeQuarterly: IncomeStatementYear[];
   balanceQuarterly: BalanceSheetYear[];
   cashFlowQuarterly: CashFlowYear[];
+  /**
+   * Every known split for this ticker (XBRL-detected + KNOWN_STOCK_SPLITS),
+   * exposed so callers outside this file can retroactively adjust
+   * non-SEC-sourced rows too — see applyKnownSplitAdjustment's doc comment
+   * for why that's a real, separate gap from the per-fact fix inside
+   * toSecIncomeRows above. Populated even when `status` isn't "ok" (using
+   * detectStockSplits(undefined, symbol), which still returns
+   * KNOWN_STOCK_SPLITS' entries with no XBRL payload — see that function),
+   * since Yahoo/FMP may still be the ONLY source for a ticker whose SEC
+   * fetch failed, and its pre-split years still need adjusting.
+   */
+  splits: StockSplitEvent[];
 }
 
 /**
@@ -1266,7 +1453,20 @@ export interface SecFinancials {
 // older plain-text/HTML filings) — there's no additional EDGAR request
 // shape or tag that unlocks it here.
 export async function fetchSecFinancials(symbol: string): Promise<SecFinancials> {
-  const empty = { income: [], balance: [], cashFlow: [], incomeQuarterly: [], balanceQuarterly: [], cashFlowQuarterly: [] };
+  // Computed once, up front, from KNOWN_STOCK_SPLITS alone (no XBRL payload
+  // fetched yet at this point) — see the `splits` field's doc comment on
+  // SecFinancials for why every return path below needs this, not just the
+  // "ok" one.
+  const knownSplitsOnly = detectStockSplits(undefined, symbol);
+  const empty = {
+    income: [],
+    balance: [],
+    cashFlow: [],
+    incomeQuarterly: [],
+    balanceQuarterly: [],
+    cashFlowQuarterly: [],
+    splits: knownSplitsOnly,
+  };
   const map = await getTickerMap();
   if (!map) return { status: "unavailable", ...empty };
 
@@ -1334,6 +1534,7 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
       cashFlowQuarterly: [...cashFlowQuarterlyRaw, ...synthesizeCashFlowQ4(cashFlowAnnual, cashFlowQuarterlyRaw)].sort(
         (a, b) => a.fiscalYear.localeCompare(b.fiscalYear)
       ),
+      splits,
     };
     // A 200 response with zero extracted rows is a different failure mode
     // than a 403 (the tag lists in toSecIncomeRows/etc. not matching this

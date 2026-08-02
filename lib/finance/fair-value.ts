@@ -28,7 +28,22 @@ import type { IncomeStatementYear, PricePoint } from "./types";
  *  2. Take the MEDIAN of each multiple across however many years produced
  *     a usable sample (median, not mean, so one anomalous year — a
  *     post-split price spike, a one-off loss — can't dominate the
- *     estimate).
+ *     estimate). Each individual multiple is first capped at
+ *     MAX_PE_MULTIPLE/MAX_PS_MULTIPLE (see those constants' doc comment) —
+ *     QA fix for a live audit that found this Fair Value estimate running
+ *     ~3x above GuruFocus's own GF Value for a historically thin-margin
+ *     high-growth name (AMZN): a year where EPS is near zero produces a
+ *     mathematically-real but economically-meaningless P/E (hundreds or
+ *     thousands of x), and a single outlier year can't skew a MEDIAN, but a
+ *     ticker whose margins were thin across MOST of its trailing window
+ *     (exactly the class of stock — high-growth, historically low-margin —
+ *     this estimate is least reliable for) can end up with the median
+ *     position itself landing on one of these inflated values. Capping
+ *     (never excluding) keeps every year in the sample — preserving
+ *     `yearsUsed` and this estimate's coverage for tickers with only a thin
+ *     historical window — while preventing a near-zero-earnings year from
+ *     smuggling an extreme, non-economic value into the middle of the
+ *     sorted list.
  *  3. Growth-adjust both medians by a bounded multiplier derived from the
  *     trailing EPS CAGR over the same window: every 10 points of EPS CAGR
  *     shifts the "deserved" multiple by 5%, clamped to +-40% so a single
@@ -77,6 +92,9 @@ export interface FairValueBandResult {
 const BAND_WIDTH = 0.2; // +-20%, per spec
 /** A "closest" price match beyond this window isn't a real fiscal-year-end price — likely a thin/gappy history — so that year is skipped rather than matched to a misleadingly-distant price. */
 const PRICE_MATCH_TOLERANCE_DAYS = 45;
+/** Ceilings a single fiscal year's implied P/E or P/S is capped at before entering the median sample — see this file's module doc comment, step 2, for why. Generous on purpose: even the priciest real mega-cap growth names rarely sustain a P/E above 100x or a P/S above 40x for long, so these only ever bite on a genuinely near-zero-earnings/revenue-per-share outlier year, never on a normal (if expensive) real valuation. */
+const MAX_PE_MULTIPLE = 100;
+const MAX_PS_MULTIPLE = 40;
 
 function fiscalYearEndDate(fiscalYear: string): Date | null {
   const year = Number(fiscalYear);
@@ -161,11 +179,11 @@ export function computeFairValueBand({
     const priceDisplay = toDisplayUnit(pricePoint.close, quoteCurrency);
     let usedThisYear = false;
     if (row.eps > 0) {
-      peSamples.push(priceDisplay / row.eps);
+      peSamples.push(Math.min(priceDisplay / row.eps, MAX_PE_MULTIPLE));
       usedThisYear = true;
     }
     if (row.totalRevenue > 0 && row.sharesOutstandingDiluted > 0) {
-      psSamples.push(priceDisplay / (row.totalRevenue / row.sharesOutstandingDiluted));
+      psSamples.push(Math.min(priceDisplay / (row.totalRevenue / row.sharesOutstandingDiluted), MAX_PS_MULTIPLE));
       usedThisYear = true;
     }
     if (usedThisYear) yearsUsed++;

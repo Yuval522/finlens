@@ -7,7 +7,7 @@ import type {
   FundamentalsTimeSeriesFinancialsResult,
 } from "yahoo-finance2/modules/fundamentalsTimeSeries";
 import { TtlCache } from "./cache";
-import { mergeYearsBySource, warnIfTrailingRowImplausible } from "./aggregate";
+import { mergeYearsBySource, warnIfTrailingRowImplausible, warnIfShareCountDiscontinuity } from "./aggregate";
 import { computeTrailingTwelveMonths } from "./ttm";
 import { guessCurrencyForSearchResult, toExchangeBadge } from "./exchange";
 import { getMockFundamentals } from "./mock-data";
@@ -22,7 +22,7 @@ import {
   type FmpCashFlowStatement,
   type FmpIncomeStatement,
 } from "./providers/fmp";
-import { fetchSecFinancials } from "./providers/sec-edgar";
+import { fetchSecFinancials, applyKnownSplitAdjustmentToNonSecRows } from "./providers/sec-edgar";
 import { BIG_SEVEN_SYMBOLS, MARKET_SUMMARY_SYMBOLS, TASE_SEED_SYMBOLS, US_FALLBACK_SYMBOLS } from "./symbols";
 import {
   MarketDataError,
@@ -1248,6 +1248,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
             incomeQuarterly: [],
             balanceQuarterly: [],
             cashFlowQuarterly: [],
+            splits: [],
           })
         ),
         // Multi-source aggregation, third-tier layer — no-op (resolves
@@ -1306,7 +1307,17 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       // just that one field from a lower-priority source's real value when
       // the winning row's own value is a suspicious, structurally-implausible
       // exact 0, without touching any other field on the row.
-      const income = mergeYearsBySource(
+      // QA fix (live audit: NVDA's earliest 2 fiscal years — the only ones
+      // outside SEC EDGAR's XBRL coverage, so Yahoo/FMP win them instead —
+      // showed diluted shares wildly out of line with every later,
+      // SEC-sourced, correctly split-adjusted year). See
+      // applyKnownSplitAdjustment's doc comment in sec-edgar.ts: SEC-sourced
+      // rows already get the precise, per-fact filed-date adjustment inside
+      // toSecIncomeRows, but a non-SEC row that wins the merge for a year
+      // SEC has no data for was never adjusted at all anywhere in this
+      // codebase. Applied AFTER the merge, filtered to non-sec-edgar rows
+      // only, so SEC rows are never touched twice.
+      const incomeMerged = mergeYearsBySource(
         "income",
         symbol,
         [
@@ -1316,6 +1327,10 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         ],
         { anchorField: "totalRevenue", backfillZeroFields: ["grossProfit", "operatingIncome"] }
       );
+      const income = applyKnownSplitAdjustmentToNonSecRows(incomeMerged, secFinancials.splits);
+      // Cheap safety net for both this fix and the filed-date fix upstream —
+      // see warnIfShareCountDiscontinuity's doc comment in aggregate.ts.
+      warnIfShareCountDiscontinuity("income", symbol, income);
       const balance = mergeYearsBySource(
         "balance",
         symbol,
@@ -1364,7 +1379,7 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         quarterLabel,
         "toCashFlowRows(quarterly)"
       );
-      const incomeQuarterly = mergeYearsBySource(
+      const incomeQuarterlyMerged = mergeYearsBySource(
         "incomeQuarterly",
         symbol,
         [
@@ -1374,6 +1389,10 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         ],
         { anchorField: "totalRevenue", backfillZeroFields: ["grossProfit", "operatingIncome"] }
       );
+      // Same non-SEC split-adjustment gap as the annual series above, just
+      // for the quarterly one — see applyKnownSplitAdjustmentToNonSecRows'
+      // doc comment in sec-edgar.ts.
+      const incomeQuarterly = applyKnownSplitAdjustmentToNonSecRows(incomeQuarterlyMerged, secFinancials.splits);
       const balanceQuarterly = mergeYearsBySource(
         "balanceQuarterly",
         symbol,

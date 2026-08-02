@@ -201,9 +201,45 @@ export function computeGuruFocusRating({
   // recent single-year YoY move — GuruFocus's own description blends
   // multi-year and most-recent growth into one rank the same way.
   const yearsBack = Math.min(3, inc.length - 1);
-  const baseInc = yearsBack > 0 ? inc[inc.length - 1 - yearsBack] : null;
+  const baseIdx = yearsBack > 0 ? inc.length - 1 - yearsBack : -1;
+  const baseInc = baseIdx >= 0 ? inc[baseIdx] : null;
+  const curIdx = inc.length - 1;
   const revCagr = curInc && baseInc ? cagrPct(curInc.totalRevenue, baseInc.totalRevenue, yearsBack) : null;
-  const epsCagr = curInc && baseInc ? cagrPct(curInc.eps, baseInc.eps, yearsBack) : null;
+
+  // QA fix (live audit: AMZN's EPS CAGR showed blank/"—" and dragged the
+  // Growth pillar down relative to GuruFocus, purely because FY2022 — one
+  // endpoint of the naive fixed 3-year window — had a small net loss, even
+  // though AMZN's earnings were otherwise growing solidly on either side of
+  // that one year). A loss at the window's START has a sensible fix: widen
+  // the window back to the nearest earlier fiscal year with genuinely
+  // positive EPS, so one anomalous year doesn't blank an otherwise-real
+  // multi-year growth trend — flagged via `epsCagrAdjustedWindow` so the UI
+  // can label it as such rather than silently changing the window length.
+  // A loss in the CURRENT (end) year has no equivalent fix — "growth into a
+  // loss" isn't a meaningful percentage — so that case is deliberately
+  // still left blank, same as before.
+  let epsCagr: number | null = null;
+  let epsCagrYearsBack = yearsBack;
+  let epsCagrAdjustedWindow = false;
+  if (curInc && curInc.eps > 0) {
+    if (baseInc && baseInc.eps > 0) {
+      epsCagr = cagrPct(curInc.eps, baseInc.eps, yearsBack);
+    } else {
+      let fallbackIdx: number | null = null;
+      for (let i = curIdx - 1; i >= 0; i--) {
+        if (inc[i].eps > 0) {
+          fallbackIdx = i;
+          break;
+        }
+      }
+      if (fallbackIdx != null) {
+        epsCagrYearsBack = curIdx - fallbackIdx;
+        epsCagr = cagrPct(curInc.eps, inc[fallbackIdx].eps, epsCagrYearsBack);
+        epsCagrAdjustedWindow = true;
+      }
+    }
+  }
+
   const revGrowthYoY =
     curInc && prevInc && prevInc.totalRevenue > 0 ? ((curInc.totalRevenue - prevInc.totalRevenue) / prevInc.totalRevenue) * 100 : null;
   const revCagrScore = scaleScore(revCagr, -5, 20);
@@ -215,10 +251,14 @@ export function computeGuruFocusRating({
     rank: rankFromScore(growthScore),
     explanation: `Revenue and EPS growth over ${
       yearsBack > 0 ? `the trailing ${yearsBack}-year window` : "the latest year"
-    }, plus the most recent single year's revenue growth as a momentum check. A CAGR is left blank whenever the start or end year had a loss or non-positive revenue, rather than computing a misleading rate through a loss year.`,
+    }, plus the most recent single year's revenue growth as a momentum check. Revenue CAGR is left blank whenever the start or end year had non-positive revenue. EPS CAGR widens its window back to the nearest earlier profitable year if the naive window's start year had a loss (labeled "adjusted window" when this happens), but is still left blank if the CURRENT year has a loss, since growth into a loss isn't a meaningful percentage.`,
     items: [
       { label: `Revenue CAGR (${yearsBack || 1}Y)`, displayValue: fmtPct(revCagr), score: revCagrScore },
-      { label: `EPS CAGR (${yearsBack || 1}Y)`, displayValue: fmtPct(epsCagr), score: epsCagrScore },
+      {
+        label: `EPS CAGR (${epsCagrYearsBack || 1}Y${epsCagrAdjustedWindow ? ", adjusted window" : ""})`,
+        displayValue: fmtPct(epsCagr),
+        score: epsCagrScore,
+      },
       { label: "Revenue Growth (YoY)", displayValue: fmtPct(revGrowthYoY), score: revGrowthYoYScore },
     ],
   };
