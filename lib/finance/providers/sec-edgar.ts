@@ -340,12 +340,22 @@ const QUARTERLY_FORMS = new Set(["10-Q", "10-Q/A"]);
  * (fiscal year + quarter, e.g. "2023-Q2") below, since both need identical
  * priority/restatement-recency handling, just different period filters.
  */
-function periodSeries(
+/**
+ * Detailed variant of periodSeries — same tag-priority / most-recently-filed
+ * selection logic, but keeps the winning entry's `filed` date alongside its
+ * value instead of discarding it. Needed for the split-adjustment fix below:
+ * knowing WHICH FILING a per-share fact came from (not just its value) is
+ * what lets that fix tell an already-split-restated historical figure apart
+ * from a genuinely still-pre-split one — see cumulativeSplitRatioForFiling's
+ * doc comment. periodSeries() itself is now a thin wrapper over this that
+ * strips `filed`, so every other existing caller's behavior is unchanged.
+ */
+function periodSeriesDetailed(
   facts: Record<string, XbrlConceptFacts> | undefined,
   tags: string[],
   classify: (entry: XbrlFactEntry) => string | null,
   unitKey = "USD"
-): Map<string, number> {
+): Map<string, { value: number; filed: string }> {
   const chosen = new Map<string, { value: number; filed: string; tag: string }>();
   for (const tag of tags) {
     const entries = facts?.[tag]?.units[unitKey];
@@ -362,7 +372,18 @@ function periodSeries(
       }
     }
   }
-  return new Map([...chosen].map(([key, v]) => [key, v.value]));
+  return new Map([...chosen].map(([key, v]) => [key, { value: v.value, filed: v.filed }]));
+}
+
+function periodSeries(
+  facts: Record<string, XbrlConceptFacts> | undefined,
+  tags: string[],
+  classify: (entry: XbrlFactEntry) => string | null,
+  unitKey = "USD"
+): Map<string, number> {
+  return new Map(
+    [...periodSeriesDetailed(facts, tags, classify, unitKey)].map(([key, v]) => [key, v.value])
+  );
 }
 
 /** Duration in days between an XBRL fact's start/end — used to sanity-check
@@ -457,6 +478,58 @@ function quarterlySeries(
 }
 
 type SeriesFn = (facts: Record<string, XbrlConceptFacts> | undefined, tags: string[], unitKey?: string) => Map<string, number>;
+
+/**
+ * Detailed siblings of annualSeries/quarterlySeries — identical period
+ * classification logic, but return periodSeriesDetailed's `{value, filed}`
+ * shape instead of a bare value. Needed anywhere a caller has to know WHICH
+ * FILING a period's winning fact came from, not just its value — currently
+ * only the retroactive split adjustment in toSecIncomeRows below (see
+ * cumulativeSplitRatioForFiling's doc comment for why the filed date
+ * matters there). Every other caller keeps using the plain annualSeries/
+ * quarterlySeries above unchanged.
+ */
+function annualSeriesDetailed(
+  facts: Record<string, XbrlConceptFacts> | undefined,
+  tags: string[],
+  unitKey = "USD"
+): Map<string, { value: number; filed: string }> {
+  return periodSeriesDetailed(
+    facts,
+    tags,
+    (entry) => {
+      if (entry.fp !== "FY" || !ANNUAL_FORMS.has(entry.form)) return null;
+      const days = durationDays(entry);
+      if (days != null && (days < 300 || days > 400)) return null;
+      return String(new Date(entry.end).getFullYear());
+    },
+    unitKey
+  );
+}
+
+function quarterlySeriesDetailed(
+  facts: Record<string, XbrlConceptFacts> | undefined,
+  tags: string[],
+  unitKey = "USD"
+): Map<string, { value: number; filed: string }> {
+  return periodSeriesDetailed(
+    facts,
+    tags,
+    (entry) => {
+      if (!entry.fp || !/^Q[1-4]$/.test(entry.fp) || !QUARTERLY_FORMS.has(entry.form)) return null;
+      const days = durationDays(entry);
+      if (days != null && (days < 70 || days > 100)) return null;
+      return `${new Date(entry.end).getFullYear()}-${entry.fp}`;
+    },
+    unitKey
+  );
+}
+
+type SeriesFnDetailed = (
+  facts: Record<string, XbrlConceptFacts> | undefined,
+  tags: string[],
+  unitKey?: string
+) => Map<string, { value: number; filed: string }>;
 
 // ---------------------------------------------------------------------------
 // Retroactive stock-split adjustment
@@ -570,30 +643,48 @@ function detectStockSplits(facts: Record<string, XbrlConceptFacts> | undefined, 
 }
 
 /**
- * Approximates a fiscal-period label ("2022" or "2022-Q3") as its calendar
- * period-end date, purely for ordering against a split's exact XBRL date —
- * "did this reporting period end before or after the split." A ~1-2 month
- * slack for fiscal years that don't align to the calendar (uncommon among
- * the tickers this app targets) is acceptable here since it only affects
- * which side of a split boundary a period lands on, not any actual
- * financial figure.
+ * Root-cause fix for a second-order bug in the retroactive split adjustment
+ * above (live audit: AMZN's/GOOGL's diluted shares for FY2020/FY2021 came
+ * out ~20x too large — a "double adjustment" stacked on top of already-
+ * correct data — while FY2019-and-earlier were correctly restated). Root
+ * cause: the function this replaces, `cumulativeSplitRatioAfter(periodEnd,
+ * splits)`, computed the ratio purely from a fiscal period's CALENDAR END
+ * DATE vs. each split's effective date, with zero awareness of which
+ * FILING the period's winning value actually came from.
+ *
+ * That distinction matters because of periodSeries'/periodSeriesDetailed's
+ * "most recently filed wins" tie-break (see their shared doc comment): SEC's
+ * companyfacts API returns every instance of a fact across every filing
+ * that reports it, and a 10-K's income statement conventionally shows ~2-3
+ * years of comparative columns. GAAP requires stock splits to be applied
+ * retrospectively, so any LATER filing that includes an earlier period as a
+ * comparative column must present that period's per-share figures in
+ * POST-split terms — even though the period itself predates the split.
+ *
+ * Concretely, for AMZN's June 2022 20-for-1 split: FY2019's winning value
+ * comes from AMZN's FY2021 10-K (filed ~Feb 2022, BEFORE the split) — still
+ * genuinely pre-split, so it needs the x20 adjustment. But FY2020/FY2021's
+ * winning values come from AMZN's FY2022 10-K (filed ~Feb 2023, AFTER the
+ * split, whose ~3-year comparative window covers FY2022/2021/2020) —
+ * already split-restated by SEC's own filing convention, so applying x20
+ * again produced the reported ~20x-too-large figures. The old
+ * calendar-date-based ratio had no way to tell these two cases apart.
+ *
+ * Fix: compute the ratio from the winning FACT's own `filed` date instead
+ * of the fiscal period's calendar end date. A fact filed BEFORE a split is
+ * still pre-split-denominated for that split (multiply); a fact filed AFTER
+ * a split already reflects it, regardless of which historical period it
+ * describes (don't multiply for that split). This is self-correcting and
+ * needs no advance knowledge of "which years are affected" — it falls
+ * straight out of filing chronology, which periodSeriesDetailed/
+ * annualSeriesDetailed/quarterlySeriesDetailed above now expose. Plain ISO
+ * date strings (YYYY-MM-DD) compare correctly with `>`/`<` lexically, so no
+ * Date parsing is needed here.
  */
-function periodEndDateFromLabel(fiscalYear: string): Date {
-  const quarterMatch = /^(\d{4})-Q([1-4])$/.exec(fiscalYear);
-  if (quarterMatch) {
-    const year = Number(quarterMatch[1]);
-    const quarter = Number(quarterMatch[2]);
-    return new Date(year, quarter * 3, 0); // last day of that calendar quarter's final month
-  }
-  const year = Number(fiscalYear);
-  return Number.isFinite(year) ? new Date(year, 11, 31) : new Date(0);
-}
-
-/** Product of every split's ratio whose effective date falls after `periodEnd` — the multiplier needed to restate that period's share-denominated figures onto today's post-split share count. */
-function cumulativeSplitRatioAfter(periodEnd: Date, splits: StockSplitEvent[]): number {
+function cumulativeSplitRatioForFiling(filed: string, splits: StockSplitEvent[]): number {
   let ratio = 1;
   for (const split of splits) {
-    if (new Date(split.date).getTime() > periodEnd.getTime()) ratio *= split.ratio;
+    if (split.date > filed) ratio *= split.ratio;
   }
   return ratio;
 }
@@ -674,6 +765,7 @@ function cumulativeSplitRatioAfter(periodEnd: Date, splits: StockSplitEvent[]): 
 function toSecIncomeRows(
   facts: Record<string, XbrlConceptFacts> | undefined,
   series: SeriesFn,
+  seriesDetailed: SeriesFnDetailed,
   splits: StockSplitEvent[] = []
 ): IncomeStatementYear[] {
   const revenueTagged = series(facts, [
@@ -717,8 +809,12 @@ function toSecIncomeRows(
   // operating-income subtotal either — same rationale as Gross Profit.
   const costsAndExpenses = series(facts, ["CostsAndExpenses"]);
   const netIncome = series(facts, ["NetIncomeLoss", "ProfitLoss"]);
-  const eps = series(facts, ["EarningsPerShareDiluted", "EarningsPerShareBasicAndDiluted"], "USD/shares");
-  const shares = series(
+  // Detailed (value + filed date) rather than plain series for the three
+  // split-affected per-share concepts — see cumulativeSplitRatioForFiling's
+  // doc comment for why the filed date, not the fiscal period's calendar
+  // date, is what the split ratio must be computed from.
+  const epsDetailed = seriesDetailed(facts, ["EarningsPerShareDiluted", "EarningsPerShareBasicAndDiluted"], "USD/shares");
+  const sharesDetailed = seriesDetailed(
     facts,
     [
       "WeightedAverageNumberOfDilutedSharesOutstanding",
@@ -727,7 +823,7 @@ function toSecIncomeRows(
     ],
     "shares"
   );
-  const dividends = series(
+  const dividendsDetailed = seriesDetailed(
     facts,
     ["CommonStockDividendsPerShareDeclared", "CommonStockDividendsPerShareCashPaid"],
     "USD/shares"
@@ -753,11 +849,6 @@ function toSecIncomeRows(
         ? totalRevenue - costsAndExpenses.get(fiscalYear)!
         : undefined);
 
-    // Retroactive split adjustment (see detectStockSplits doc comment):
-    // ratio is 1 for any period that's already post-every-split, so this
-    // is a no-op everywhere except genuinely pre-split historical periods.
-    const splitRatio = splits.length > 0 ? cumulativeSplitRatioAfter(periodEndDateFromLabel(fiscalYear), splits) : 1;
-
     // QA fix (live comparison flagged sharesOutstandingDiluted reading 0
     // for real fiscal years with genuine, non-zero EPS and net income —
     // reported on GOOGL/Alphabet specifically): none of the three tagged
@@ -774,10 +865,28 @@ function toSecIncomeRows(
     // multiples, Piotroski's "no new shares issued" check, book value per
     // share, etc.) — only used when the real tag is genuinely missing,
     // never overriding a directly-tagged figure.
-    const epsRaw = eps.get(fiscalYear);
+    const epsEntry = epsDetailed.get(fiscalYear);
+    const sharesEntry = sharesDetailed.get(fiscalYear);
+    const dividendsEntry = dividendsDetailed.get(fiscalYear);
+    const epsRaw = epsEntry?.value;
     const sharesRaw =
-      shares.get(fiscalYear) ??
+      sharesEntry?.value ??
       (netIncomeVal != null && epsRaw != null && epsRaw !== 0 ? Math.abs(netIncomeVal / epsRaw) : undefined);
+    // Algebraically derived from the EPS fact when the direct shares tag is
+    // missing, so it inherits EPS's own filed date as its "vintage" for
+    // split-ratio purposes below.
+    const sharesFiled = sharesEntry?.filed ?? epsEntry?.filed;
+
+    // Retroactive split adjustment (see cumulativeSplitRatioForFiling's doc
+    // comment): computed per-fact from that fact's own filed date, NOT from
+    // the fiscal period's calendar date — a fact already picked up from a
+    // later, post-split filing's comparative column is already restated
+    // and correctly gets ratio 1 here, while a fact still filed pre-split
+    // gets the multiplier. Empty `splits` (the common case — most tickers
+    // never split) always yields ratio 1 regardless of filed date.
+    const epsSplitRatio = epsEntry ? cumulativeSplitRatioForFiling(epsEntry.filed, splits) : 1;
+    const sharesSplitRatio = sharesFiled ? cumulativeSplitRatioForFiling(sharesFiled, splits) : 1;
+    const dividendsSplitRatio = dividendsEntry ? cumulativeSplitRatioForFiling(dividendsEntry.filed, splits) : 1;
 
     rows.push({
       fiscalYear,
@@ -786,14 +895,15 @@ function toSecIncomeRows(
       operatingIncome: operatingIncomeVal ?? 0,
       netIncome: netIncomeVal ?? 0,
       // Per-share figures scale with shares outstanding — multiply share
-      // counts and divide per-share dollar amounts by the same cumulative
-      // ratio, so a pre-split period reads as if the split had always been
-      // in effect (matching how every post-split period is already
-      // reported) instead of creating an artificial cliff at the split
-      // date.
-      eps: (epsRaw ?? 0) / splitRatio,
-      sharesOutstandingDiluted: (sharesRaw ?? 0) * splitRatio,
-      dividendsPerShare: (dividends.get(fiscalYear) ?? 0) / splitRatio,
+      // counts and divide per-share dollar amounts by that fact's own
+      // cumulative ratio, so a pre-split fact reads as if the split had
+      // always been in effect (matching how every post-split fact is
+      // already reported) instead of creating an artificial cliff — or, for
+      // a fact a later filing's comparative column already restated,
+      // getting adjusted a second time.
+      eps: (epsRaw ?? 0) / epsSplitRatio,
+      sharesOutstandingDiluted: (sharesRaw ?? 0) * sharesSplitRatio,
+      dividendsPerShare: (dividendsEntry?.value ?? 0) / dividendsSplitRatio,
       dataSource: "sec-edgar",
     });
   }
@@ -1143,9 +1253,9 @@ export interface SecFinancials {
 // Historical-depth note (checked against an iCharts-vs-FinLens audit that
 // flagged FinLens' SEC-sourced history for a filer stopping around 2009 vs.
 // iCharts reaching back to 1997): this file has no hardcoded start-year
-// cutoff anywhere — periodEndDateFromLabel/annualSeries/quarterlySeries all
-// walk whatever fiscal years exist in the companyfacts payload with no
-// floor. The ~2009 wall is a property of the *source data*, not this
+// cutoff anywhere — annualSeries/quarterlySeries (and their Detailed
+// siblings) all walk whatever fiscal years exist in the companyfacts
+// payload with no floor. The ~2009 wall is a property of the *source data*, not this
 // integration: SEC's structured-XBRL mandate only took effect for large
 // accelerated filers' fiscal periods ending after June 15, 2009 (phased in
 // for smaller filers afterward), and the companyfacts API is built
@@ -1199,10 +1309,10 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
     // that lands mid-year still retroactively adjusts every prior quarter
     // and fiscal year's per-share figures consistently.
     const splits = detectStockSplits(facts, symbol);
-    const incomeAnnual = toSecIncomeRows(facts, annualSeries, splits);
+    const incomeAnnual = toSecIncomeRows(facts, annualSeries, annualSeriesDetailed, splits);
     const balanceAnnual = toSecBalanceRows(facts, annualSeries);
     const cashFlowAnnual = toSecCashFlowRows(facts, annualSeries, false);
-    const incomeQuarterlyRaw = toSecIncomeRows(facts, quarterlySeries, splits);
+    const incomeQuarterlyRaw = toSecIncomeRows(facts, quarterlySeries, quarterlySeriesDetailed, splits);
     const balanceQuarterlyRaw = toSecBalanceRows(facts, quarterlySeries);
     const cashFlowQuarterlyRaw = toSecCashFlowRows(facts, quarterlySeries, true);
     // See synthesizeIncomeQ4/synthesizeCashFlowQ4/synthesizeBalanceQ4's doc
