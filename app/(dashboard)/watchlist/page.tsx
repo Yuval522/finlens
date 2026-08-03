@@ -5,6 +5,7 @@ import { useWatchlist } from "@/lib/watchlist/store";
 import { QuoteCardGrid } from "@/components/dashboard/QuoteCardGrid";
 import { useLiveQuotes } from "@/lib/finance/useLiveQuotes";
 import type { MarketQuote } from "@/lib/finance/types";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 
 /**
  * Client component (not the usual server-fetched dashboard pattern) — the
@@ -30,29 +31,32 @@ export default function WatchlistPage() {
     ? symbols.map((s) => ticks.get(s)?.quote).filter((q): q is MarketQuote => Boolean(q))
     : null;
 
-  if (symbols.length === 0) {
-    return (
-      <div className="glass-card flex flex-col items-center justify-center gap-3 rounded-2xl !border-dashed py-24 text-center">
-        <Star className="h-8 w-8 text-muted-foreground" />
-        <h1 className="text-lg font-semibold">Your watchlist is empty</h1>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          Star a stock from its ticker page or from a search result to track it here.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <QuoteCardGrid
-      title="Watchlist"
-      quotes={quotes}
-      slots={symbols.length}
-      error={error}
-      showWatchlistToggle
-      emptyMessage="Couldn't load quotes for your watchlist symbols right now."
-      icon={Star}
-      iconClassName="bg-amber-500/15 text-amber-400"
-      ticks={ticks}
-    />
+    <RequireAuth
+      title="Log in to see your watchlist"
+      description="Your watchlist is tied to your account, so it stays private to you and follows you to wherever you sign in."
+    >
+      {symbols.length === 0 ? (
+        <div className="glass-card flex flex-col items-center justify-center gap-3 rounded-2xl !border-dashed py-24 text-center">
+          <Star className="h-8 w-8 text-muted-foreground" />
+          <h1 className="text-lg font-semibold">Your watchlist is empty</h1>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            Star a stock from its ticker page or from a search result to track it here.
+          </p>
+        </div>
+      ) : (
+        <QuoteCardGrid
+          title="Watchlist"
+          quotes={quotes}
+          slots={symbols.length}
+          error={error}
+          showWatchlistToggle
+          emptyMessage="Couldn't load quotes for your watchlist symbols right now."
+          icon={Star}
+          iconClassName="bg-amber-500/15 text-amber-400"
+          ticks={ticks}
+        />
+      )}
+    </RequireAuth>
   );
 }

@@ -83,7 +83,10 @@ function notify() {
   for (const listener of listeners) listener();
 }
 
-function subscribe(listener: () => void): () => void {
+/** Exported so the multi-user auth sync layer (lib/auth/AuthContext.tsx)
+ * can observe every change and debounce-push it to the logged-in user's
+ * server row — see lib/watchlist/store.ts's identical doc comment. */
+export function subscribe(listener: () => void): () => void {
   ensureHydrated();
   listeners.add(listener);
   function onStorage(e: StorageEvent) {
@@ -125,6 +128,41 @@ export function updateDataSourceKey(provider: keyof FinLensSettings["dataSourceK
 export function resetSettings(): void {
   ensureHydrated();
   settings = DEFAULT_SETTINGS;
+  persist();
+  notify();
+}
+
+/** Current in-memory settings, for the auth layer to read at signup-
+ * migration time or before a debounced server push. */
+export function getRawSnapshot(): FinLensSettings {
+  ensureHydrated();
+  return settings;
+}
+
+/** Multi-user data isolation: replaces local settings with the
+ * just-logged-in user's server-saved settings (shallow-merged over
+ * DEFAULT_SETTINGS, same normalization as readFromStorage, so an older/
+ * partial saved shape doesn't crash on a missing field), or the defaults
+ * if they've never saved any. Called right after a successful login. */
+export function hydrateFromServer(next: unknown): void {
+  const candidate = next && typeof next === "object" ? (next as Partial<FinLensSettings>) : null;
+  settings = candidate
+    ? {
+        ...DEFAULT_SETTINGS,
+        ...candidate,
+        dataSourceKeys: { ...DEFAULT_SETTINGS.dataSourceKeys, ...(candidate.dataSourceKeys ?? {}) },
+      }
+    : DEFAULT_SETTINGS;
+  hydrated = true;
+  persist();
+  notify();
+}
+
+/** Resets to defaults on logout, so the next viewer doesn't see the
+ * previous user's display name/accent color/alert preferences. */
+export function resetToDefault(): void {
+  settings = DEFAULT_SETTINGS;
+  hydrated = true;
   persist();
   notify();
 }

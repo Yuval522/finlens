@@ -10,6 +10,8 @@ import {
   type AccentColor,
 } from "@/lib/settings/store";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth/AuthContext";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 
 const ACCENT_OPTIONS: { id: AccentColor; label: string; swatch: string }[] = [
   { id: "blue", label: "Blue", swatch: "bg-blue-500" },
@@ -114,8 +116,9 @@ function ToggleRow({
 const INPUT_CLASS =
   "w-full rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none";
 
-export default function SettingsPage() {
+function SettingsContent() {
   const settings = useSettings();
+  const { user } = useAuth();
   const [savedFlash, setSavedFlash] = useState(false);
 
   function flashSaved() {
@@ -132,7 +135,7 @@ export default function SettingsPage() {
           </span>
           <div>
             <h1 className="text-lg font-semibold text-foreground">Settings</h1>
-            <p className="text-xs text-muted-foreground">Preferences are saved to this browser</p>
+            <p className="text-xs text-muted-foreground">Preferences are saved to your account</p>
           </div>
         </div>
         {savedFlash && <span className="text-xs font-medium text-success">Saved</span>}
@@ -157,7 +160,13 @@ export default function SettingsPage() {
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground">Email</label>
-              <input type="email" value="yuvalro123@gmail.com" readOnly disabled className={cn(INPUT_CLASS, "cursor-not-allowed opacity-60")} />
+              <input
+                type="email"
+                value={user?.email ?? ""}
+                readOnly
+                disabled
+                className={cn(INPUT_CLASS, "cursor-not-allowed opacity-60")}
+              />
             </div>
           </div>
         </div>
@@ -271,5 +280,16 @@ export default function SettingsPage() {
         Reset all settings to defaults
       </button>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <RequireAuth
+      title="Log in to manage settings"
+      description="Your preferences (display name, theme, alerts) are tied to your account."
+    >
+      <SettingsContent />
+    </RequireAuth>
   );
 }

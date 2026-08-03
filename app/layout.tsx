@@ -5,6 +5,7 @@ import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/open-sans";
 import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
+import { AppAuthGate } from "@/components/auth/AppAuthGate";
 
 export const metadata: Metadata = {
   title: "FinLens — Financial Intelligence",
@@ -27,7 +28,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="font-sans antialiased bg-background text-foreground">
-        {children}
+        <AppAuthGate>{children}</AppAuthGate>
       </body>
     </html>
   );

@@ -196,7 +196,11 @@ function notify() {
   for (const listener of listeners) listener();
 }
 
-function subscribe(listener: () => void): () => void {
+/** Exported so the multi-user auth sync layer (lib/auth/AuthContext.tsx)
+ * can observe every change and debounce-push it to the logged-in user's
+ * server row, without addHolding/sellHolding/etc. needing to know auth
+ * exists at all. */
+export function subscribe(listener: () => void): () => void {
   ensureHydrated();
   listeners.add(listener);
   function onStorage(e: StorageEvent) {
@@ -404,6 +408,45 @@ export async function refreshLivePrices(): Promise<void> {
   } catch {
     // Offline / blocked — keep showing the last-known price.
   }
+}
+
+/** Current in-memory portfolio, for the auth layer to read at signup-
+ * migration time or before a debounced server push. */
+export function getRawSnapshot(): PortfolioData {
+  ensureHydrated();
+  return data;
+}
+
+/** Multi-user data isolation: replaces the ENTIRE local portfolio (holdings
+ * + cash) with the just-logged-in user's server-saved data, or a clean
+ * empty portfolio if they've never saved one (deliberately NOT the
+ * illustrative SEED_DATA demo — a real logged-in account with no saved
+ * data should look like a genuinely empty portfolio, not someone else's
+ * demo positions). Called right after a successful login. Sets `hydrated
+ * = true` so the SEED_VERSION reconciliation in ensureHydrated (meant only
+ * for a fresh anonymous browser) can't run afterward and clobber it. */
+export function hydrateFromServer(next: unknown): void {
+  const candidate = next && typeof next === "object" ? (next as Record<string, unknown>) : null;
+  const holdings = candidate && Array.isArray(candidate.holdings) ? candidate.holdings.filter(isHolding) : [];
+  const cashCandidate = candidate?.cash as Record<string, unknown> | undefined;
+  const cash =
+    cashCandidate && typeof cashCandidate.usd === "number" && typeof cashCandidate.ils === "number"
+      ? { usd: cashCandidate.usd, ils: cashCandidate.ils }
+      : { usd: 0, ils: 0 };
+  data = candidate ? { holdings, cash } : EMPTY_DATA;
+  hydrated = true;
+  persist();
+  notify();
+}
+
+/** Clears the portfolio back to empty — called on logout so the next
+ * viewer (anonymous, or a different friend logging in before
+ * hydrateFromServer runs) never sees the previous user's holdings/cash. */
+export function resetToEmpty(): void {
+  data = EMPTY_DATA;
+  hydrated = true;
+  persist();
+  notify();
 }
 
 /** Live-updating portfolio state + mutators, safe to call from any client component. */

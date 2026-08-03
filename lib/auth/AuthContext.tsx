@@ -1,0 +1,260 @@
+"use client";
+
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import type { AuthUser } from "./types";
+import {
+  getRawSnapshot as getPortfolioSnapshot,
+  hydrateFromServer as hydratePortfolioFromServer,
+  resetToEmpty as resetPortfolioToEmpty,
+  subscribe as subscribePortfolio,
+} from "@/lib/portfolio/store";
+import {
+  getRawSnapshot as getWatchlistSnapshot,
+  hydrateFromServer as hydrateWatchlistFromServer,
+  resetToEmpty as resetWatchlistToEmpty,
+  subscribe as subscribeWatchlist,
+} from "@/lib/watchlist/store";
+import {
+  getRawSnapshot as getSettingsSnapshot,
+  hydrateFromServer as hydrateSettingsFromServer,
+  resetToDefault as resetSettingsToDefault,
+  subscribe as subscribeSettings,
+} from "@/lib/settings/store";
+
+/**
+ * Multi-User Authentication + Data Isolation.
+ *
+ * This is the one place that knows how to bridge the three pre-existing,
+ * auth-agnostic localStorage stores (portfolio/watchlist/settings) to a
+ * real per-user server row, so none of those stores' own mutators
+ * (addHolding, toggleWatchlist, updateSettings, ...) needed to change to
+ * know a login system exists:
+ *
+ * - On initial load: check /api/auth/me. If a session cookie resolves to a
+ *   user, pull THAT user's saved portfolio/watchlist/settings from the
+ *   server and overwrite local state with it (hydrateFromServer) — this is
+ *   what makes "Friend B logs in on the same browser" show Friend B's data
+ *   instead of whatever was last sitting in localStorage.
+ * - On login: same hydrate-from-server overwrite.
+ * - On signup: the opposite direction — a brand-new account has nothing
+ *   saved yet, so whatever is CURRENTLY in this browser's local stores
+ *   (the "existing local data" the user asked to migrate) gets pushed up
+ *   to become that new account's starting data.
+ * - On logout: local stores reset to empty/default so the next viewer of
+ *   this browser (anonymous, or a different friend who hasn't logged in
+ *   yet) never sees the previous user's holdings, watchlist, or settings.
+ * - While logged in: each store's own subscribe() is used to notice every
+ *   mutation and debounce-push the latest snapshot back to that user's
+ *   server row, so switching devices/browsers (or just a fresh login on
+ *   the same one) always picks up the latest state.
+ *
+ * `ready` gates rendering (see the layout that mounts AuthProvider) so the
+ * very first paint never flashes stale/demo local data before the
+ * session-check + hydration above has had a chance to run.
+ */
+
+interface AuthContextValue {
+  user: AuthUser | null;
+  ready: boolean;
+  signup: (input: { username: string; email: string; password: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  login: (input: { identifier: string; password: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  logout: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+type DataKey = "portfolio" | "watchlist" | "settings";
+
+async function fetchUserData(key: DataKey): Promise<unknown> {
+  try {
+    const res = await fetch(`/api/user-data/${key}`);
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function pushUserData(key: DataKey, value: unknown): Promise<void> {
+  try {
+    await fetch(`/api/user-data/${key}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    });
+  } catch {
+    // Best-effort — a transient network failure just means this particular
+    // edit isn't saved server-side yet. localStorage still has it, and the
+    // debounced push after the NEXT mutation reads the latest snapshot at
+    // send-time, so it isn't lost, just delayed.
+  }
+}
+
+async function hydrateAllFromServer(): Promise<void> {
+  const [portfolio, watchlist, settings] = await Promise.all([
+    fetchUserData("portfolio"),
+    fetchUserData("watchlist"),
+    fetchUserData("settings"),
+  ]);
+  hydratePortfolioFromServer(portfolio);
+  hydrateWatchlistFromServer(watchlist);
+  hydrateSettingsFromServer(settings);
+}
+
+function resetAllStores(): void {
+  resetPortfolioToEmpty();
+  resetWatchlistToEmpty();
+  resetSettingsToDefault();
+}
+
+async function migrateLocalDataToServer(): Promise<void> {
+  await Promise.all([
+    pushUserData("portfolio", getPortfolioSnapshot()),
+    pushUserData("watchlist", getWatchlistSnapshot()),
+    pushUserData("settings", getSettingsSnapshot()),
+  ]);
+}
+
+const SYNC_DEBOUNCE_MS = 600;
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [ready, setReady] = useState(false);
+  const syncTimers = useRef<Partial<Record<DataKey, ReturnType<typeof setTimeout>>>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let me: AuthUser | null = null;
+      try {
+        const res = await fetch("/api/auth/me");
+        const body = await res.json();
+        me = body.user ?? null;
+      } catch {
+        me = null;
+      }
+      if (me) {
+        await hydrateAllFromServer();
+      } else {
+        resetAllStores();
+      }
+      if (!cancelled) {
+        setUser(me);
+        setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // While logged in, push every local mutation to this user's server row
+  // (debounced per-key so e.g. rapid-fire portfolio edits don't fire one
+  // request per keystroke). Deliberately depends on [user] rather than
+  // running unconditionally — logged-out edits (a fresh anonymous
+  // visitor's demo portfolio, say) have nowhere to sync to and simply stay
+  // local, same as before this feature existed.
+  useEffect(() => {
+    if (!user) return;
+
+    // Captured once per effect run (rather than reading syncTimers.current
+    // directly inside the cleanup below) so the cleanup closes over the
+    // exact same object this effect's own scheduleSync calls mutated —
+    // satisfies react-hooks/exhaustive-deps' ref-in-cleanup warning, and is
+    // correct regardless: this effect only re-runs when `user` changes, at
+    // which point any previous, still-pending debounced pushes for the old
+    // user should indeed be cancelled.
+    const timers = syncTimers.current;
+
+    function scheduleSync(key: DataKey, getter: () => unknown) {
+      const existing = timers[key];
+      if (existing) clearTimeout(existing);
+      timers[key] = setTimeout(() => {
+        void pushUserData(key, getter());
+      }, SYNC_DEBOUNCE_MS);
+    }
+
+    const unsubscribers = [
+      subscribePortfolio(() => scheduleSync("portfolio", getPortfolioSnapshot)),
+      subscribeWatchlist(() => scheduleSync("watchlist", getWatchlistSnapshot)),
+      subscribeSettings(() => scheduleSync("settings", getSettingsSnapshot)),
+    ];
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+      for (const timer of Object.values(timers)) {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    // getPortfolioSnapshot/getWatchlistSnapshot/getSettingsSnapshot are
+    // stable module-level function references, not state — safe to omit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const signup = useCallback<AuthContextValue["signup"]>(async (input) => {
+    let res: Response;
+    try {
+      res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    } catch {
+      return { ok: false, error: "Network error — please try again" };
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: body.error ?? "Sign up failed" };
+
+    // Brand-new account: nothing saved server-side yet. Migrate whatever
+    // is already sitting in this browser's local stores up to become this
+    // account's starting data (local state already matches what we just
+    // uploaded, so no need to hydrate back down afterward).
+    await migrateLocalDataToServer();
+    setUser(body.user);
+    return { ok: true };
+  }, []);
+
+  const login = useCallback<AuthContextValue["login"]>(async (input) => {
+    let res: Response;
+    try {
+      res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    } catch {
+      return { ok: false, error: "Network error — please try again" };
+    }
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: body.error ?? "Login failed" };
+
+    // Overwrite whatever's currently local with THIS user's own
+    // server-saved data — the core of strict data isolation between
+    // friends sharing one browser/device.
+    await hydrateAllFromServer();
+    setUser(body.user);
+    return { ok: true };
+  }, []);
+
+  const logout = useCallback(async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Even if the network call fails, still clear local state below —
+      // the user clearly wants this browser to stop showing their data.
+    }
+    resetAllStores();
+    setUser(null);
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{ user, ready, signup, login, logout }}>{children}</AuthContext.Provider>
+  );
+}
+
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
+  return ctx;
+}

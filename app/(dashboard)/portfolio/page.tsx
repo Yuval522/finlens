@@ -17,6 +17,7 @@ import { SellHoldingModal } from "@/components/portfolio/SellHoldingModal";
 import { PortfolioValueChart } from "@/components/portfolio/PortfolioValueChart";
 import { AssetAllocationChart } from "@/components/portfolio/AssetAllocationChart";
 import { HoldingsTable } from "@/components/portfolio/HoldingsTable";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 
 function money(v: number): string {
   return `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -26,7 +27,7 @@ function moneyIls(v: number): string {
   return `₪${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export default function PortfolioPage() {
+function PortfolioContent() {
   const { holdings, cash, refreshLivePrices } = usePortfolio();
   const [displayCurrency, setDisplayCurrency] = useState<"USD" | "ILS">("USD");
   const [modalOpen, setModalOpen] = useState(false);
@@ -240,5 +241,16 @@ export default function PortfolioPage() {
       <EditHoldingModal open={editingSymbol != null} holding={editingHolding} onClose={() => setEditingSymbol(null)} />
       <SellHoldingModal open={sellingSymbol != null} holding={sellingHolding} onClose={() => setSellingSymbol(null)} />
     </div>
+  );
+}
+
+export default function PortfolioPage() {
+  return (
+    <RequireAuth
+      title="Log in to see your portfolio"
+      description="Your holdings and cash balance are tied to your account, so they stay private to you and follow you to wherever you sign in."
+    >
+      <PortfolioContent />
+    </RequireAuth>
   );
 }

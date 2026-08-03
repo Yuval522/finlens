@@ -38,3 +38,15 @@ build*.log
 strace_build.log
 .next_stale_*
 reference screenshots/
+
+# local auth/portfolio database (lib/db/client.ts) — contains real user
+# accounts, password hashes, and portfolio data once anyone signs up.
+# Never commit this; production uses a hosted Turso database instead (see
+# .env.local.example).
+finlens-local.db
+finlens-local.db-*
+
+# stray standalone verification scripts (a FUSE-mount quirk in this dev
+# sandbox occasionally leaves an un-deletable renamed copy behind after a
+# cross-filesystem mv fails partway through) — never meant to be committed.
+.verify-*.mjs

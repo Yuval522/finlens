@@ -11,6 +11,8 @@
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource-variable/open-sans": "^5.3.0",
+    "@libsql/client": "^0.17.4",
+    "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.26.0",
@@ -22,6 +24,7 @@
     "yahoo-finance2": "^4.0.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
