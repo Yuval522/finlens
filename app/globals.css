@@ -238,3 +238,24 @@ body {
 .tab-scroll::-webkit-scrollbar {
   display: none;
 }
+
+/* Auth modal polish: Chrome/Safari force a bright yellow background (plus
+   black text) on any input the browser autofills, completely ignoring the
+   element's own background-color — jarring against this app's dark theme
+   (visible on the Username field in a live screenshot once the browser
+   autofilled a saved name). The only reliable override is this exact
+   combo: an absurdly large inset box-shadow in the app's own card color
+   paints over the browser's forced yellow (background-color alone can't
+   win against it), and -webkit-text-fill-color (not `color`, which
+   Chrome also ignores here) restores readable light text. transition-delay
+   is the standard trick to stop the fill color flashing in before this
+   rule applies. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px hsl(var(--card)) inset;
+  box-shadow: 0 0 0px 1000px hsl(var(--card)) inset;
+  -webkit-text-fill-color: hsl(var(--foreground));
+  caret-color: hsl(var(--foreground));
+  transition: background-color 9999s ease-in-out 0s;
+}

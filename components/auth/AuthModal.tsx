@@ -18,6 +18,29 @@ type Tab = "login" | "signup";
 const inputClass =
   "w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary";
 
+const USERNAME_MIN = 3;
+const USERNAME_MAX = 24;
+
+/**
+ * Username UX fix (live report: typing a real name like "Yuval Rokni" hit
+ * a blocking "letters/numbers/underscores only" error only AFTER
+ * submitting — surprising and unhelpful, since nothing on the field
+ * itself hinted at the restriction while typing). Sanitizes on every
+ * keystroke instead of validating after the fact: any run of whitespace
+ * collapses to a single underscore (so "Yuval Rokni" becomes
+ * "Yuval_Rokni" as you type, "Yuval  Rokni" doesn't leave a double
+ * underscore), anything else outside [a-zA-Z0-9_] is silently dropped,
+ * and the result is capped at USERNAME_MAX — so the field's value is
+ * ALWAYS a valid username shape, and the only thing left for the inline
+ * hint below to flag is being too short, which sanitizing alone can't fix.
+ */
+function sanitizeUsername(raw: string): string {
+  return raw
+    .replace(/\s+/g, "_")
+    .replace(/[^a-zA-Z0-9_]/g, "")
+    .slice(0, USERNAME_MAX);
+}
+
 /**
  * Combined Login/Signup modal — one component with a tab switch rather
  * than two separate modals, since a user who opens the wrong tab (e.g.
@@ -81,6 +104,14 @@ export function AuthModal({ open, onClose, initialTab = "login" }: AuthModalProp
     setError(null);
     if (!username.trim() || !email.trim() || !password) {
       setError("Fill in all fields");
+      return;
+    }
+    // Character shape is already guaranteed by sanitizeUsername() running
+    // on every keystroke (see the Username field's onChange below) — the
+    // only thing that can still be wrong here is length, surfaced live by
+    // the hint under the field rather than saved for a submit-time error.
+    if (username.length < USERNAME_MIN) {
+      setError(`Username needs at least ${USERNAME_MIN} characters`);
       return;
     }
     if (password.length < 8) {
@@ -185,11 +216,24 @@ export function AuthModal({ open, onClose, initialTab = "login" }: AuthModalProp
               <input
                 type="text"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => setUsername(sanitizeUsername(e.target.value))}
                 placeholder="e.g. yuval522"
                 autoComplete="username"
                 className={inputClass}
               />
+              {/* Real-time inline feedback (live report: the old
+                  letters/numbers/underscores error only ever showed up
+                  AFTER a failed submit) — sanitizeUsername already strips
+                  spaces/symbols as you type, so the only thing left to
+                  flag here is length; turns red only once something's
+                  been typed and it's still too short, stays a quiet
+                  neutral hint otherwise so it doesn't read as an error
+                  before the user has even started. */}
+              <p className={cn("mt-1 text-[11px]", username.length > 0 && username.length < USERNAME_MIN ? "text-destructive" : "text-muted-foreground")}>
+                {username.length > 0 && username.length < USERNAME_MIN
+                  ? `Needs at least ${USERNAME_MIN} characters (spaces become underscores)`
+                  : `${USERNAME_MIN}-${USERNAME_MAX} characters — letters, numbers, and underscores`}
+              </p>
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Email</label>
