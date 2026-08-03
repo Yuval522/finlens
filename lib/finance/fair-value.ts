@@ -44,14 +44,35 @@ import type { IncomeStatementYear, PricePoint } from "./types";
  *     historical window — while preventing a near-zero-earnings year from
  *     smuggling an extreme, non-economic value into the middle of the
  *     sorted list.
- *  3. Growth-adjust both medians by a bounded multiplier derived from the
- *     trailing EPS CAGR over the same window: every 10 points of EPS CAGR
- *     shifts the "deserved" multiple by 5%, clamped to +-40% so a single
- *     extreme growth/decline year can't blow up the estimate.
- *  4. Apply the growth-adjusted multiples to the CURRENT (TTM) EPS and
- *     revenue-per-share, blend the two resulting per-share estimates
- *     (simple average of whichever are available), and band it +-20%
- *     for the Undervalued/Overvalued zones the caller asked for.
+ *  2b. The per-year-capped median itself is then blended with a SECOND
+ *     median computed from just the most recent RECENT_SAMPLE_COUNT
+ *     samples, tilted toward that recent subset (see
+ *     recencyWeightedMedian's doc comment) — QA fix for a live audit
+ *     finding that per-year capping alone didn't fully address: a flat,
+ *     unweighted median across up to a decade implicitly assumes a
+ *     company's "deserved" multiple hasn't structurally changed, which
+ *     systematically overstates fair value for a maturing former-hyper-
+ *     growth name whose multiple has genuinely compressed over that
+ *     decade (AMZN was the reported case). Tickers with a short or stable
+ *     multiple history (RECENT_SAMPLE_COUNT samples or fewer) are
+ *     unaffected — there's no "recent vs. distant" distinction to draw.
+ *  3. Growth-adjust both (recency-weighted) medians by a bounded multiplier
+ *     derived from the trailing EPS CAGR over the same window: every 10
+ *     points of EPS CAGR shifts the "deserved" multiple by 5%, clamped to
+ *     +-40% so a single extreme growth/decline year can't blow up the
+ *     estimate.
+ *  4. Apply the growth-adjusted multiples to a SMOOTHED current EPS and
+ *     revenue-per-share — the average of whichever of {TTM, latest fiscal
+ *     year, second-latest fiscal year} are genuinely positive (see
+ *     normalizedCurrentValue's doc comment), not a single period — QA fix
+ *     for the opposite-direction sibling of the recency-weighting fix
+ *     above: applying an otherwise-fair historical multiple to a single
+ *     temporarily-depressed current period (e.g. mid-way through a
+ *     deliberate margin-compressing pricing cycle) can swing the estimate
+ *     hard even when the multiple itself is reasonable. Blend the two
+ *     resulting per-share estimates (simple average of whichever are
+ *     available), and band it +-20% for the Undervalued/Overvalued zones
+ *     the caller asked for.
  *
  * Currency handling follows the exact precedent already established by
  * ValuationCalculator (DataExplorerTabs.tsx's Valuation tab): historical
@@ -95,6 +116,9 @@ const PRICE_MATCH_TOLERANCE_DAYS = 45;
 /** Ceilings a single fiscal year's implied P/E or P/S is capped at before entering the median sample — see this file's module doc comment, step 2, for why. Generous on purpose: even the priciest real mega-cap growth names rarely sustain a P/E above 100x or a P/S above 40x for long, so these only ever bite on a genuinely near-zero-earnings/revenue-per-share outlier year, never on a normal (if expensive) real valuation. */
 const MAX_PE_MULTIPLE = 100;
 const MAX_PS_MULTIPLE = 40;
+/** How many of the most recent samples form the "recent" subset in recencyWeightedMedian, and how heavily that subset is weighted against the full-window median — see that function's doc comment. */
+const RECENT_SAMPLE_COUNT = 5;
+const RECENT_WEIGHT = 0.65;
 
 function fiscalYearEndDate(fiscalYear: string): Date | null {
   const year = Number(fiscalYear);
@@ -120,6 +144,47 @@ function median(values: number[]): number | null {
   const sorted = [...finite].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/**
+ * Blends a MEDIAN of just the most recent RECENT_SAMPLE_COUNT samples with
+ * the MEDIAN of the full sample set, tilted RECENT_WEIGHT toward the recent
+ * subset — see this file's module doc comment, step 2b, for the live-audit
+ * finding this addresses. `samplesChronological` must already be in
+ * oldest-to-newest order (peSamples/psSamples below are built that way, by
+ * iterating `window` — itself chronologically ordered — without
+ * reordering), so `.slice(-RECENT_SAMPLE_COUNT)` genuinely captures the
+ * most recent years, not an arbitrary subset. Still a median within each
+ * subset, so still resistant to any single remaining outlier year.
+ */
+function recencyWeightedMedian(samplesChronological: number[]): number | null {
+  const full = median(samplesChronological);
+  if (full == null || samplesChronological.length <= RECENT_SAMPLE_COUNT) return full;
+  const recent = median(samplesChronological.slice(-RECENT_SAMPLE_COUNT));
+  if (recent == null) return full;
+  return RECENT_WEIGHT * recent + (1 - RECENT_WEIGHT) * full;
+}
+
+/**
+ * Averages whichever of the given rows have a genuinely positive value for
+ * `selector` — the smoothed "current" per-share base described in this
+ * file's module doc comment, step 4. A ticker with only one usable period
+ * among the rows passed in behaves exactly as before (no averaging to
+ * dilute a genuinely single-data-point case); `rows` may contain nulls
+ * (e.g. no TTM row available) or rows whose `selector` value isn't
+ * meaningful for a given field (e.g. zero shares outstanding for revenue-
+ * per-share) — both are filtered out before averaging.
+ */
+function normalizedCurrentValue(
+  rows: (IncomeStatementYear | null | undefined)[],
+  selector: (r: IncomeStatementYear) => number
+): number | null {
+  const values = rows
+    .filter((r): r is IncomeStatementYear => r != null)
+    .map(selector)
+    .filter((v) => Number.isFinite(v) && v > 0);
+  if (values.length === 0) return null;
+  return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
 /** Same convention as score-gurufocus.ts's own cagrPct (duplicated locally rather than imported/exported across files for one three-line pure function) — null unless both endpoints are genuinely positive, since a CAGR spanning a loss year isn't meaningful. */
@@ -191,8 +256,8 @@ export function computeFairValueBand({
 
   if (peSamples.length === 0 && psSamples.length === 0) return null;
 
-  const medianHistoricalPE = median(peSamples);
-  const medianHistoricalPS = median(psSamples);
+  const medianHistoricalPE = recencyWeightedMedian(peSamples);
+  const medianHistoricalPS = recencyWeightedMedian(psSamples);
 
   // Growth adjustment — trailing EPS CAGR over the same window (capped at
   // 9 years back so a >10y-deep `window` slice, which can't happen given
@@ -208,15 +273,18 @@ export function computeFairValueBand({
   const adjMedianPE = medianHistoricalPE != null ? medianHistoricalPE * growthAdjustmentFactor : null;
   const adjMedianPS = medianHistoricalPS != null ? medianHistoricalPS * growthAdjustmentFactor : null;
 
-  // Apply the growth-adjusted historical multiples to CURRENT (TTM-
-  // preferred, latest-fiscal-year fallback) fundamentals.
-  const currentRow = trailing ?? latestHistoricalRow;
-  if (!currentRow) return null;
-  const fairValueFromPE = adjMedianPE != null && currentRow.eps > 0 ? adjMedianPE * currentRow.eps : null;
-  const fairValueFromPS =
-    adjMedianPS != null && currentRow.totalRevenue > 0 && currentRow.sharesOutstandingDiluted > 0
-      ? adjMedianPS * (currentRow.totalRevenue / currentRow.sharesOutstandingDiluted)
-      : null;
+  // Apply the growth-adjusted historical multiples to a SMOOTHED current
+  // basis — TTM blended with the latest 1-2 fiscal years (see
+  // normalizedCurrentValue's doc comment) — instead of a single period.
+  const recentHistoricalRows = window.slice(-2).reverse(); // [latest FY, prior FY], newest first
+  const normalizationRows = [trailing, ...recentHistoricalRows];
+  const normEps = normalizedCurrentValue(normalizationRows, (r) => r.eps);
+  const normRevenuePerShare = normalizedCurrentValue(normalizationRows, (r) =>
+    r.totalRevenue > 0 && r.sharesOutstandingDiluted > 0 ? r.totalRevenue / r.sharesOutstandingDiluted : NaN
+  );
+  if (normEps == null && normRevenuePerShare == null) return null;
+  const fairValueFromPE = adjMedianPE != null && normEps != null ? adjMedianPE * normEps : null;
+  const fairValueFromPS = adjMedianPS != null && normRevenuePerShare != null ? adjMedianPS * normRevenuePerShare : null;
 
   const fairValue = blend(fairValueFromPE, fairValueFromPS);
   if (fairValue == null || fairValue <= 0) return null;
