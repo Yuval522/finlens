@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { Portal } from "@/components/shared/Portal";
 
 interface AuthModalProps {
   open: boolean;
@@ -97,7 +98,7 @@ export function AuthModal({ open, onClose, initialTab = "login" }: AuthModalProp
   }
 
   return (
-    <>
+    <Portal>
       <div className="fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
       <div
         role="dialog"
@@ -230,6 +231,6 @@ export function AuthModal({ open, onClose, initialTab = "login" }: AuthModalProp
           </div>
         )}
       </div>
-    </>
+    </Portal>
   );
 }

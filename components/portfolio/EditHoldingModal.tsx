@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type { PortfolioHolding } from "@/lib/portfolio/store";
 import { updateHolding } from "@/lib/portfolio/store";
+import { Portal } from "@/components/shared/Portal";
 
 interface EditHoldingModalProps {
   open: boolean;
@@ -48,7 +49,7 @@ export function EditHoldingModal({ open, holding, onClose }: EditHoldingModalPro
   }
 
   return (
-    <>
+    <Portal>
       <div className="fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
       <div
         role="dialog"
@@ -114,6 +115,6 @@ export function EditHoldingModal({ open, holding, onClose }: EditHoldingModalPro
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }

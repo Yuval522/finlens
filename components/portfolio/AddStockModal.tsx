@@ -6,6 +6,7 @@ import type { SearchResultItem } from "@/lib/finance/types";
 import { toDisplayUnit } from "@/lib/format/currency";
 import { addHolding, type PortfolioCash } from "@/lib/portfolio/store";
 import { CompanyLogo } from "@/components/dashboard/CompanyLogo";
+import { Portal } from "@/components/shared/Portal";
 
 interface AddStockModalProps {
   open: boolean;
@@ -231,7 +232,7 @@ export function AddStockModal({ open, onClose, cash }: AddStockModalProps) {
   }
 
   return (
-    <>
+    <Portal>
       <div
         className="fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm"
         onClick={onClose}
@@ -352,6 +353,6 @@ export function AddStockModal({ open, onClose, cash }: AddStockModalProps) {
           )}
         </div>
       </div>
-    </>
+    </Portal>
   );
 }

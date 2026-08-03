@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type { PortfolioHolding } from "@/lib/portfolio/store";
 import { sellHolding } from "@/lib/portfolio/store";
+import { Portal } from "@/components/shared/Portal";
 
 interface SellHoldingModalProps {
   open: boolean;
@@ -56,7 +57,7 @@ export function SellHoldingModal({ open, holding, onClose }: SellHoldingModalPro
   }
 
   return (
-    <>
+    <Portal>
       <div className="fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
       <div
         role="dialog"
@@ -136,6 +137,6 @@ export function SellHoldingModal({ open, holding, onClose }: SellHoldingModalPro
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }

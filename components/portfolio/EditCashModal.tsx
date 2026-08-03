@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type { PortfolioCash } from "@/lib/portfolio/store";
 import { updateCash } from "@/lib/portfolio/store";
+import { Portal } from "@/components/shared/Portal";
 
 interface EditCashModalProps {
   open: boolean;
@@ -47,7 +48,7 @@ export function EditCashModal({ open, cash, onClose }: EditCashModalProps) {
   }
 
   return (
-    <>
+    <Portal>
       <div className="fixed inset-0 z-[59] bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
       <div
         role="dialog"
@@ -119,6 +120,6 @@ export function EditCashModal({ open, cash, onClose }: EditCashModalProps) {
           </button>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
