@@ -12,6 +12,8 @@ import { useLiveQuotes } from "@/lib/finance/useLiveQuotes";
 import { CurrencyToggle } from "@/components/portfolio/CurrencyToggle";
 import { AddStockModal } from "@/components/portfolio/AddStockModal";
 import { EditCashModal } from "@/components/portfolio/EditCashModal";
+import { EditHoldingModal } from "@/components/portfolio/EditHoldingModal";
+import { SellHoldingModal } from "@/components/portfolio/SellHoldingModal";
 import { PortfolioValueChart } from "@/components/portfolio/PortfolioValueChart";
 import { AssetAllocationChart } from "@/components/portfolio/AssetAllocationChart";
 import { HoldingsTable } from "@/components/portfolio/HoldingsTable";
@@ -25,10 +27,17 @@ function moneyIls(v: number): string {
 }
 
 export default function PortfolioPage() {
-  const { holdings, cash, removeHolding, refreshLivePrices } = usePortfolio();
+  const { holdings, cash, refreshLivePrices } = usePortfolio();
   const [displayCurrency, setDisplayCurrency] = useState<"USD" | "ILS">("USD");
   const [modalOpen, setModalOpen] = useState(false);
   const [cashModalOpen, setCashModalOpen] = useState(false);
+  // Edit Holdings / Smart Sell features: which symbol (if any) the
+  // Edit/Sell modal is currently open for. Storing just the symbol (not the
+  // full holding) so the modal always looks up the live row from
+  // displayHoldings below — otherwise a stale snapshot could show an
+  // outdated "current price" default in the Sell modal.
+  const [editingSymbol, setEditingSymbol] = useState<string | null>(null);
+  const [sellingSymbol, setSellingSymbol] = useState<string | null>(null);
 
   // Best-effort live refresh of held symbols' prices on mount — updates and
   // persists currentPrice/changePercent when the fetch succeeds, silently
@@ -74,6 +83,8 @@ export default function PortfolioPage() {
 
   const totals = computePortfolioTotals(displayHoldings, cash);
   const hasHoldings = holdings.length > 0;
+  const editingHolding = editingSymbol ? displayHoldings.find((h) => h.symbol === editingSymbol) ?? null : null;
+  const sellingHolding = sellingSymbol ? displayHoldings.find((h) => h.symbol === sellingSymbol) ?? null : null;
 
   const fxMultiplier = displayCurrency === "USD" ? 1 : USD_TO_ILS_RATE;
   const formatDisplay = displayCurrency === "USD" ? money : moneyIls;
@@ -200,7 +211,12 @@ export default function PortfolioPage() {
             <PortfolioValueChart startValue={totals.totalCostBasis} endValue={totals.totalPositionValue} />
             <AssetAllocationChart holdings={displayHoldings} totalCashUsd={totals.totalCashUsd} />
           </div>
-          <HoldingsTable holdings={displayHoldings} onRemove={removeHolding} ticks={ticks} />
+          <HoldingsTable
+            holdings={displayHoldings}
+            onEdit={setEditingSymbol}
+            onSell={setSellingSymbol}
+            ticks={ticks}
+          />
         </>
       ) : (
         <div className="glass-card flex flex-col items-center justify-center gap-3 rounded-2xl !border-dashed py-24 text-center">
@@ -219,8 +235,10 @@ export default function PortfolioPage() {
         </div>
       )}
 
-      <AddStockModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      <AddStockModal open={modalOpen} onClose={() => setModalOpen(false)} cash={cash} />
       <EditCashModal open={cashModalOpen} cash={cash} onClose={() => setCashModalOpen(false)} />
+      <EditHoldingModal open={editingSymbol != null} holding={editingHolding} onClose={() => setEditingSymbol(null)} />
+      <SellHoldingModal open={sellingSymbol != null} holding={sellingHolding} onClose={() => setSellingSymbol(null)} />
     </div>
   );
 }

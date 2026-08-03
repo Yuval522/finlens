@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import { formatPercent } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
 import { computeHolding, type HoldingComputed } from "@/lib/portfolio/derive";
@@ -12,7 +12,10 @@ import { CompanyLogo } from "@/components/dashboard/CompanyLogo";
 
 interface HoldingsTableProps {
   holdings: PortfolioHolding[];
-  onRemove: (symbol: string) => void;
+  /** Opens EditHoldingModal for this symbol (shares/purchase price correction — no cash impact). */
+  onEdit: (symbol: string) => void;
+  /** Opens SellHoldingModal for this symbol (Smart Sell flow — prompts sell price, credits Cash Balance). Replaces the old direct-delete behavior: removing a holding is now always a sell transaction, matching the "when selling/removing a position" feature request. */
+  onSell: (symbol: string) => void;
   /** Live Trading Feed ticks keyed by symbol (see useLiveQuotes) — flashes the Current Price cell green/red on an actual poll-to-poll move. Optional so the table still renders fine without a live feed wired up. */
   ticks?: Map<string, LiveQuoteTick>;
 }
@@ -45,14 +48,100 @@ function money(v: number): string {
 }
 
 /**
+ * Mobile responsiveness fix (feature request: "ensure the holdings table,
+ * cards, and action buttons scale cleanly ... on mobile viewports"). Below
+ * `md`, the wide 9-column + Actions table is genuinely unusable on a phone
+ * even with horizontal scroll (tiny tap targets, no context per swipe), so
+ * it's replaced entirely by a stacked one-holding-per-card layout showing
+ * the same data in a vertical key/value list, with full-width 44px-tall
+ * Edit/Sell buttons. `md:hidden` on this / `hidden md:block` on the table
+ * below keeps exactly one of the two mounted at a time per breakpoint.
+ */
+function HoldingCard({
+  h,
+  tick,
+  onEdit,
+  onSell,
+  onOpen,
+}: {
+  h: HoldingComputed;
+  tick?: LiveQuoteTick;
+  onEdit: (symbol: string) => void;
+  onSell: (symbol: string) => void;
+  onOpen: (symbol: string) => void;
+}) {
+  const gainUp = h.gainLoss >= 0;
+  const priceFlashClass =
+    tick?.direction === "up" ? "price-flash-up" : tick?.direction === "down" ? "price-flash-down" : undefined;
+
+  return (
+    <div className="rounded-lg border border-slate-800/60 bg-card/40 p-3">
+      <button type="button" onClick={() => onOpen(h.symbol)} className="flex w-full items-center gap-2.5 text-left">
+        <CompanyLogo symbol={h.symbol} name={h.name} size={28} />
+        <div className="min-w-0 flex-1">
+          <p className="font-mono text-sm font-semibold text-foreground">{h.symbol}</p>
+          <p className="truncate text-xs text-muted-foreground">{h.name}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="font-mono text-sm font-semibold text-foreground">{money(h.positionValue)}</p>
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 font-mono text-xs font-medium",
+              gainUp ? "text-success" : "text-destructive"
+            )}
+          >
+            {gainUp ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+            {formatPercent(h.gainLossPercent)}
+          </span>
+        </div>
+      </button>
+
+      <div className="mt-3 grid grid-cols-2 gap-y-1.5 border-t border-slate-800/60 pt-2.5 text-xs">
+        <span className="text-muted-foreground">Shares</span>
+        <span className="text-right font-mono text-foreground">{h.shares}</span>
+        <span className="text-muted-foreground">Purchase Price</span>
+        <span className="text-right font-mono text-muted-foreground">{money(h.purchasePrice)}</span>
+        <span className="text-muted-foreground">Current Price</span>
+        <span className={cn("text-right font-mono text-foreground", priceFlashClass)}>{money(h.currentPrice)}</span>
+        <span className="text-muted-foreground">Dividend Paid</span>
+        <span className="text-right font-mono text-muted-foreground">{money(h.dividendsPaid)}</span>
+        <span className="text-muted-foreground">Dividend Yield</span>
+        <span className="text-right font-mono text-muted-foreground">{h.dividendYieldPercent.toFixed(2)}%</span>
+      </div>
+
+      <div className="mt-3 flex gap-2 border-t border-slate-800/60 pt-2.5">
+        <button
+          type="button"
+          onClick={() => onEdit(h.symbol)}
+          className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-md border border-border text-xs font-medium text-foreground transition-colors hover:bg-accent"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={() => onSell(h.symbol)}
+          className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-md border border-destructive/30 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Sell
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Sortable holdings table — exact column order verified against the
  * reference terminal: Symbol (with company icon), Name, Shares, Purchase
  * Price, Current Price, Position Value, Gain/Loss (colored $ + % combined),
- * Dividend Paid, Dividend Yield, Actions (delete). Clicking a header sorts
- * by that column, toggling ascending/descending on repeat clicks — matches
- * the confirmed-sortable "Gain/Loss" header behavior from the reference.
+ * Dividend Paid, Dividend Yield, Actions (edit + sell). Clicking a header
+ * sorts by that column, toggling ascending/descending on repeat clicks —
+ * matches the confirmed-sortable "Gain/Loss" header behavior from the
+ * reference. Below `md`, a stacked card layout (HoldingCard) replaces the
+ * table entirely — see that component's doc comment.
  */
-export function HoldingsTable({ holdings, onRemove, ticks }: HoldingsTableProps) {
+export function HoldingsTable({ holdings, onEdit, onSell, ticks }: HoldingsTableProps) {
   const router = useRouter();
   const [sortKey, setSortKey] = useState<SortKey>("positionValue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -84,12 +173,25 @@ export function HoldingsTable({ holdings, onRemove, ticks }: HoldingsTableProps)
     }
   }
 
+  function openTicker(symbol: string) {
+    router.push(`/analysis/${encodeURIComponent(symbol)}`);
+  }
+
   if (holdings.length === 0) return null;
 
   return (
     <div className="glass-card min-w-0 rounded-xl p-3 sm:p-4">
       <h3 className="mb-2 text-sm font-semibold text-foreground">Holdings</h3>
-      <div className="-mx-1 overflow-x-auto">
+
+      {/* Mobile: stacked cards (see HoldingCard doc comment). */}
+      <div className="grid grid-cols-1 gap-2.5 md:hidden">
+        {sorted.map((h) => (
+          <HoldingCard key={h.symbol} h={h} tick={ticks?.get(h.symbol)} onEdit={onEdit} onSell={onSell} onOpen={openTicker} />
+        ))}
+      </div>
+
+      {/* Desktop/tablet: full sortable table. */}
+      <div className="-mx-1 hidden overflow-x-auto md:block">
         <table className="w-full min-w-[820px] border-collapse text-xs">
           <thead>
             <tr className="border-b border-slate-700/80 text-left text-muted-foreground">
@@ -135,7 +237,7 @@ export function HoldingsTable({ holdings, onRemove, ticks }: HoldingsTableProps)
               return (
                 <tr
                   key={h.symbol}
-                  onClick={() => router.push(`/analysis/${encodeURIComponent(h.symbol)}`)}
+                  onClick={() => openTicker(h.symbol)}
                   className="cursor-pointer border-b border-slate-800/60 transition-colors last:border-0 hover:bg-accent/60"
                 >
                   <td className="px-2 py-2.5">
@@ -175,29 +277,40 @@ export function HoldingsTable({ holdings, onRemove, ticks }: HoldingsTableProps)
                     {h.dividendYieldPercent.toFixed(2)}%
                   </td>
                   <td className="px-2 py-2.5 text-right">
-                    {/* Mobile responsiveness fix: p-1.5 around a 14px icon is
-                        a ~26px hit area, well under the ~44px minimum touch
-                        target this codebase uses everywhere else (Sidebar/
-                        Topbar's own "Mobile UX audit fix" comments) — and
-                        this button sits inside an otherwise-fully-clickable
-                        row (onClick navigates to the ticker), so a
-                        comfortably large, unambiguous tap target matters
-                        more here than on a purely decorative icon button. */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        // Row navigation lives on the parent <tr> — stop this
-                        // click from bubbling up and triggering it too, so
-                        // deleting a holding doesn't also navigate away.
-                        e.stopPropagation();
-                        onRemove(h.symbol);
-                      }}
-                      className="-my-2.5 flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                      title={`Remove ${h.symbol}`}
-                      aria-label={`Remove ${h.symbol} from portfolio`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {/* Mobile responsiveness fix: 44px (h-11 w-11) touch
+                        targets with a negative margin trick to avoid
+                        bloating row height, matching the convention used
+                        throughout this codebase (Sidebar/Topbar's own
+                        "Mobile UX audit fix" comments). Both buttons sit
+                        inside an otherwise-fully-clickable row (onClick
+                        navigates to the ticker), so stopPropagation keeps
+                        editing/selling from also triggering navigation. */}
+                    <div className="-my-2.5 flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEdit(h.symbol);
+                        }}
+                        className="flex h-11 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        title={`Edit ${h.symbol}`}
+                        aria-label={`Edit ${h.symbol} position`}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSell(h.symbol);
+                        }}
+                        className="flex h-11 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        title={`Sell ${h.symbol}`}
+                        aria-label={`Sell ${h.symbol} from portfolio`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );

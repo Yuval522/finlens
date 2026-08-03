@@ -4,12 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, Search, X } from "lucide-react";
 import type { SearchResultItem } from "@/lib/finance/types";
 import { toDisplayUnit } from "@/lib/format/currency";
-import { addHolding } from "@/lib/portfolio/store";
+import { addHolding, type PortfolioCash } from "@/lib/portfolio/store";
 import { CompanyLogo } from "@/components/dashboard/CompanyLogo";
 
 interface AddStockModalProps {
   open: boolean;
   onClose: () => void;
+  /** Smart Buy Cash Integration feature: current Cash Balance, used only to
+   * show a live cost-vs-available-cash preview below the fields — the
+   * actual deduction happens inside addHolding() in the store. Optional so
+   * this modal still renders fine if a caller doesn't have cash loaded yet. */
+  cash?: PortfolioCash;
 }
 
 /**
@@ -167,7 +172,7 @@ function TickerCombobox({
  * Shares, Purchase Price — no date field, since the reference implementation
  * itself doesn't have one either.
  */
-export function AddStockModal({ open, onClose }: AddStockModalProps) {
+export function AddStockModal({ open, onClose, cash }: AddStockModalProps) {
   const [selected, setSelected] = useState<SearchResultItem | null>(null);
   const [shares, setShares] = useState("");
   const [purchasePrice, setPurchasePrice] = useState("");
@@ -293,6 +298,43 @@ export function AddStockModal({ open, onClose }: AddStockModalProps) {
               />
             </div>
           </div>
+
+          {selected && sharesNum > 0 && priceNum > 0 && (() => {
+            // Smart Buy Cash Integration feature: live preview of the cost
+            // that will be deducted from Cash Balance on submit, and a
+            // non-blocking warning (not a hard block — this is a manual
+            // tracker, not an enforcing brokerage, same philosophy as
+            // updateCash clamping to 0 instead of rejecting the edit) if it
+            // exceeds what's currently available in the matching pool.
+            const cost = sharesNum * priceNum;
+            const pool = selected.currency === "ILA" ? "ils" : "usd";
+            const symbol = pool === "ils" ? "₪" : "$";
+            const available = cash?.[pool] ?? 0;
+            const insufficient = cash != null && cost > available;
+            return (
+              <div className="rounded-md border border-border bg-card/60 px-3 py-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Total Cost</span>
+                  <span className="font-mono text-sm font-semibold text-foreground">
+                    {symbol}
+                    {cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Deducted from your {pool === "ils" ? "ILS" : "USD"} Cash Balance
+                  {cash != null &&
+                    ` (${symbol}${available.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} available)`}
+                  .
+                </p>
+                {insufficient && (
+                  <p className="mt-1 text-[11px] text-amber-400">
+                    This exceeds your available cash — the balance will be set to {symbol}0 rather than going
+                    negative.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
 
           <button
             type="button"

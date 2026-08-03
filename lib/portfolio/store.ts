@@ -224,10 +224,32 @@ function getServerSnapshot(): PortfolioData {
   return SEED_DATA;
 }
 
+/** Which PortfolioCash pool a holding's buy/sell cash flow settles into — TASE listings are tagged "ILA" (Israeli Agora, the currency code used across lib/finance) and settle in the ILS pool; everything else (USD and any other currency this app doesn't have a dedicated cash pool for) settles in the USD pool, matching the app's only two cash pools and USD's role as the default/base elsewhere (see computePortfolioTotals). */
+function cashPoolForCurrency(currency: string): keyof PortfolioCash {
+  return currency === "ILA" ? "ils" : "usd";
+}
+
+/**
+ * Smart Buy Cash Integration (feature request: buying a position should
+ * automatically deduct shares x purchasePrice from the Cash Balance,
+ * rather than leaving Cash Balance and Holdings as two disconnected numbers
+ * the user has to reconcile by hand). The incoming `holding`'s own
+ * shares/purchasePrice represent THIS purchase transaction — even when
+ * merging into an existing position below, so the cash deducted is always
+ * exactly this transaction's cost, never the blended/total position's cost.
+ * Clamped at 0 like updateCash (see that function's doc comment for why
+ * this app doesn't model negative cash) rather than going negative — a
+ * purchase that costs more than the recorded cash balance still records
+ * the shares (this is a manual tracker, not an enforcing brokerage) but
+ * zeroes the balance instead of showing a phantom negative figure.
+ */
 export function addHolding(holding: PortfolioHolding): void {
   ensureHydrated();
   const symbol = holding.symbol.toUpperCase();
+  const cost = holding.shares * holding.purchasePrice;
+  const pool = cashPoolForCurrency(holding.currency);
   const existing = data.holdings.find((h) => h.symbol === symbol);
+  let holdings: PortfolioHolding[];
   if (existing) {
     // Adding more of a symbol you already hold: merge into a single
     // position with a blended (weighted-average) cost basis, same as any
@@ -236,23 +258,21 @@ export function addHolding(holding: PortfolioHolding): void {
     const totalShares = existing.shares + holding.shares;
     const blendedCost =
       (existing.shares * existing.purchasePrice + holding.shares * holding.purchasePrice) / totalShares;
-    data = {
-      ...data,
-      holdings: data.holdings.map((h) =>
-        h.symbol === symbol
-          ? {
-              ...h,
-              shares: totalShares,
-              purchasePrice: Number(blendedCost.toFixed(4)),
-              currentPrice: holding.currentPrice,
-              changePercent: holding.changePercent,
-            }
-          : h
-      ),
-    };
+    holdings = data.holdings.map((h) =>
+      h.symbol === symbol
+        ? {
+            ...h,
+            shares: totalShares,
+            purchasePrice: Number(blendedCost.toFixed(4)),
+            currentPrice: holding.currentPrice,
+            changePercent: holding.changePercent,
+          }
+        : h
+    );
   } else {
-    data = { ...data, holdings: [...data.holdings, { ...holding, symbol }] };
+    holdings = [...data.holdings, { ...holding, symbol }];
   }
+  data = { ...data, holdings, cash: { ...data.cash, [pool]: Math.max(0, data.cash[pool] - cost) } };
   persist();
   notify();
 }
@@ -261,6 +281,71 @@ export function removeHolding(symbolRaw: string): void {
   ensureHydrated();
   const symbol = symbolRaw.toUpperCase();
   data = { ...data, holdings: data.holdings.filter((h) => h.symbol !== symbol) };
+  persist();
+  notify();
+}
+
+/**
+ * Smart Sell Cash Integration (feature request: selling/removing a
+ * position should prompt for a sell price and automatically credit the
+ * proceeds to Cash Balance). Supports a PARTIAL sell (sharesToSell less
+ * than the full position) as well as a full sell/exit — a partial sell
+ * reduces the holding's share count and leaves its cost-basis-per-share
+ * (`purchasePrice`) untouched, since the remaining shares' original cost
+ * basis hasn't changed; a full sell (sharesToSell >= the position's whole
+ * share count) removes the holding entirely, same end state
+ * removeHolding() alone would produce, just with the cash credit applied
+ * first. `sharesToSell` is clamped to the position's actual share count so
+ * a stale/rounded input can never sell more shares than are actually held.
+ * No-ops (returns without touching state) on an unknown symbol or a
+ * non-positive shares/price input, rather than silently crediting cash for
+ * a phantom sale.
+ */
+export function sellHolding(symbolRaw: string, sharesToSell: number, sellPrice: number): void {
+  ensureHydrated();
+  const symbol = symbolRaw.toUpperCase();
+  const existing = data.holdings.find((h) => h.symbol === symbol);
+  if (!existing || !(sharesToSell > 0) || !(sellPrice > 0)) return;
+  const clampedShares = Math.min(sharesToSell, existing.shares);
+  const proceeds = clampedShares * sellPrice;
+  const pool = cashPoolForCurrency(existing.currency);
+  const remainingShares = existing.shares - clampedShares;
+  data = {
+    ...data,
+    cash: { ...data.cash, [pool]: data.cash[pool] + proceeds },
+    holdings:
+      remainingShares > 0
+        ? data.holdings.map((h) => (h.symbol === symbol ? { ...h, shares: remainingShares } : h))
+        : data.holdings.filter((h) => h.symbol !== symbol),
+  };
+  persist();
+  notify();
+}
+
+/**
+ * Edit Holdings feature (request: let a user correct/adjust an existing
+ * position's shares or purchase price directly — e.g. fixing a typo'd
+ * quantity or cost basis — as distinct from a Buy/Sell transaction, so it
+ * deliberately does NOT touch Cash Balance the way addHolding/sellHolding
+ * do). Either field can be edited independently; omitting one (or passing
+ * a non-positive value, which isn't a valid share count or price) leaves
+ * that field unchanged rather than zeroing it out.
+ */
+export function updateHolding(symbolRaw: string, patch: { shares?: number; purchasePrice?: number }): void {
+  ensureHydrated();
+  const symbol = symbolRaw.toUpperCase();
+  data = {
+    ...data,
+    holdings: data.holdings.map((h) =>
+      h.symbol === symbol
+        ? {
+            ...h,
+            shares: patch.shares != null && patch.shares > 0 ? patch.shares : h.shares,
+            purchasePrice: patch.purchasePrice != null && patch.purchasePrice > 0 ? patch.purchasePrice : h.purchasePrice,
+          }
+        : h
+    ),
+  };
   persist();
   notify();
 }
