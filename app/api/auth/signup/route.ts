@@ -1,8 +1,11 @@
 import { randomUUID } from "crypto";
-import { NextResponse } from "next/server";
 import { getDb, ensureSchema } from "@/lib/db/client";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession, setSessionCookie } from "@/lib/auth/session";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Mobile state-sync fix: never let this be cached — see lib/http/noStore.ts.
+export const dynamic = "force-dynamic";
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,24}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -12,22 +15,22 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    return noStoreJson({ error: "Invalid request body" }, { status: 400 });
   }
 
   const { username, email, password } = (body ?? {}) as Record<string, unknown>;
 
   if (typeof username !== "string" || !USERNAME_RE.test(username)) {
-    return NextResponse.json(
+    return noStoreJson(
       { error: "Username must be 3-24 characters, letters/numbers/underscores only" },
       { status: 400 }
     );
   }
   if (typeof email !== "string" || !EMAIL_RE.test(email)) {
-    return NextResponse.json({ error: "Enter a valid email address" }, { status: 400 });
+    return noStoreJson({ error: "Enter a valid email address" }, { status: 400 });
   }
   if (typeof password !== "string" || password.length < 8) {
-    return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+    return noStoreJson({ error: "Password must be at least 8 characters" }, { status: 400 });
   }
 
   await ensureSchema();
@@ -45,9 +48,9 @@ export async function POST(request: Request) {
   if (existing.rows.length > 0) {
     const row = existing.rows[0];
     if (String(row.username) === username) {
-      return NextResponse.json({ error: "That username is already taken" }, { status: 409 });
+      return noStoreJson({ error: "That username is already taken" }, { status: 409 });
     }
-    return NextResponse.json({ error: "An account with that email already exists" }, { status: 409 });
+    return noStoreJson({ error: "An account with that email already exists" }, { status: 409 });
   }
 
   const passwordHash = await hashPassword(password);
@@ -62,5 +65,5 @@ export async function POST(request: Request) {
   const token = await createSession(id);
   await setSessionCookie(token);
 
-  return NextResponse.json({ user: { id, username, email: normalizedEmail } }, { status: 201 });
+  return noStoreJson({ user: { id, username, email: normalizedEmail } }, { status: 201 });
 }

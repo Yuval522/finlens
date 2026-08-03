@@ -1,19 +1,22 @@
-import { NextResponse } from "next/server";
 import { getDb, ensureSchema } from "@/lib/db/client";
 import { verifyPassword } from "@/lib/auth/password";
 import { createSession, setSessionCookie } from "@/lib/auth/session";
+import { noStoreJson } from "@/lib/http/noStore";
+
+// Mobile state-sync fix: never let this be cached — see lib/http/noStore.ts.
+export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    return noStoreJson({ error: "Invalid request body" }, { status: 400 });
   }
 
   const { identifier, password } = (body ?? {}) as Record<string, unknown>;
   if (typeof identifier !== "string" || !identifier.trim() || typeof password !== "string" || !password) {
-    return NextResponse.json({ error: "Enter your username/email and password" }, { status: 400 });
+    return noStoreJson({ error: "Enter your username/email and password" }, { status: 400 });
   }
 
   await ensureSchema();
@@ -29,7 +32,7 @@ export async function POST(request: Request) {
   // Same generic error for "no such account" and "wrong password" —
   // distinguishing them would let an attacker enumerate which
   // usernames/emails are registered.
-  const genericError = NextResponse.json({ error: "Incorrect username/email or password" }, { status: 401 });
+  const genericError = noStoreJson({ error: "Incorrect username/email or password" }, { status: 401 });
   if (!row) return genericError;
 
   const valid = await verifyPassword(password, String(row.password_hash));
@@ -39,7 +42,7 @@ export async function POST(request: Request) {
   const token = await createSession(userId);
   await setSessionCookie(token);
 
-  return NextResponse.json({
+  return noStoreJson({
     user: { id: userId, username: String(row.username), email: String(row.email) },
   });
 }

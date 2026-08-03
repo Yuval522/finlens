@@ -83,7 +83,9 @@ export function useLiveQuotes(
 
     async function poll() {
       try {
-        const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbolsKey)}`);
+        // Mobile state-sync fix: cache: "no-store" — see
+        // lib/portfolio/store.ts's refreshLivePrices identical comment.
+        const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbolsKey)}`, { cache: "no-store" });
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
 

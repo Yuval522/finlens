@@ -14,7 +14,10 @@ export interface UseBackgroundRefreshOptions {
  * reload — fires `onRefresh` when the window regains focus, when the tab
  * becomes visible again (covers OS-level app/tab switching, which doesn't
  * always fire a `focus` event the way clicking back into the browser
- * does), and optionally on a gentle background interval.
+ * does), when the page is restored from the back/forward cache after
+ * being backgrounded (common on mobile — app-switching, screen lock, a
+ * home-screen relaunch — see handlePageShow below), and optionally on a
+ * gentle background interval.
  *
  * Deliberately just a trigger, not a data-fetching hook itself: the
  * dashboard, watchlist, portfolio, and ticker pages each already have
@@ -47,9 +50,22 @@ export function useBackgroundRefresh(
     function handleVisibility() {
       if (document.visibilityState === "visible") callbackRef.current();
     }
+    // Mobile state-sync fix: a mobile browser restoring this page from the
+    // back/forward cache (bfcache) after backgrounding — switching apps,
+    // locking the screen, relaunching from a home-screen icon — doesn't
+    // always fire `focus`/`visibilitychange` the way returning to a
+    // desktop tab reliably does. `pageshow`'s `persisted` flag is the
+    // specific signal a bfcache restore fires, so this is a defensive
+    // third net alongside the two above to make sure prices actually
+    // refresh on that return trip instead of showing whatever was on
+    // screen before backgrounding.
+    function handlePageShow(event: PageTransitionEvent) {
+      if (event.persisted) callbackRef.current();
+    }
 
     window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pageshow", handlePageShow);
 
     let intervalId: ReturnType<typeof setInterval> | undefined;
     if (intervalMs && intervalMs > 0) {
@@ -59,6 +75,7 @@ export function useBackgroundRefresh(
     return () => {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pageshow", handlePageShow);
       if (intervalId) clearInterval(intervalId);
     };
   }, [intervalMs, enabled]);

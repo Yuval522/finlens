@@ -384,7 +384,10 @@ export async function refreshLivePrices(): Promise<void> {
   const symbols = data.holdings.map((h) => h.symbol);
   if (symbols.length === 0) return;
   try {
-    const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols.join(","))}`);
+    // Mobile state-sync fix: cache: "no-store" on top of /api/quotes' own
+    // no-store response header — never let a mobile browser (or a carrier
+    // proxy) serve back a cached quote for this holding's price.
+    const res = await fetch(`/api/quotes?symbols=${encodeURIComponent(symbols.join(","))}`, { cache: "no-store" });
     if (!res.ok) return;
     const body = await res.json();
     const quotes: { symbol: string; price: number | null; changePercent: number | null; currency: string }[] =

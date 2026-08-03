@@ -67,7 +67,13 @@ type DataKey = "portfolio" | "watchlist" | "settings";
 
 async function fetchUserData(key: DataKey): Promise<unknown> {
   try {
-    const res = await fetch(`/api/user-data/${key}`);
+    // Mobile state-sync fix: `cache: "no-store"` on top of the route's own
+    // no-store response header — belt-and-suspenders so this GET is never
+    // served from the browser's own HTTP cache, which is the exact
+    // mechanism that could otherwise show one device (typically mobile,
+    // due to how often it backgrounds/foregrounds and re-requests this)
+    // data that's gone stale since it changed on another device.
+    const res = await fetch(`/api/user-data/${key}`, { cache: "no-store" });
     if (!res.ok) return null;
     const body = await res.json();
     return body.data ?? null;
@@ -125,10 +131,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    let inFlight = false;
+
+    async function syncSession() {
+      if (inFlight) return;
+      inFlight = true;
       let me: AuthUser | null = null;
       try {
-        const res = await fetch("/api/auth/me");
+        // Mobile state-sync fix: cache: "no-store" — see fetchUserData's
+        // identical doc comment above.
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
         const body = await res.json();
         me = body.user ?? null;
       } catch {
@@ -143,9 +155,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(me);
         setReady(true);
       }
-    })();
+      inFlight = false;
+    }
+
+    void syncSession();
+
+    // Mobile state-sync fix: mobile browsers background/foreground the
+    // app (app-switching, screen lock, relaunching from a home-screen
+    // icon) far more often than a desktop tab does. Some browsers restore
+    // the page from the back/forward cache (bfcache) on return WITHOUT
+    // re-running this mount effect at all, which — before this — meant a
+    // returning mobile session just kept showing whatever was on screen
+    // before backgrounding (a stale portfolio, an old avatar, cash that
+    // hasn't picked up an edit made on desktop meanwhile) instead of
+    // re-checking who's logged in and re-pulling their latest data.
+    // `pageshow`'s `persisted` flag is exactly the signal a bfcache
+    // restore fires; `visibilitychange`/`focus` are a defensive second net
+    // for the cases that don't — the same combination
+    // lib/finance/useBackgroundRefresh.ts already uses for live quotes,
+    // extended here with the bfcache-specific `pageshow` check since a
+    // full session + account-data re-sync is worth being more thorough
+    // about than a quote refresh.
+    function handlePageShow(event: PageTransitionEvent) {
+      if (event.persisted) void syncSession();
+    }
+    function handleRevisit() {
+      if (document.visibilityState === "visible") void syncSession();
+    }
+    window.addEventListener("pageshow", handlePageShow);
+    document.addEventListener("visibilitychange", handleRevisit);
+    window.addEventListener("focus", handleRevisit);
+
     return () => {
       cancelled = true;
+      window.removeEventListener("pageshow", handlePageShow);
+      document.removeEventListener("visibilitychange", handleRevisit);
+      window.removeEventListener("focus", handleRevisit);
     };
   }, []);
 

@@ -1,0 +1,17 @@
+{
+  "name": "FinLens — Financial Intelligence",
+  "short_name": "FinLens",
+  "description": "A next-generation financial terminal with live market data, charting, technical indicators, and screening for US & TASE equities.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F131A",
+  "theme_color": "#0F131A",
+  "icons": [
+    {
+      "src": "/finlens-mark.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
