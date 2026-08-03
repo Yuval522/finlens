@@ -236,7 +236,18 @@ export function AddStockModal({ open, onClose }: AddStockModalProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Add stock to portfolio"
-        className="glass-card fixed left-1/2 top-1/2 z-[60] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl p-5 shadow-2xl"
+        // Mobile responsiveness fix: this dialog is centered via
+        // top-1/2/-translate-y-1/2 with no bound on its own height. On a
+        // short mobile viewport — a landscape phone, or a portrait one with
+        // the on-screen keyboard eating vertical space while a field is
+        // focused — the ticker-search dropdown opening on top of the
+        // shares/price fields and submit button could push content beyond
+        // the viewport with no way to reach it, since neither the page nor
+        // the dialog itself scrolled. max-h-[85vh] + overflow-y-auto caps
+        // the dialog to a safe fraction of viewport height and makes IT the
+        // scroll container once content exceeds that — same pattern
+        // AssetAllocationChart's fullscreen modal already uses.
+        className="glass-card fixed left-1/2 top-1/2 z-[60] max-h-[85vh] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl p-5 shadow-2xl"
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-foreground">Add Stock</h2>

@@ -53,7 +53,11 @@ export function EditCashModal({ open, cash, onClose }: EditCashModalProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Edit cash balance"
-        className="glass-card fixed left-1/2 top-1/2 z-[60] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl p-5 shadow-2xl"
+        // Mobile responsiveness fix: same max-h-[85vh]/overflow-y-auto
+        // safeguard as AddStockModal — see that file's identical dialog
+        // className for the full rationale (short viewport + on-screen
+        // keyboard could otherwise clip content with no way to scroll to it).
+        className="glass-card fixed left-1/2 top-1/2 z-[60] max-h-[85vh] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl p-5 shadow-2xl"
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-foreground">Edit Cash Balance</h2>

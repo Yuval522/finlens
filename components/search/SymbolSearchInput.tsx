@@ -97,7 +97,17 @@ export function SymbolSearchInput() {
   const showDropdown = open && query.trim().length > 0;
 
   return (
-    <div ref={containerRef} className="relative w-full max-w-xl">
+    // Mobile responsiveness fix: this renders inside Topbar's flex row
+    // alongside shrink-0 siblings (hamburger button, logo, avatar menu).
+    // `w-full` alone sets this item's flex-basis to the row's full width,
+    // but without `min-w-0` a flex item's shrink floor defaults to its own
+    // content's min-intrinsic size (a text input's browser-default minimum,
+    // commonly ~170px+) — on a narrow phone viewport, the shrink-0 siblings
+    // plus that floor can exceed the header's actual width, forcing the
+    // whole sticky header (and often the page) into horizontal overflow.
+    // `min-w-0` lets this shrink all the way down to fit whatever space the
+    // siblings leave, the standard fix for this exact flexbox pattern.
+    <div ref={containerRef} className="relative w-full min-w-0 max-w-xl">
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <input
         type="text"

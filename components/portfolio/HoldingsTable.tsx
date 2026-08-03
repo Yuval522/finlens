@@ -175,6 +175,14 @@ export function HoldingsTable({ holdings, onRemove, ticks }: HoldingsTableProps)
                     {h.dividendYieldPercent.toFixed(2)}%
                   </td>
                   <td className="px-2 py-2.5 text-right">
+                    {/* Mobile responsiveness fix: p-1.5 around a 14px icon is
+                        a ~26px hit area, well under the ~44px minimum touch
+                        target this codebase uses everywhere else (Sidebar/
+                        Topbar's own "Mobile UX audit fix" comments) — and
+                        this button sits inside an otherwise-fully-clickable
+                        row (onClick navigates to the ticker), so a
+                        comfortably large, unambiguous tap target matters
+                        more here than on a purely decorative icon button. */}
                     <button
                       type="button"
                       onClick={(e) => {
@@ -184,7 +192,7 @@ export function HoldingsTable({ holdings, onRemove, ticks }: HoldingsTableProps)
                         e.stopPropagation();
                         onRemove(h.symbol);
                       }}
-                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                      className="-my-2.5 flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                       title={`Remove ${h.symbol}`}
                       aria-label={`Remove ${h.symbol} from portfolio`}
                     >
