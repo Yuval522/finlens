@@ -1,7 +1,7 @@
 import { splitTrailingRow } from "./chart-transform";
 import { toDisplayUnit } from "../format/currency";
 import type { IncomeStatementYear, PricePoint } from "./types";
-import type { FairValueBandResult } from "./fair-value";
+import { normalizedCurrentValue, type FairValueBandResult } from "./fair-value";
 
 /**
  * Historical "fair value line" for the Valuation view's band chart —
@@ -25,8 +25,17 @@ import type { FairValueBandResult } from "./fair-value";
  *  1. Apply the SAME growth-adjusted P/E and P/S multiples fair-value.ts
  *     already computed to EVERY historical fiscal year's own EPS/
  *     revenue-per-share, producing one fair-value "anchor" per fiscal
- *     year-end date, plus one anchor for the trailing/latest period
- *     anchored at the most recent price date ("today").
+ *     year-end date, plus one anchor for "today" anchored at the most
+ *     recent price date, using fair-value.ts's own normalizedCurrentValue
+ *     (TTM blended with the latest 1-2 fiscal years) — QA fix for a live
+ *     audit that caught this chart's "today" point and the Fair Value
+ *     Estimate card above it showing two DIFFERENT numbers for the same
+ *     ticker: this file previously derived its "today" anchor from a
+ *     single period (TTM, or the latest fiscal year) independently of
+ *     fair-value.ts's own (separately fixed) smoothing, silently
+ *     reintroducing exactly the kind of drift this file's shared-multiples
+ *     design was meant to prevent. Reusing the same exported function for
+ *     both keeps them locked together going forward.
  *  2. One further anchor is projected ~1 year beyond "today" by growing
  *     EPS/revenue at the same bounded CAGR fair-value.ts computed —
  *     mirroring GuruFocus's own chart convention of extending the
@@ -194,13 +203,21 @@ export function computeFairValueHistory({
     anchors.push({ time: date.getTime(), value: clampToPrice(rawValue, priceDisplay) });
   }
 
-  const currentRow = trailing ?? window[window.length - 1] ?? null;
+  // Smoothed "today" basis — same normalizedCurrentValue helper
+  // fair-value.ts uses for its own current-point calc (see this file's
+  // module doc comment for why sharing this function matters).
+  const recentHistoricalRows = window.slice(-2).reverse();
+  const normalizationRows = [trailing, ...recentHistoricalRows];
+  const normEps = normalizedCurrentValue(normalizationRows, (r) => r.eps);
+  const normRevenuePerShare = normalizedCurrentValue(normalizationRows, (r) =>
+    r.totalRevenue > 0 && r.sharesOutstandingDiluted > 0 ? r.totalRevenue / r.sharesOutstandingDiluted : NaN
+  );
   const lastPricePoint = history[history.length - 1];
   const lastPriceDate = new Date(lastPricePoint.date).getTime();
   const lastPriceDisplay = toDisplayUnit(lastPricePoint.close, quoteCurrency);
-  const rawCurrentValue = currentRow
-    ? fairValueFor(currentRow.eps, currentRow.totalRevenue, currentRow.sharesOutstandingDiluted)
-    : null;
+  const fromPECurrent = adjMedianPE != null && normEps != null ? adjMedianPE * normEps : null;
+  const fromPSCurrent = adjMedianPS != null && normRevenuePerShare != null ? adjMedianPS * normRevenuePerShare : null;
+  const rawCurrentValue = blend(fromPECurrent, fromPSCurrent);
   const currentValue = rawCurrentValue != null ? clampToPrice(rawCurrentValue, lastPriceDisplay) : null;
   if (currentValue != null) {
     anchors.push({ time: lastPriceDate, value: currentValue });
@@ -227,11 +244,14 @@ export function computeFairValueHistory({
   // the same rate as EPS (this codebase doesn't compute a separate revenue
   // CAGR anywhere to reuse instead) — a disclosed simplification.
   let projectedAnchor: Anchor | null = null;
-  if (currentRow && currentValue != null) {
+  if (currentValue != null) {
     const g = Math.min(0.2, Math.max(-0.2, (fairValue.epsCagrPct ?? 0) / 100));
-    const projectedEps = currentRow.eps * (1 + g);
-    const projectedRevenue = currentRow.totalRevenue * (1 + g);
-    const rawProjectedValue = fairValueFor(projectedEps, projectedRevenue, currentRow.sharesOutstandingDiluted);
+    const projectedEps = normEps != null ? normEps * (1 + g) : null;
+    const projectedRevenuePerShare = normRevenuePerShare != null ? normRevenuePerShare * (1 + g) : null;
+    const fromPEProjected = adjMedianPE != null && projectedEps != null ? adjMedianPE * projectedEps : null;
+    const fromPSProjected =
+      adjMedianPS != null && projectedRevenuePerShare != null ? adjMedianPS * projectedRevenuePerShare : null;
+    const rawProjectedValue = blend(fromPEProjected, fromPSProjected);
     if (rawProjectedValue != null) {
       // Bounded relative to the "today" anchor rather than a real price
       // (there isn't one for a future date) — a 1-year projection at a

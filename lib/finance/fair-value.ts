@@ -174,8 +174,17 @@ function recencyWeightedMedian(samplesChronological: number[]): number | null {
  * (e.g. no TTM row available) or rows whose `selector` value isn't
  * meaningful for a given field (e.g. zero shares outstanding for revenue-
  * per-share) — both are filtered out before averaging.
+ *
+ * Exported (QA fix: a live audit found the Fair Value Estimate card and the
+ * Fair Value History chart showing two DIFFERENT numbers for the same
+ * ticker at the same time — this function was added here, private, without
+ * updating valuation-history.ts's own "current" anchor to match, breaking
+ * the exact guarantee that file's module doc comment describes). Every
+ * caller computing a "current" fair-value point MUST use this shared
+ * function rather than a locally-duplicated normalization, so the two
+ * widgets can't drift apart again the same way.
  */
-function normalizedCurrentValue(
+export function normalizedCurrentValue(
   rows: (IncomeStatementYear | null | undefined)[],
   selector: (r: IncomeStatementYear) => number
 ): number | null {
