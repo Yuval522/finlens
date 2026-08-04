@@ -22,7 +22,7 @@ interface IncomeStatementPanelProps {
   currency: string;
 }
 
-const { success: SUCCESS, amber: AMBER, slate: SLATE, destructive: DESTRUCTIVE, sky: SKY } = CHART_COLORS;
+const { success: SUCCESS, amber: AMBER, slate: SLATE, destructive: DESTRUCTIVE, sky: SKY, contrast: CONTRAST } = CHART_COLORS;
 
 interface SingleMetricTooltipProps {
   active?: boolean;
@@ -201,9 +201,9 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
         {average != null && (
           <ReferenceLine
             y={average}
-            stroke={AMBER}
+            stroke={CONTRAST}
             strokeDasharray="4 4"
-            label={{ value: effectiveFormat(average), position: "top", fill: AMBER, fontSize: 11, fontWeight: 600 }}
+            label={{ value: effectiveFormat(average), position: "top", fill: CONTRAST, fontSize: 11, fontWeight: 600 }}
           />
         )}
         {/* Recharts' TypedDataKey inference can't resolve a plain `keyof T`
@@ -327,7 +327,16 @@ function MetricCard({
       title={title}
       subtitle={subtitle}
       fullscreen={expanded === id}
-      onToggleFullscreen={() => onToggle(id)}
+      // QA fix (global chart state reset): see useChartControls' reset()
+      // doc comment. `expanded === id` here still reads as "currently
+      // open" (same value ChartCard's own `fullscreen` prop above just
+      // used) at the moment this handler fires, since React hasn't
+      // re-rendered with the new `expanded` yet — so this only resets when
+      // CLOSING (open -> closed), never when opening.
+      onToggleFullscreen={() => {
+        if (expanded === id) controls.reset();
+        onToggle(id);
+      }}
       controls={
         <ChartControls
           range={controls.range}
@@ -482,7 +491,12 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
       title="Rule of 40"
       subtitle="Revenue growth % + FCF margin %"
       fullscreen={expanded === "ruleof40"}
-      onToggleFullscreen={() => onToggle("ruleof40")}
+      // QA fix (global chart state reset) — see MetricCard's matching
+      // onToggleFullscreen comment above for the exact mechanism.
+      onToggleFullscreen={() => {
+        if (expanded === "ruleof40") controls.reset();
+        onToggle("ruleof40");
+      }}
       controls={
         <ChartControls
           range={controls.range}
@@ -504,12 +518,12 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
             {ruleOf40Average != null && (
               <ReferenceLine
                 y={ruleOf40Average}
-                stroke={AMBER}
+                stroke={CONTRAST}
                 strokeDasharray="4 4"
                 label={{
                   value: `Avg ${ruleOf40Average.toFixed(1)}%`,
                   position: "top",
-                  fill: AMBER,
+                  fill: CONTRAST,
                   fontSize: 11,
                   fontWeight: 600,
                 }}

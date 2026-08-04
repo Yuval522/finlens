@@ -33,6 +33,37 @@ export interface ChartControlsState<T extends { fiscalYear: string }> {
    * not because state is shared across cards.
    */
   rangeOther<U extends { fiscalYear: string }>(otherAnnual: U[], otherQuarterly?: U[]): U[];
+  /**
+   * Resets chartType/range/view back to this hook's own initial defaults
+   * (Annually / the same "5 years, or All if fewer" rule the initial
+   * range picks / Absolute) — see the module-level doc comment below for
+   * why every ChartCard consumer calls this specifically when its
+   * fullscreen modal CLOSES, not on every render or on open.
+   */
+  reset(): void;
+}
+
+// QA fix (live report: preview cards on the stock page "still render bars
+// that are way too thin and sparse" even after widening barSize/reducing
+// barCategoryGap): defaulting to "All" here means a ticker with deep SEC
+// EDGAR history (e.g. a filer going back ~19 fiscal years) crams every
+// single year into a ~500px-wide, non-fullscreen preview card by default —
+// no barSize/maxBarSize value can make 19 bars look "wide and dense" in
+// that little space; the category count itself is the real constraint, not
+// the per-bar pixel settings. Defaulting to a 5-year window instead
+// (falling back to "All" when the ticker genuinely has 5 years or fewer, so
+// this never picks a range that would be a silent no-op — same threshold
+// getAvailableRanges already uses to hide redundant options) matches how
+// professional terminals typically treat a compact widget preview vs. its
+// own expanded/fullscreen view: recent-window by default, full history one
+// click away via this exact same Select Range control.
+//
+// Pulled out to a standalone function (rather than inlined in the useState
+// lazy-initializer below) so reset() can recompute the exact same default
+// instead of drifting from it.
+function computeDefaultRange<T extends { fiscalYear: string }>(annualData: T[]): ChartRange {
+  const approxYears = splitTrailingRow(annualData).historical.length;
+  return approxYears > 5 ? 5 : "All";
 }
 
 /**
@@ -42,6 +73,25 @@ export interface ChartControlsState<T extends { fiscalYear: string }> {
  * across every card) is what makes changing one chart's controls leave
  * every other chart's controls untouched. See splitTrailingRow/
  * filterByRange in chart-transform.ts for what this builds on.
+ *
+ * QA fix (live report: setting a fullscreen modal's Select Range to "20
+ * Years" — or changing its View/Chart Type — silently carried over to that
+ * same card's own compact preview after closing the modal, and was still
+ * sitting there the next time the modal was reopened): this hook was
+ * always correctly ISOLATED per card (see the bug fix note on
+ * ChartControlsState.rangeOther and every ChartCard consumer's own doc
+ * comment) — the preview and the fullscreen modal were never each other's
+ * problem. The actual bug is that both views render from this SAME
+ * useState triple, on the SAME mounted component instance, whether
+ * fullscreen or not — ChartCard's `fullscreen` prop only changes layout/
+ * portal rendering (see ChartCard.tsx), it doesn't remount anything, so
+ * whatever the user last set while the modal was open simply stays set
+ * once it's closed, because nothing ever told it to go back. `reset()`
+ * exists so every ChartCard consumer can explicitly return to a known,
+ * predictable default the moment its modal closes (see each panel's
+ * onToggleFullscreen wiring) — the compact preview goes back to showing
+ * its own default window, and reopening the modal starts from that same
+ * default every time, instead of wherever the user left it.
  */
 export function useChartControls<T extends { fiscalYear: string }>(
   annualData: T[],
@@ -52,25 +102,14 @@ export function useChartControls<T extends { fiscalYear: string }>(
   const activeData = chartType === "quarterly" ? quarterlyData : annualData;
   const periodsPerYear = chartType === "quarterly" ? 4 : 1;
 
-  // QA fix (live report: preview cards on the stock page "still render bars
-  // that are way too thin and sparse" even after widening barSize/reducing
-  // barCategoryGap): defaulting to "All" here means a ticker with deep SEC
-  // EDGAR history (e.g. a filer going back ~19 fiscal years) crams every
-  // single year into a ~500px-wide, non-fullscreen preview card by default
-  // — no barSize/maxBarSize value can make 19 bars look "wide and dense" in
-  // that little space; the category count itself is the real constraint,
-  // not the per-bar pixel settings. Defaulting to a 5-year window instead
-  // (falling back to "All" when the ticker genuinely has 5 years or fewer,
-  // so this never picks a range that would be a silent no-op — same
-  // threshold getAvailableRanges already uses to hide redundant options)
-  // matches how professional terminals typically treat a compact widget
-  // preview vs. its own expanded/fullscreen view: recent-window by default,
-  // full history one click away via this exact same Select Range control.
-  const [range, setRange] = useState<ChartRange>(() => {
-    const approxYears = splitTrailingRow(annualData).historical.length;
-    return approxYears > 5 ? 5 : "All";
-  });
+  const [range, setRange] = useState<ChartRange>(() => computeDefaultRange(annualData));
   const [view, setView] = useState<ChartView>("absolute");
+
+  function reset() {
+    setChartType("annually");
+    setRange(computeDefaultRange(annualData));
+    setView("absolute");
+  }
 
   const { historical, trailing } = useMemo(() => splitTrailingRow(activeData), [activeData]);
   const ranged = useMemo(() => {
@@ -99,5 +138,6 @@ export function useChartControls<T extends { fiscalYear: string }>(
     ranged,
     totalYears,
     rangeOther,
+    reset,
   };
 }

@@ -56,6 +56,22 @@ export const CHART_COLORS = {
   amber: "#F59E0B",
   slate: "#64748B",
   sky: "#38BDF8",
+  /**
+   * QA fix (live report: the Operating Income chart's dashed average
+   * reference line was amber-on-amber against that card's own amber bars —
+   * legible on a wide bar but nearly invisible where the line crosses a
+   * short one). A dashed *reference* line — as opposed to a data series —
+   * needs to read as "annotation" against ANY bar color it happens to
+   * cross, not just the ones that don't share its hue, so this is a
+   * dedicated high-contrast token (matches `--foreground` in globals.css,
+   * i.e. this app's pure-white heading/primary-text color) rather than
+   * reusing one of the data-series colors above. Used by every chart's
+   * "dynamic average" dashed line (see SingleMetricChart's showAverage
+   * prop and RuleOf40Card in IncomeStatementPanel.tsx) — not tied to any
+   * one metric's own bar color, so it never blends in regardless of which
+   * card it's drawn on.
+   */
+  contrast: "#FFFFFF",
 };
 
 // QA fix (mobile screenshot: Gross Profit chart, "2026" bar — tooltip text

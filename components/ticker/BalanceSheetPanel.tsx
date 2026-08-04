@@ -114,7 +114,14 @@ function MultiMetricCard({
       title={title}
       subtitle={subtitle}
       fullscreen={expanded === id}
-      onToggleFullscreen={() => onToggle(id)}
+      // QA fix (global chart state reset): see useChartControls' reset()
+      // doc comment — resets range/view/chartType back to defaults only
+      // when this modal is CLOSING (expanded === id still reads "currently
+      // open" at the moment this fires), never when opening.
+      onToggleFullscreen={() => {
+        if (expanded === id) controls.reset();
+        onToggle(id);
+      }}
       controls={
         <ChartControls
           range={controls.range}
