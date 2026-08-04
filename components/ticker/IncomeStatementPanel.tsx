@@ -334,13 +334,47 @@ interface RuleOf40CardProps {
 }
 
 /**
+ * Returns the "same period, one year earlier" fiscal-year label for a
+ * genuine annual ("2024" -> "2023") or quarterly ("2024-Q2" -> "2023-Q2")
+ * period. Null for anything that isn't that exact shape — specifically the
+ * trailing "TTM"/"MRQ" appendix row, which has no such comparator (see
+ * RuleOf40Card's doc comment for how that row is handled instead).
+ */
+function priorYearPeriodLabel(fiscalYear: string): string | null {
+  const quarterMatch = /^(\d{4})-Q([1-4])$/.exec(fiscalYear);
+  if (quarterMatch) {
+    return `${Number(quarterMatch[1]) - 1}-Q${quarterMatch[2]}`;
+  }
+  const year = Number(fiscalYear);
+  return Number.isFinite(year) && String(year) === fiscalYear ? String(year - 1) : null;
+}
+
+/**
  * Rule of 40 = YoY Revenue Growth % + FCF Margin % (per the Phase 5 spec).
+ *
+ * QA fix (live report: quarterly Rule of 40 bars swinging wildly quarter to
+ * quarter, e.g. 5%-85% back and forth): this used to compute
+ * "revenueGrowthPct" by diffing each row against controls.ranged's
+ * PREVIOUS ARRAY ELEMENT — correct for Annual mode, where one array step
+ * really is one year, but silently becoming QUARTER-over-quarter growth in
+ * Quarterly mode (each element is 3 months apart, not 12), directly
+ * contradicting this card's own "YoY Revenue Growth %" spec and producing
+ * far noisier, seasonally-distorted numbers than the metric is supposed to
+ * show. Fixed by looking up the genuine same-quarter-last-year (or
+ * same-year-last-year) row by its fiscal-period LABEL via
+ * priorYearPeriodLabel(), from the FULL unfiltered `controls.historical`
+ * array rather than the range-windowed `controls.ranged` — which also
+ * means a period can now show real YoY growth even when it's the very
+ * first bar in the currently-selected Select Range window, as long as the
+ * prior year's data was actually fetched (previously ALWAYS true dropped
+ * unconditionally, real data or not).
+ *
  * Falls back to Operating Margin % when a fiscal year has no matching
  * cash-flow row (e.g. a "TTM" row that fundamentalsTimeSeries doesn't
  * cover) — an EBITDA-margin proxy, since D&A isn't broken out separately
- * in this data model. First fiscal year is dropped: YoY growth is
- * undefined without a prior-year revenue figure. No View toggle (it's
- * already an intrinsically YoY-flavored composite metric).
+ * in this data model; surfaced in the tooltip ("op. margin proxy") so it's
+ * never silently mistaken for a real FCF-based figure. No View toggle
+ * (it's already an intrinsically YoY-flavored composite metric).
  *
  * Own independent useChartControls instance (income-driven); cash flow is
  * range-matched to it via rangeOther() so the two series always cover the
@@ -351,23 +385,38 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
   const controls = useChartControls(income, incomeQuarterly);
   const rangedCashFlow = controls.rangeOther(cashFlow, cashFlowQuarterly);
   const cashFlowByYear = new Map(rangedCashFlow.map((c) => [c.fiscalYear, c]));
+  const historicalByLabel = new Map(controls.historical.map((row) => [row.fiscalYear, row]));
 
-  const ruleOf40Data = controls.ranged.slice(1).map((year, idx) => {
-    const prevRevenue = controls.ranged[idx].totalRevenue;
-    const revenueGrowthPct = prevRevenue > 0 ? ((year.totalRevenue - prevRevenue) / prevRevenue) * 100 : 0;
-    const cf = cashFlowByYear.get(year.fiscalYear);
-    const marginPct =
-      cf && year.totalRevenue > 0
-        ? (cf.freeCashFlow / year.totalRevenue) * 100
-        : year.totalRevenue > 0
-          ? (year.operatingIncome / year.totalRevenue) * 100
-          : 0;
-    return {
-      fiscalYear: year.fiscalYear,
-      ruleOf40: Number((revenueGrowthPct + marginPct).toFixed(1)),
-      usedFcf: Boolean(cf),
-    };
-  });
+  const ruleOf40Data = controls.ranged
+    .map((year, idx) => {
+      const priorLabel = priorYearPeriodLabel(year.fiscalYear);
+      // Genuine same-period-last-year comparator when the label maps to
+      // one (every real annual/quarterly row) — pulled from the FULL
+      // historical array so it's available even for the range window's
+      // first displayed bar. The trailing TTM/MRQ row has no such label
+      // (see priorYearPeriodLabel), so it keeps this card's original,
+      // more approximate "vs. whatever immediately precedes it in the
+      // displayed range" behavior instead — unchanged from before this
+      // fix, since that row was never part of the QoQ/YoY bug to begin
+      // with.
+      const prevRevenue =
+        priorLabel != null ? (historicalByLabel.get(priorLabel)?.totalRevenue ?? null) : (controls.ranged[idx - 1]?.totalRevenue ?? null);
+      if (prevRevenue == null) return null; // no real comparator — skip rather than fabricate 0% growth
+      const revenueGrowthPct = prevRevenue > 0 ? ((year.totalRevenue - prevRevenue) / prevRevenue) * 100 : 0;
+      const cf = cashFlowByYear.get(year.fiscalYear);
+      const marginPct =
+        cf && year.totalRevenue > 0
+          ? (cf.freeCashFlow / year.totalRevenue) * 100
+          : year.totalRevenue > 0
+            ? (year.operatingIncome / year.totalRevenue) * 100
+            : 0;
+      return {
+        fiscalYear: year.fiscalYear,
+        ruleOf40: Number((revenueGrowthPct + marginPct).toFixed(1)),
+        usedFcf: Boolean(cf),
+      };
+    })
+    .filter((row): row is { fiscalYear: string; ruleOf40: number; usedFcf: boolean } => row !== null);
 
   return (
     <ChartCard
