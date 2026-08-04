@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear, IncomeStatementYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis } from "@/lib/format/chart";
-import { splitTrailingRow, toPctOfRevenue, toYoY, type ChartView } from "@/lib/finance/chart-transform";
+import { computeAverage, splitTrailingRow, toPctOfRevenue, toYoY, type ChartView } from "@/lib/finance/chart-transform";
 import { useChartControls } from "@/lib/finance/useChartControls";
 import { ChartTooltip } from "./ChartTooltip";
 import { SourceAttributionBadge } from "./SourceAttributionBadge";
@@ -99,6 +99,7 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
   colorByValue,
   view = "absolute",
   emptyStateMessage,
+  showAverage,
 }: {
   data: T[];
   dataKey: keyof T & string;
@@ -128,12 +129,28 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
    * original always-render-the-chart behavior for every other card.
    */
   emptyStateMessage?: string;
+  /**
+   * Reusable "dynamic average" dashed ReferenceLine, opt-in per card (see
+   * IncomeStatementPanel's Operating Income MetricCard usage). Computed via
+   * computeAverage() (chart-transform.ts) over exactly `data` — i.e. the
+   * array actually being rendered as bars — so it automatically reflects
+   * the current Select Range, View (Absolute/YoY/% of Revenue), and Chart
+   * Type (Annually/Quarterly) selections without this component needing to
+   * know about any of them: change any control, `data` changes, the
+   * average recomputes. Formatted through the same `effectiveFormat` the
+   * tooltip already uses, so a % view shows a %-formatted average and an
+   * Absolute view shows a currency-formatted one automatically. Same
+   * pattern RuleOf40Card (below) uses for its own average line, just
+   * applied here so any other single-metric card can flip it on later.
+   */
+  showAverage?: boolean;
 }) {
   const isPercentView = view === "yoy" || view === "pctOfRevenue";
   const effectiveFormat = isPercentView ? (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%` : formatValue;
   const effectiveLabel =
     view === "yoy" ? `${valueLabel} (YoY)` : view === "pctOfRevenue" ? `${valueLabel} (% of Revenue)` : valueLabel;
   const effectiveColorByValue = view === "yoy" ? true : colorByValue;
+  const average = showAverage ? computeAverage(data, dataKey) : null;
 
   if (emptyStateMessage && data.length > 0 && data.every((row) => Number(row[dataKey]) === 0)) {
     return (
@@ -178,6 +195,17 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
           wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
           allowEscapeViewBox={{ x: true, y: true }}
         />
+        {/* See SingleMetricChart's showAverage doc comment above — recomputed
+            from `data` on every render, so it moves with Select Range/View/
+            Chart Type exactly like the bars themselves. */}
+        {average != null && (
+          <ReferenceLine
+            y={average}
+            stroke={AMBER}
+            strokeDasharray="4 4"
+            label={{ value: effectiveFormat(average), position: "top", fill: AMBER, fontSize: 11, fontWeight: 600 }}
+          />
+        )}
         {/* Recharts' TypedDataKey inference can't resolve a plain `keyof T`
             string against an abstract, unconstrained generic T inside this
             wrapper (works fine for concrete types, breaks for generics) —
@@ -242,6 +270,8 @@ interface MetricCardProps {
   pointInTime?: boolean;
   /** See SingleMetricChart's emptyStateMessage doc comment — passed through unchanged. */
   emptyStateMessage?: string;
+  /** See SingleMetricChart's showAverage doc comment — passed through unchanged. */
+  showAverage?: boolean;
   expanded: string | null;
   onToggle: (id: string) => void;
 }
@@ -271,6 +301,7 @@ function MetricCard({
   allowPctOfRevenue = false,
   pointInTime = false,
   emptyStateMessage,
+  showAverage,
   expanded,
   onToggle,
 }: MetricCardProps) {
@@ -319,6 +350,7 @@ function MetricCard({
         formatValue={formatValue}
         view={controls.view}
         emptyStateMessage={emptyStateMessage}
+        showAverage={showAverage}
       />
     </ChartCard>
   );
@@ -380,6 +412,20 @@ function priorYearPeriodLabel(fiscalYear: string): string | null {
  * range-matched to it via rangeOther() so the two series always cover the
  * same fiscal periods for THIS card specifically, without borrowing state
  * from — or leaking state to — any other card in the panel.
+ *
+ * QA fix (live report: the dashed reference line always showed a static
+ * "40%" regardless of the stock): the textbook SaaS "Rule of 40" benchmark
+ * is a useful rule of thumb, but rendering it as if it were computed FROM
+ * this stock's own data was misleading — it never moved no matter what
+ * Select Range or Chart Type was chosen. The line (and its label) now show
+ * this stock's own average Rule of 40 score across exactly the bars
+ * currently on screen (see ruleOf40Average below, computed via
+ * computeAverage() in chart-transform.ts) — the same "dynamic average
+ * dashed line" pattern used by Operating Income's card (see
+ * SingleMetricChart's showAverage prop), applied here by hand since this
+ * card's data shape (`ruleOf40`/`usedFcf`) doesn't fit that shared
+ * component. Bar coloring follows the same computed value, not a leftover
+ * fixed 40, so the chart stays internally consistent.
  */
 function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, expanded, onToggle }: RuleOf40CardProps) {
   const controls = useChartControls(income, incomeQuarterly);
@@ -418,6 +464,19 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
     })
     .filter((row): row is { fiscalYear: string; ruleOf40: number; usedFcf: boolean } => row !== null);
 
+  // QA fix (live report: the dashed reference line always showed a static,
+  // hardcoded "40%" — the textbook SaaS "Rule of 40" benchmark, but not a
+  // number this specific stock's own history has anything to do with).
+  // Replaced with this stock's own average Rule of 40 score across exactly
+  // the bars currently on screen — computeAverage() (chart-transform.ts)
+  // over `ruleOf40Data`, so it automatically follows Select Range and Chart
+  // Type (Annually/Quarterly) the same way every other card's dynamic
+  // average line does (see SingleMetricChart's showAverage doc comment).
+  // Bar coloring now follows the same computed threshold instead of the
+  // old fixed 40, so a bar reads green/red relative to the line actually
+  // drawn on the chart rather than an invisible constant.
+  const ruleOf40Average = computeAverage(ruleOf40Data, "ruleOf40");
+
   return (
     <ChartCard
       title="Rule of 40"
@@ -442,12 +501,20 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
-            <ReferenceLine
-              y={40}
-              stroke={AMBER}
-              strokeDasharray="4 4"
-              label={{ value: "40%", position: "top", fill: AMBER, fontSize: 11, fontWeight: 600 }}
-            />
+            {ruleOf40Average != null && (
+              <ReferenceLine
+                y={ruleOf40Average}
+                stroke={AMBER}
+                strokeDasharray="4 4"
+                label={{
+                  value: `Avg ${ruleOf40Average.toFixed(1)}%`,
+                  position: "top",
+                  fill: AMBER,
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              />
+            )}
             <Tooltip
               content={<RuleOf40Tooltip data={ruleOf40Data} />}
               wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}
@@ -455,7 +522,7 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
             />
             <Bar dataKey="ruleOf40" radius={[4, 4, 0, 0]} animationDuration={600} barSize={72} maxBarSize={96}>
               {ruleOf40Data.map((row) => (
-                <Cell key={row.fiscalYear} fill={row.ruleOf40 >= 40 ? SUCCESS : DESTRUCTIVE} />
+                <Cell key={row.fiscalYear} fill={row.ruleOf40 >= (ruleOf40Average ?? 0) ? SUCCESS : DESTRUCTIVE} />
               ))}
             </Bar>
           </BarChart>
@@ -542,6 +609,7 @@ export function IncomeStatementPanel({
           valueLabel="Operating Income"
           formatValue={money}
           allowPctOfRevenue
+          showAverage
           expanded={expanded}
           onToggle={toggle}
         />

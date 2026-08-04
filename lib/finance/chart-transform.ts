@@ -128,3 +128,26 @@ export function toPctOfRevenue<T extends { fiscalYear: string }>(
     return out;
   });
 }
+
+/**
+ * Arithmetic mean of a numeric field across a data array — the shared
+ * primitive behind every chart's "dynamic average" dashed ReferenceLine
+ * (see SingleMetricChart's showAverage prop in IncomeStatementPanel.tsx,
+ * and RuleOf40Card in the same file). Deliberately generic over any row
+ * shape/key so one function backs Operating Income's average line, Rule of
+ * 40's, and any future metric that wants one — it has no opinion about
+ * Select Range, View, or Chart Type; it just averages whatever array is
+ * handed to it. Every caller in this codebase passes the SAME array it's
+ * about to render as bars, so the average automatically reflects the
+ * user's current Select Range/View/Chart Type selections without this
+ * function needing to know anything about them. Non-finite values (missing
+ * data coerced via Number()) are excluded from both the sum and the count,
+ * rather than treated as 0, so a gap doesn't silently drag the average
+ * down. Returns null for an empty array or an array with no finite values,
+ * rather than NaN.
+ */
+export function computeAverage<T>(data: T[], key: keyof T): number | null {
+  const values = data.map((row) => Number(row[key])).filter((v) => Number.isFinite(v));
+  if (values.length === 0) return null;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
