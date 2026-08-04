@@ -111,9 +111,17 @@ export function PriceHeaderBlock({ quote, flash }: PriceHeaderBlockProps) {
             {formatChange(quote.preMarketChange, quote.currency)} (
             {formatPercent(quote.preMarketChangePercent)})
           </span>
-          {formatTimestamp(quote.asOf, quote.timezone) && (
+          {/* Pre-market timestamp bug fix: this used to reuse `quote.asOf`
+              (the REGULAR session's last-trade time — see preMarketTime's
+              doc comment in lib/finance/types.ts), which before the market
+              opens is always the prior day's ~4:00pm close, making every
+              pre-market quote look frozen at yesterday's close regardless
+              of how current the pre-market price itself actually was.
+              `preMarketTime` is Yahoo's own dedicated pre-market
+              last-updated timestamp. */}
+          {formatTimestamp(quote.preMarketTime, quote.timezone) && (
             <span className="text-muted-foreground">
-              · {formatTimestamp(quote.asOf, quote.timezone)}
+              · {formatTimestamp(quote.preMarketTime, quote.timezone)}
             </span>
           )}
         </div>
@@ -137,9 +145,12 @@ export function PriceHeaderBlock({ quote, flash }: PriceHeaderBlockProps) {
             {formatChange(quote.postMarketChange, quote.currency)} (
             {formatPercent(quote.postMarketChangePercent)})
           </span>
-          {formatTimestamp(quote.asOf, quote.timezone) && (
+          {/* Same fix as the pre-market row above, using Yahoo's dedicated
+              post-market last-updated timestamp instead of the regular
+              session's `asOf`. */}
+          {formatTimestamp(quote.postMarketTime, quote.timezone) && (
             <span className="text-muted-foreground">
-              · {formatTimestamp(quote.asOf, quote.timezone)}
+              · {formatTimestamp(quote.postMarketTime, quote.timezone)}
             </span>
           )}
         </div>

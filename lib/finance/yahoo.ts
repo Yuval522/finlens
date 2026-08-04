@@ -84,15 +84,16 @@ function num(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+/** Converts a yahoo-finance2 timestamp field (a `Date`, or epoch seconds as a raw number) into epoch ms — shared by asOf/preMarketTime/postMarketTime below, all of which come back in this same either-shape. */
+function toEpochMs(value: unknown): number | null {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return value * 1000;
+  return null;
+}
+
 /** Adapts a raw yahoo-finance2 quote (any of its discriminated variants) into MarketQuote. */
 function toMarketQuote(q: Record<string, unknown>): MarketQuote {
-  const regularMarketTime = q.regularMarketTime;
-  const asOf =
-    regularMarketTime instanceof Date
-      ? regularMarketTime.getTime()
-      : typeof regularMarketTime === "number"
-        ? regularMarketTime * 1000
-        : null;
+  const asOf = toEpochMs(q.regularMarketTime);
 
   return {
     symbol: String(q.symbol ?? ""),
@@ -111,9 +112,11 @@ function toMarketQuote(q: Record<string, unknown>): MarketQuote {
     preMarketPrice: num(q.preMarketPrice),
     preMarketChange: num(q.preMarketChange),
     preMarketChangePercent: num(q.preMarketChangePercent),
+    preMarketTime: toEpochMs(q.preMarketTime),
     postMarketPrice: num(q.postMarketPrice),
     postMarketChange: num(q.postMarketChange),
     postMarketChangePercent: num(q.postMarketChangePercent),
+    postMarketTime: toEpochMs(q.postMarketTime),
     dayOpen: num(q.regularMarketOpen),
     dayHigh: num(q.regularMarketDayHigh),
     dayLow: num(q.regularMarketDayLow),

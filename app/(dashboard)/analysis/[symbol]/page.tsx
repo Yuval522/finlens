@@ -5,8 +5,7 @@ import { isNonFundamentalQuote } from "@/lib/finance/exchange";
 import { CompanyProfileHeader } from "@/components/ticker/CompanyProfileHeader";
 import { CompanyMetricsAccordions } from "@/components/ticker/CompanyMetricsAccordions";
 import { MobileTickerHeader } from "@/components/ticker/MobileTickerHeader";
-import { LivePriceHeader } from "@/components/ticker/LivePriceHeader";
-import { ChartPanel } from "@/components/ticker/ChartPanel";
+import { TickerPriceAndChart } from "@/components/ticker/TickerPriceAndChart";
 import { DataExplorerTabs } from "@/components/ticker/DataExplorerTabs";
 
 // Live upstream data — never let Next statically cache this route.
@@ -107,15 +106,7 @@ export default async function AnalysisPage({
         </div>
 
         <div className="order-1 min-w-0 flex-1 space-y-6 lg:order-2">
-          <LivePriceHeader symbol={quote.symbol} initialQuote={quote} />
-
-          <ChartPanel
-            history={history}
-            currency={quote.currency}
-            symbol={quote.symbol}
-            exchange={quote.exchange}
-            currentPrice={quote.price}
-          />
+          <TickerPriceAndChart initialQuote={quote} history={history} exchange={quote.exchange} />
 
           {!isNonFundamental && (
             <DataExplorerTabs

@@ -933,11 +933,29 @@ function toSecIncomeRows(
     ],
     "shares"
   );
-  const dividendsDetailed = seriesDetailed(
-    facts,
-    ["CommonStockDividendsPerShareDeclared", "CommonStockDividendsPerShareCashPaid"],
-    "USD/shares"
-  );
+  // Dividend TTM bug fix (live report: trailing-twelve-month dividends
+  // reading roughly 1.5-2x too high — the equivalent of ~6-8 quarters
+  // summed instead of exactly 4). Root cause: unlike every other per-share
+  // concept above (EPS/shares, where the fallback tags describe the SAME
+  // underlying figure at different presentation granularity), "Declared"
+  // and "Cash Paid" dividends are genuinely DIFFERENT timing concepts — a
+  // board can declare a quarter's dividend in one fiscal quarter and pay it
+  // in the next. seriesDetailed's normal per-TAG-then-per-PERIOD fallback
+  // (see periodSeriesDetailed above: tag 1 wins for every period it covers,
+  // tag 2 only fills the periods tag 1 is missing) can therefore end up
+  // sourcing SOME quarters from "Declared" and OTHER quarters — for the
+  // very same company — from "CashPaid". When a dividend declared near a
+  // quarter boundary is later summed by computeTrailingTwelveMonths, the
+  // same real-world payment can be counted once under each concept in two
+  // adjacent quarters, inflating the 4-quarter TTM sum well past the true
+  // total. Fix: pick ONE tag for this company's ENTIRE quarterly (or
+  // annual) series — whichever has broader coverage — rather than letting
+  // the winning tag vary period-by-period, so a TTM sum never mixes the two
+  // concepts.
+  const dividendsDeclaredDetailed = seriesDetailed(facts, ["CommonStockDividendsPerShareDeclared"], "USD/shares");
+  const dividendsPaidDetailed = seriesDetailed(facts, ["CommonStockDividendsPerShareCashPaid"], "USD/shares");
+  const dividendsDetailed =
+    dividendsDeclaredDetailed.size >= dividendsPaidDetailed.size ? dividendsDeclaredDetailed : dividendsPaidDetailed;
 
   const periods = new Set([...revenue.keys(), ...netIncome.keys()]);
   const rows: IncomeStatementYear[] = [];

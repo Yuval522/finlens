@@ -90,12 +90,25 @@ function ScenarioRow({
   noColon?: boolean;
 }) {
   return (
+    // QA fix ("proper padding away from card borders" — live report on
+    // this row inside the Target Price Scenarios cards): the label had no
+    // `min-w-0`, which for a flex child defaults to `min-width: auto` —
+    // on a narrower card (the 3-column grid below can get tight on
+    // in-between viewport widths) that let a long label refuse to shrink
+    // at all, pushing the value flush against the card's own right-edge
+    // padding instead of leaving it the visual breathing room every other
+    // value column in this app keeps. `min-w-0 truncate` on the label
+    // (which is always short, known copy — safe to ellipsis in the
+    // practically-never case it's still too wide) plus `shrink-0` on the
+    // value (the actual number — this must NEVER clip) matches the same
+    // label-shrinks/value-never-does convention already used by
+    // ScreenerRow elsewhere in this codebase.
     <div className="flex items-center justify-between gap-3 py-1 text-sm">
-      <span className="text-muted-foreground">
+      <span className="min-w-0 truncate text-muted-foreground">
         {label}
         {noColon ? "" : ":"}
       </span>
-      <span className={valueClassName ?? "font-mono font-medium text-foreground"}>{value}</span>
+      <span className={`shrink-0 ${valueClassName ?? "font-mono font-medium text-foreground"}`}>{value}</span>
     </div>
   );
 }
@@ -289,8 +302,22 @@ export function ValuationCalculator({
             <Field label={`Current Share Price (${currencySymbol(quoteCurrency)})`}>
               <input
                 type="number"
+                step="0.01"
                 value={currentPriceInput}
-                onChange={(e) => setCurrentPriceInput(Number(e.target.value))}
+                // QA fix (live report: "Current Price" reading 3 decimals
+                // instead of 2 in the Investment Summary strip below): the
+                // initial value is seeded through round2() (see the
+                // useState initializer above), but this onChange used to
+                // store Number(e.target.value) straight into state with no
+                // re-rounding — so typing (or a browser autofill/paste)
+                // carrying more than 2 decimal places stuck around for the
+                // rest of this field's life, including feeding straight
+                // into the Investment Summary's currentPriceInput.toFixed(2)
+                // read *before* it got here. Rounding on every change, not
+                // just at mount, keeps this field's own precision — and
+                // everything downstream that reads it — consistently 2
+                // decimals no matter how the value was entered.
+                onChange={(e) => setCurrentPriceInput(round2(Number(e.target.value)))}
                 className="w-full min-w-0 rounded-md border border-blue-500/40 bg-background/60 px-2 py-1.5 font-mono text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </Field>
@@ -374,7 +401,14 @@ export function ValuationCalculator({
                 <ScenarioRow label="P/E Multiple" value={formatMultiple(r.pe)} />
                 <ScenarioRow
                   label="Target Price"
-                  value={`${currencySymbol(reportingCurrency)}${r.impliedPrice.toFixed(1)}`}
+                  // QA fix (live report: "Target Price" reading truncated —
+                  // e.g. "$196.4" — inconsistent with every other price
+                  // figure on this tab, all of which use 2 decimals). This
+                  // was the one .toFixed(1) left in the whole scenario
+                  // card; every sibling value (Base/Current Price, Fair
+                  // Value, etc. elsewhere on this page) already uses
+                  // .toFixed(2).
+                  value={`${currencySymbol(reportingCurrency)}${r.impliedPrice.toFixed(2)}`}
                   valueClassName="font-mono text-base font-bold text-foreground"
                 />
                 <ScenarioRow
@@ -406,7 +440,20 @@ export function ValuationCalculator({
       */}
       <div className="glass-card rounded-2xl p-4 sm:p-5">
         <h3 className="mb-4 text-sm font-semibold text-foreground">Investment Summary</h3>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+        {/* QA fix (live report: "Forecast Period" wrapping/crowding at
+            desktop widths): `sm:grid-cols-5` forced exactly 5 fixed
+            columns starting at a 640px viewport — but this card renders
+            inside the analysis page's narrower right-hand content column
+            (squeezed by the 22rem sticky profile sidebar, see that page's
+            own layout doc comments), not the full viewport, so "desktop"
+            here was often meaningfully narrower than 640px/5 implies.
+            "Forecast Period" (the longest label) was the first to wrap
+            awkwardly under that squeeze. Same auto-fit/minmax fix already
+            applied to IncomeStatementPanel's chart grid for the identical
+            failure mode: sizes columns off this card's own real width
+            instead of the viewport, so it never assumes more room than it
+            actually has. */}
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(130px,1fr))]">
           <SummaryStat label="Base Revenue" value={`${currencySymbol(reportingCurrency)}${revenueB.toFixed(2)}B`} />
           <SummaryStat
             label="Current Price"

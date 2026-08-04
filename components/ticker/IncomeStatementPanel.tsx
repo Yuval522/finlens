@@ -98,6 +98,7 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
   formatValue,
   colorByValue,
   view = "absolute",
+  emptyStateMessage,
 }: {
   data: T[];
   dataKey: keyof T & string;
@@ -112,12 +113,35 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
    *  since a "how much did this grow" chart reads better colored by
    *  growth direction regardless of what the caller normally does). */
   view?: ChartView;
+  /**
+   * QA fix (live report: "Dividends Per Share" rendered a broken-looking
+   * 0-4 axis with every bar invisible for a stock that's never paid a
+   * dividend — every fiscal year's real value is a genuine 0, not missing
+   * data, so the chart had something to plot, it just had nothing to SHOW:
+   * a bar chart where every bar is exactly 0 tall reads as an empty/broken
+   * chart, not as "this company doesn't pay dividends"). When every value
+   * for `dataKey` across `data` is exactly 0, this replaces the chart with
+   * a plain-language message instead. Optional — only metrics where a
+   * flat-0 series is a normal, expected outcome (dividends today; kept
+   * generic rather than hardcoded to just that one card, in case a future
+   * metric has the same shape) should pass this; omitting it preserves the
+   * original always-render-the-chart behavior for every other card.
+   */
+  emptyStateMessage?: string;
 }) {
   const isPercentView = view === "yoy" || view === "pctOfRevenue";
   const effectiveFormat = isPercentView ? (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%` : formatValue;
   const effectiveLabel =
     view === "yoy" ? `${valueLabel} (YoY)` : view === "pctOfRevenue" ? `${valueLabel} (% of Revenue)` : valueLabel;
   const effectiveColorByValue = view === "yoy" ? true : colorByValue;
+
+  if (emptyStateMessage && data.length > 0 && data.every((row) => Number(row[dataKey]) === 0)) {
+    return (
+      <div className="flex h-full items-center justify-center text-center text-xs text-muted-foreground">
+        {emptyStateMessage}
+      </div>
+    );
+  }
 
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -216,6 +240,8 @@ interface MetricCardProps {
    * useChartControls copy — see that hook's doc comment).
    */
   pointInTime?: boolean;
+  /** See SingleMetricChart's emptyStateMessage doc comment — passed through unchanged. */
+  emptyStateMessage?: string;
   expanded: string | null;
   onToggle: (id: string) => void;
 }
@@ -244,6 +270,7 @@ function MetricCard({
   formatValue,
   allowPctOfRevenue = false,
   pointInTime = false,
+  emptyStateMessage,
   expanded,
   onToggle,
 }: MetricCardProps) {
@@ -284,7 +311,15 @@ function MetricCard({
         />
       }
     >
-      <SingleMetricChart data={displayData} dataKey={dataKey} color={color} valueLabel={valueLabel} formatValue={formatValue} view={controls.view} />
+      <SingleMetricChart
+        data={displayData}
+        dataKey={dataKey}
+        color={color}
+        valueLabel={valueLabel}
+        formatValue={formatValue}
+        view={controls.view}
+        emptyStateMessage={emptyStateMessage}
+      />
     </ChartCard>
   );
 }
@@ -516,6 +551,7 @@ export function IncomeStatementPanel({
           color={AMBER}
           valueLabel="Dividends / Share"
           formatValue={perShare}
+          emptyStateMessage="This company hasn't paid a dividend in the selected period."
           expanded={expanded}
           onToggle={toggle}
         />

@@ -35,9 +35,24 @@ export interface MarketQuote {
   preMarketPrice: number | null;
   preMarketChange: number | null;
   preMarketChangePercent: number | null;
+  /**
+   * Epoch ms the pre-market price was last updated — DELIBERATELY separate
+   * from `asOf` (which is the REGULAR session's last-trade time). Pre-market
+   * timestamp bug fix: PriceHeaderBlock's pre-market row used to show
+   * `asOf` next to the pre-market price/change, which while the market
+   * hasn't opened yet for the day is still the PRIOR regular session's
+   * close time (typically 4:00pm ET) — a real, but wrong-for-this-row,
+   * timestamp that made every pre-market quote look like it was frozen at
+   * yesterday's close instead of reflecting this morning's actual
+   * pre-market activity. Null when Yahoo doesn't report one (e.g. outside
+   * pre-market hours, or a symbol/exchange with no pre-market session).
+   */
+  preMarketTime: number | null;
   postMarketPrice: number | null;
   postMarketChange: number | null;
   postMarketChangePercent: number | null;
+  /** Epoch ms the post-market price was last updated — see preMarketTime's doc comment for why this is kept separate from `asOf` too. */
+  postMarketTime: number | null;
   /**
    * Today's session OHLC + prior close, for the Live Trading Feed's Day
    * Range strip (PriceHeaderBlock) — sourced from Yahoo's
