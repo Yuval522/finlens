@@ -27,6 +27,20 @@ import { Pool, type QueryResultRow } from "@neondatabase/serverless";
  * local development, either run `vercel env pull .env.development.local`
  * (after `vercel link`) to fetch the same value, or copy it from the
  * Vercel dashboard by hand into your own .env.local.
+ *
+ * A consequence worth knowing if you ever try to point this at a
+ * non-Neon Postgres for local testing: @neondatabase/serverless's `Pool`
+ * speaks WebSocket to the server by default (Neon's own infrastructure
+ * natively terminates that), not the raw Postgres wire protocol a plain
+ * `postgres://` server understands — confirmed directly during this
+ * repo's own sandboxed testing, where pointing `Pool` at a real, freshly
+ * initialized local Postgres instance failed with a WebSocket-level
+ * connection error, not a SQL/schema problem (schema and query logic were
+ * verified separately, against that same local Postgres, using the plain
+ * `pg` driver instead). Against a genuine Neon-hosted DATABASE_URL this is
+ * a non-issue; it only bites you if you try to swap in an ordinary
+ * self-hosted Postgres without also running Neon's `wsproxy` in front of
+ * it (see node_modules/@neondatabase/serverless/DEPLOY.md).
  */
 
 declare global {
@@ -133,6 +147,26 @@ const SCHEMA_STATEMENTS = [
     data_json TEXT NOT NULL,
     updated_at BIGINT NOT NULL,
     PRIMARY KEY (user_id, data_key)
+  )`,
+  // Secure API Keys Migration: user-supplied Finnhub/Polygon/Alpha Vantage
+  // keys, one row per (user, provider). `encrypted_key` is never plaintext
+  // — see lib/security/encryption.ts — and this table is deliberately
+  // separate from `user_data` (rather than another data_key like
+  // "settings") specifically so these secrets never ride along inside the
+  // general, unencrypted settings JSON blob the way they used to.
+  `CREATE TABLE IF NOT EXISTS api_keys (
+    user_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    encrypted_key TEXT NOT NULL,
+    -- Last 4 chars only, plaintext, purely for a "connected, ending in
+    -- ab12" settings-page display without decrypting on every page load —
+    -- same low-risk convention as e.g. a card processor showing a card's
+    -- last 4 digits. The real key is only ever decrypted server-side at
+    -- the moment it's used to call a provider (lib/db/apiKeys.ts).
+    key_last4 TEXT NOT NULL,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY (user_id, provider)
   )`,
 ];
 

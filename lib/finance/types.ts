@@ -50,6 +50,16 @@ export interface MarketQuote {
   dayHigh: number | null;
   dayLow: number | null;
   previousClose: number | null;
+  /**
+   * Which provider this specific quote came from — omitted (undefined) for
+   * the normal case (Yahoo Finance, via getQuotes() in yahoo.ts), same
+   * "absent means the default/primary source" convention as
+   * IncomeStatementYear.dataSource. Only ever set when app/api/quotes'
+   * route falls back to a signed-in user's own configured Finnhub/
+   * Polygon/Alpha Vantage key for a symbol Yahoo's batch didn't return —
+   * see lib/finance/providers/{finnhub,polygon,alphaVantage}.ts.
+   */
+  source?: "finnhub" | "polygon" | "alphaVantage";
 }
 
 export interface SearchResultItem {

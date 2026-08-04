@@ -10,6 +10,22 @@ import { useSyncExternalStore } from "react";
  * browser"). Kept as a single settings object rather than one entry per
  * field, since the whole point of the Settings page is editing several of
  * these together.
+ *
+ * Secure API Keys Migration: this store used to also hold
+ * `dataSourceKeys` (the user's Finnhub/Polygon/Alpha Vantage keys), which
+ * meant those secrets rode along inside this same object — including,
+ * once multi-user sync shipped, getting pushed in PLAINTEXT to this user's
+ * generic `user_data.settings` row on the server (see
+ * lib/auth/AuthContext.tsx's debounced sync of every store this file
+ * exports). Those keys now live in their own encrypted, dedicated
+ * `api_keys` table (lib/db/apiKeys.ts) behind /api/settings/api-keys,
+ * fetched and saved directly by the Settings page rather than riding
+ * through this store — see app/(dashboard)/settings/page.tsx. Deliberately
+ * NOT migrating any stale `dataSourceKeys` that might already be sitting
+ * in an old localStorage blob or an old server-side settings row: the
+ * shallow-merge in readFromStorage/hydrateFromServer below simply ignores
+ * unknown fields, so old data is inert rather than resurrected somewhere
+ * new.
  */
 
 export type AccentColor = "blue" | "emerald" | "amber" | "rose" | "violet";
@@ -22,11 +38,6 @@ export interface FinLensSettings {
   priceAlerts: boolean;
   newsAlerts: boolean;
   weeklyDigest: boolean;
-  dataSourceKeys: {
-    finnhub: string;
-    polygon: string;
-    alphaVantage: string;
-  };
 }
 
 export const DEFAULT_SETTINGS: FinLensSettings = {
@@ -37,7 +48,6 @@ export const DEFAULT_SETTINGS: FinLensSettings = {
   priceAlerts: true,
   newsAlerts: false,
   weeklyDigest: true,
-  dataSourceKeys: { finnhub: "", polygon: "", alphaVantage: "" },
 };
 
 const STORAGE_KEY = "finlens:settings";
@@ -53,12 +63,12 @@ function readFromStorage(): FinLensSettings {
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw);
     // Shallow-merge over defaults so adding a new setting later doesn't
-    // break existing users' saved (older-shape) JSON.
-    return {
-      ...DEFAULT_SETTINGS,
-      ...parsed,
-      dataSourceKeys: { ...DEFAULT_SETTINGS.dataSourceKeys, ...(parsed?.dataSourceKeys ?? {}) },
-    };
+    // break existing users' saved (older-shape) JSON. Any stale
+    // `dataSourceKeys` field from before the Secure API Keys Migration
+    // simply isn't part of FinLensSettings anymore, so spreading `parsed`
+    // over DEFAULT_SETTINGS harmlessly carries it as an inert extra
+    // property that nothing reads.
+    return { ...DEFAULT_SETTINGS, ...parsed };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -118,13 +128,6 @@ export function updateSettings(patch: Partial<FinLensSettings>): void {
   notify();
 }
 
-export function updateDataSourceKey(provider: keyof FinLensSettings["dataSourceKeys"], value: string): void {
-  ensureHydrated();
-  settings = { ...settings, dataSourceKeys: { ...settings.dataSourceKeys, [provider]: value } };
-  persist();
-  notify();
-}
-
 export function resetSettings(): void {
   ensureHydrated();
   settings = DEFAULT_SETTINGS;
@@ -146,13 +149,7 @@ export function getRawSnapshot(): FinLensSettings {
  * if they've never saved any. Called right after a successful login. */
 export function hydrateFromServer(next: unknown): void {
   const candidate = next && typeof next === "object" ? (next as Partial<FinLensSettings>) : null;
-  settings = candidate
-    ? {
-        ...DEFAULT_SETTINGS,
-        ...candidate,
-        dataSourceKeys: { ...DEFAULT_SETTINGS.dataSourceKeys, ...(candidate.dataSourceKeys ?? {}) },
-      }
-    : DEFAULT_SETTINGS;
+  settings = candidate ? { ...DEFAULT_SETTINGS, ...candidate } : DEFAULT_SETTINGS;
   hydrated = true;
   persist();
   notify();

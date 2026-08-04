@@ -1,17 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bell, KeyRound, Palette, RotateCcw, Settings as SettingsIcon, User } from "lucide-react";
-import {
-  resetSettings,
-  updateDataSourceKey,
-  updateSettings,
-  useSettings,
-  type AccentColor,
-} from "@/lib/settings/store";
+import { resetSettings, updateSettings, useSettings, type AccentColor } from "@/lib/settings/store";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+
+// Secure API Keys Migration: kept as a small, client-safe local constant
+// rather than importing lib/db/apiKeys.ts's API_KEY_PROVIDERS directly —
+// that module (and everything it imports, down to @neondatabase/serverless)
+// is server-only and would break the client bundle if pulled into a
+// "use client" file. The route handler is the single source of truth for
+// which providers are actually valid; this list only drives which inputs
+// render.
+const API_KEY_PROVIDERS = ["finnhub", "polygon", "alphaVantage"] as const;
+type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
+const PROVIDER_LABELS: Record<ApiKeyProvider, string> = {
+  finnhub: "Finnhub",
+  polygon: "Polygon",
+  alphaVantage: "Alpha Vantage",
+};
+
+interface ApiKeyStatus {
+  configured: boolean;
+  last4: string | null;
+  updatedAt: number | null;
+}
+type ApiKeyStatusMap = Record<ApiKeyProvider, ApiKeyStatus>;
+
+const EMPTY_DRAFTS: Record<ApiKeyProvider, string> = { finnhub: "", polygon: "", alphaVantage: "" };
+const EMPTY_BUSY: Record<ApiKeyProvider, boolean> = { finnhub: false, polygon: false, alphaVantage: false };
+const EMPTY_ROW_ERRORS: Record<ApiKeyProvider, string | null> = { finnhub: null, polygon: null, alphaVantage: null };
 
 const ACCENT_OPTIONS: { id: AccentColor; label: string; swatch: string }[] = [
   { id: "blue", label: "Blue", swatch: "bg-blue-500" },
@@ -218,24 +238,7 @@ function SettingsContent() {
       </SectionCard>
 
       {/* API Keys / Data Sources */}
-      <SectionCard icon={KeyRound} iconClassName="bg-amber-500/15 text-amber-400" title="API Keys & Data Sources" description="Stored only in this browser's local storage, never sent anywhere by FinLens itself">
-        {(["finnhub", "polygon", "alphaVantage"] as const).map((provider) => (
-          <div key={provider}>
-            <label className="text-xs font-medium capitalize text-muted-foreground">
-              {provider === "alphaVantage" ? "Alpha Vantage" : provider} API Key
-            </label>
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder="Not set"
-              value={settings.dataSourceKeys[provider]}
-              onChange={(e) => updateDataSourceKey(provider, e.target.value)}
-              onBlur={flashSaved}
-              className={INPUT_CLASS}
-            />
-          </div>
-        ))}
-      </SectionCard>
+      <ApiKeysSection />
 
       {/* Notifications */}
       <SectionCard icon={Bell} iconClassName="bg-sky-500/15 text-sky-400" title="Notifications & Alerts" description="Choose what FinLens should notify you about">
@@ -280,6 +283,139 @@ function SettingsContent() {
         Reset all settings to defaults
       </button>
     </div>
+  );
+}
+
+/**
+ * Secure API Keys Migration: unlike every other section on this page,
+ * these fields are NOT backed by lib/settings/store.ts (localStorage +
+ * generic debounced sync) — they talk directly to the dedicated,
+ * auth-gated /api/settings/api-keys route, which encrypts at rest and
+ * never sends a real key back to the browser once saved (see that route's
+ * doc comment and lib/db/apiKeys.ts). This component only ever holds a
+ * masked status (last 4 chars) once a key is configured, plus whatever the
+ * user is actively typing into an unsaved draft.
+ */
+function ApiKeysSection() {
+  const [status, setStatus] = useState<ApiKeyStatusMap | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState(EMPTY_DRAFTS);
+  const [busy, setBusy] = useState(EMPTY_BUSY);
+  const [rowErrors, setRowErrors] = useState(EMPTY_ROW_ERRORS);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/settings/api-keys", { cache: "no-store" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error ?? "Failed to load API key status");
+        if (!cancelled) setStatus(body.keys as ApiKeyStatusMap);
+      } catch (err) {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Failed to load API key status");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSave(provider: ApiKeyProvider) {
+    const value = drafts[provider].trim();
+    if (!value) return;
+    setBusy((b) => ({ ...b, [provider]: true }));
+    setRowErrors((e) => ({ ...e, [provider]: null }));
+    try {
+      const res = await fetch("/api/settings/api-keys", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, key: value }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Failed to save key");
+      setStatus(body.keys as ApiKeyStatusMap);
+      setDrafts((d) => ({ ...d, [provider]: "" }));
+    } catch (err) {
+      setRowErrors((e) => ({ ...e, [provider]: err instanceof Error ? err.message : "Failed to save key" }));
+    } finally {
+      setBusy((b) => ({ ...b, [provider]: false }));
+    }
+  }
+
+  async function handleRemove(provider: ApiKeyProvider) {
+    setBusy((b) => ({ ...b, [provider]: true }));
+    setRowErrors((e) => ({ ...e, [provider]: null }));
+    try {
+      const res = await fetch(`/api/settings/api-keys?provider=${encodeURIComponent(provider)}`, {
+        method: "DELETE",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Failed to remove key");
+      setStatus(body.keys as ApiKeyStatusMap);
+    } catch (err) {
+      setRowErrors((e) => ({ ...e, [provider]: err instanceof Error ? err.message : "Failed to remove key" }));
+    } finally {
+      setBusy((b) => ({ ...b, [provider]: false }));
+    }
+  }
+
+  return (
+    <SectionCard
+      icon={KeyRound}
+      iconClassName="bg-amber-500/15 text-amber-400"
+      title="API Keys & Data Sources"
+      description="Encrypted at rest and tied to your account — used server-side only, never sent back to this browser once saved"
+    >
+      {loadError && <p className="text-xs text-destructive">{loadError}</p>}
+      {API_KEY_PROVIDERS.map((provider) => {
+        const s = status?.[provider];
+        const isBusy = busy[provider];
+        return (
+          <div key={provider} className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">{PROVIDER_LABELS[provider]} API Key</label>
+            {s?.configured ? (
+              <div className="flex items-center gap-2">
+                <span className="flex-1 rounded-md border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground">
+                  •••• ending in {s.last4}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(provider)}
+                  disabled={isBusy}
+                  className="shrink-0 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  autoComplete="off"
+                  placeholder={status ? "Not set" : "Loading…"}
+                  disabled={!status || isBusy}
+                  value={drafts[provider]}
+                  onChange={(e) => setDrafts((d) => ({ ...d, [provider]: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSave(provider);
+                  }}
+                  className={INPUT_CLASS}
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSave(provider)}
+                  disabled={isBusy || !drafts[provider].trim()}
+                  className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+            )}
+            {rowErrors[provider] && <p className="text-xs text-destructive">{rowErrors[provider]}</p>}
+          </div>
+        );
+      })}
+    </SectionCard>
   );
 }
 
