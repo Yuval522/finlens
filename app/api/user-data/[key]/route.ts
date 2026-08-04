@@ -1,6 +1,6 @@
 import { getDb, ensureSchema } from "@/lib/db/client";
 import { getCurrentUser } from "@/lib/auth/session";
-import { noStoreJson } from "@/lib/http/noStore";
+import { noStoreJson, dbErrorJson } from "@/lib/http/noStore";
 
 // Mobile state-sync fix: never let this be cached — see lib/http/noStore.ts.
 // Especially important here: this is the route that carries a user's
@@ -27,28 +27,32 @@ export async function GET(_request: Request, { params }: { params: Promise<{ key
     return noStoreJson({ error: "Unknown data key" }, { status: 400 });
   }
 
-  const user = await getCurrentUser();
-  if (!user) {
-    return noStoreJson({ error: "Not signed in" }, { status: 401 });
-  }
-
-  await ensureSchema();
-  const db = getDb();
-  const result = await db.execute({
-    sql: "SELECT data_json FROM user_data WHERE user_id = ? AND data_key = ?",
-    args: [user.id, key],
-  });
-  const row = result.rows[0];
-  if (!row) {
-    return noStoreJson({ data: null });
-  }
-
   try {
-    return noStoreJson({ data: JSON.parse(String(row.data_json)) });
-  } catch {
-    // Corrupt/unparseable row — treat the same as "nothing saved yet"
-    // rather than failing the request outright.
-    return noStoreJson({ data: null });
+    const user = await getCurrentUser();
+    if (!user) {
+      return noStoreJson({ error: "Not signed in" }, { status: 401 });
+    }
+
+    await ensureSchema();
+    const db = getDb();
+    const result = await db.execute({
+      sql: "SELECT data_json FROM user_data WHERE user_id = ? AND data_key = ?",
+      args: [user.id, key],
+    });
+    const row = result.rows[0];
+    if (!row) {
+      return noStoreJson({ data: null });
+    }
+
+    try {
+      return noStoreJson({ data: JSON.parse(String(row.data_json)) });
+    } catch {
+      // Corrupt/unparseable row — treat the same as "nothing saved yet"
+      // rather than failing the request outright.
+      return noStoreJson({ data: null });
+    }
+  } catch (err) {
+    return dbErrorJson(err, `GET user-data/${key}`);
   }
 }
 
@@ -58,11 +62,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ key:
     return noStoreJson({ error: "Unknown data key" }, { status: 400 });
   }
 
-  const user = await getCurrentUser();
-  if (!user) {
-    return noStoreJson({ error: "Not signed in" }, { status: 401 });
-  }
-
   let body: unknown;
   try {
     body = await request.json();
@@ -70,15 +69,24 @@ export async function PUT(request: Request, { params }: { params: Promise<{ key:
     return noStoreJson({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  await ensureSchema();
-  const db = getDb();
-  await db.execute({
-    sql: `INSERT INTO user_data (user_id, data_key, data_json, updated_at)
-          VALUES (?, ?, ?, ?)
-          ON CONFLICT (user_id, data_key)
-          DO UPDATE SET data_json = excluded.data_json, updated_at = excluded.updated_at`,
-    args: [user.id, key, JSON.stringify(body), Date.now()],
-  });
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return noStoreJson({ error: "Not signed in" }, { status: 401 });
+    }
 
-  return noStoreJson({ ok: true });
+    await ensureSchema();
+    const db = getDb();
+    await db.execute({
+      sql: `INSERT INTO user_data (user_id, data_key, data_json, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (user_id, data_key)
+            DO UPDATE SET data_json = excluded.data_json, updated_at = excluded.updated_at`,
+      args: [user.id, key, JSON.stringify(body), Date.now()],
+    });
+
+    return noStoreJson({ ok: true });
+  } catch (err) {
+    return dbErrorJson(err, `PUT user-data/${key}`);
+  }
 }
