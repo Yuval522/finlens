@@ -142,6 +142,12 @@ function SingleMetricChart<T extends { fiscalYear: string }>({
    * Absolute view shows a currency-formatted one automatically. Same
    * pattern RuleOf40Card (below) uses for its own average line, just
    * applied here so any other single-metric card can flip it on later.
+   * MetricCard is responsible for only passing `true` while its own
+   * fullscreen modal is open (see MetricCard's `isFullscreen` — QA fix:
+   * the line/label used to show on the compact home/dashboard preview card
+   * too, cluttering a card meant to be a quick-glance summary) — this
+   * component itself has no opinion on fullscreen-ness, it just renders
+   * whatever it's told.
    */
   showAverage?: boolean;
 }) {
@@ -306,6 +312,15 @@ function MetricCard({
   onToggle,
 }: MetricCardProps) {
   const controls = useChartControls(income, incomeQuarterly);
+  // QA fix (live report: the dashed average line/label showed on the
+  // compact home/dashboard preview card too, not just the expanded modal —
+  // cluttering a small card that's meant to be a quick-glance summary).
+  // Gated here, at the single point every card's fullscreen-ness is
+  // already known (`expanded === id` — the exact same check ChartCard's
+  // own `fullscreen` prop below uses), rather than inside SingleMetricChart
+  // itself, so any future showAverage-enabled card gets this behavior for
+  // free instead of needing to remember to gate it individually.
+  const isFullscreen = expanded === id;
 
   const data =
     controls.view === "yoy"
@@ -359,7 +374,7 @@ function MetricCard({
         formatValue={formatValue}
         view={controls.view}
         emptyStateMessage={emptyStateMessage}
-        showAverage={showAverage}
+        showAverage={showAverage && isFullscreen}
       />
     </ChartCard>
   );
@@ -438,6 +453,12 @@ function priorYearPeriodLabel(fiscalYear: string): string | null {
  */
 function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, expanded, onToggle }: RuleOf40CardProps) {
   const controls = useChartControls(income, incomeQuarterly);
+  // QA fix (live report: the dashed average line/label showed on the
+  // compact preview card too) — see MetricCard's matching isFullscreen
+  // comment. Bar green/red coloring below still uses ruleOf40Average
+  // regardless of this flag (only the line/label are gated), so a bar's
+  // color never silently changes between the compact and expanded views.
+  const isFullscreen = expanded === "ruleof40";
   const rangedCashFlow = controls.rangeOther(cashFlow, cashFlowQuarterly);
   const cashFlowByYear = new Map(rangedCashFlow.map((c) => [c.fiscalYear, c]));
   const historicalByLabel = new Map(controls.historical.map((row) => [row.fiscalYear, row]));
@@ -515,7 +536,7 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
-            {ruleOf40Average != null && (
+            {isFullscreen && ruleOf40Average != null && (
               <ReferenceLine
                 y={ruleOf40Average}
                 stroke={CONTRAST}
