@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { CashFlowYear } from "@/lib/finance/types";
 import { CHART_COLORS, CHART_TOOLTIP_WRAPPER_STYLE, compactAxis, shouldFlipTooltip } from "@/lib/format/chart";
-import { splitTrailingRow, toYoY, type ChartView } from "@/lib/finance/chart-transform";
+import { splitTrailingRow, toPctOfRevenue, toYoY, type ChartView } from "@/lib/finance/chart-transform";
 import { useChartControls } from "@/lib/finance/useChartControls";
 import { ChartCard } from "./ChartCard";
 import { ChartControls } from "./ChartControls";
@@ -71,7 +71,9 @@ function CashFlowTooltip({ active, payload, label, currency, view, data }: CashF
             <span className="font-mono font-medium text-foreground">
               {view === "yoy"
                 ? `${entry.value >= 0 ? "+" : ""}${entry.value.toFixed(1)}%`
-                : `${typeof entry.value === "number" ? entry.value.toLocaleString("en-US") : entry.value} ${currency}`}
+                : view === "pctOfRevenue"
+                  ? `${entry.value.toFixed(1)}%`
+                  : `${typeof entry.value === "number" ? entry.value.toLocaleString("en-US") : entry.value} ${currency}`}
             </span>
           </div>
         ))}
@@ -91,6 +93,14 @@ interface MultiMetricCardProps {
   currency: string;
   barSize?: number;
   maxBarSize?: number;
+  /** Offers "As a % of Revenue" as a third View option — see
+   *  ChartControls' showPctOfRevenue doc comment. Only meaningful when
+   *  every series here is naturally a portion of revenue; requires
+   *  CashFlowYear.totalRevenue (backfilled post-merge — see
+   *  backfillCashFlowRevenue in aggregate.ts) to actually be present for
+   *  this symbol's periods, same graceful "0%" degradation as any other
+   *  toPctOfRevenue consumer when it isn't. */
+  showPctOfRevenue?: boolean;
   expanded: string | null;
   onToggle: (id: string) => void;
 }
@@ -119,6 +129,7 @@ function MultiMetricCard({
   // without bars touching, so the bump is proportionally smaller.
   barSize = 36,
   maxBarSize = 48,
+  showPctOfRevenue = false,
   expanded,
   onToggle,
 }: MultiMetricCardProps) {
@@ -133,8 +144,13 @@ function MultiMetricCard({
     });
 
   const keys = options.map((o) => o.key) as (keyof CashFlowYear)[];
-  const data = controls.view === "yoy" ? toYoY(controls.ranged, keys) : controls.ranged;
-  const axisFormatter = controls.view === "yoy" ? (v: number) => `${v}%` : compactAxis;
+  const data =
+    controls.view === "yoy"
+      ? toYoY(controls.ranged, keys)
+      : controls.view === "pctOfRevenue" && showPctOfRevenue
+        ? toPctOfRevenue(controls.ranged, keys, "totalRevenue")
+        : controls.ranged;
+  const axisFormatter = controls.view === "yoy" || controls.view === "pctOfRevenue" ? (v: number) => `${v}%` : compactAxis;
 
   return (
     <ChartCard
@@ -149,6 +165,7 @@ function MultiMetricCard({
           onRangeChange={controls.setRange}
           view={controls.view}
           onViewChange={controls.setView}
+          showPctOfRevenue={showPctOfRevenue}
           totalYears={controls.totalYears}
           chartType={controls.chartType}
           onChartTypeChange={controls.setChartType}
@@ -228,6 +245,7 @@ export function CashFlowPanel({ cashFlow, cashFlowQuarterly = [], currency }: Ca
           cashFlowQuarterly={cashFlowQuarterly}
           options={BREAKDOWN_OPTIONS}
           currency={currency}
+          showPctOfRevenue
           expanded={expanded}
           onToggle={toggle}
         />

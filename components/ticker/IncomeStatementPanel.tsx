@@ -442,7 +442,12 @@ function RuleOf40Card({ income, incomeQuarterly, cashFlow, cashFlowQuarterly, ex
             <CartesianGrid stroke="rgba(148,163,184,0.08)" vertical={false} />
             <XAxis dataKey="fiscalYear" type="category" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
             <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}%`} />
-            <ReferenceLine y={40} stroke={AMBER} strokeDasharray="4 4" />
+            <ReferenceLine
+              y={40}
+              stroke={AMBER}
+              strokeDasharray="4 4"
+              label={{ value: "40%", position: "top", fill: AMBER, fontSize: 11, fontWeight: 600 }}
+            />
             <Tooltip
               content={<RuleOf40Tooltip data={ruleOf40Data} />}
               wrapperStyle={CHART_TOOLTIP_WRAPPER_STYLE}

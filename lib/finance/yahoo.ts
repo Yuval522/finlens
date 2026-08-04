@@ -7,7 +7,7 @@ import type {
   FundamentalsTimeSeriesFinancialsResult,
 } from "yahoo-finance2/modules/fundamentalsTimeSeries";
 import { TtlCache } from "./cache";
-import { mergeYearsBySource, warnIfTrailingRowImplausible, warnIfShareCountDiscontinuity } from "./aggregate";
+import { mergeYearsBySource, warnIfTrailingRowImplausible, warnIfShareCountDiscontinuity, backfillCashFlowRevenue } from "./aggregate";
 import { computeTrailingTwelveMonths } from "./ttm";
 import { guessCurrencyForSearchResult, toExchangeBadge } from "./exchange";
 import { getMockFundamentals } from "./mock-data";
@@ -1569,6 +1569,15 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         balance.push({ ...latestQuarter, fiscalYear: "MRQ" });
       }
 
+      // Post-merge revenue join for the Cash Flow panel's "As a % of
+      // Revenue" View — see backfillCashFlowRevenue's doc comment
+      // (aggregate.ts) for why this runs here rather than per-provider.
+      // Both `income`/`incomeQuarterly` already carry their TTM row by this
+      // point (pushed above), so this also covers `cashFlow`'s/
+      // `cashFlowQuarterly`'s own "TTM" row via the same label match.
+      const cashFlowWithRevenue = backfillCashFlowRevenue(cashFlow, income);
+      const cashFlowQuarterlyWithRevenue = backfillCashFlowRevenue(cashFlowQuarterly, incomeQuarterly);
+
       const bundle: FundamentalsBundle = {
         source: "live",
         reportingCurrency: summary.financialData?.financialCurrency || quote.currency,
@@ -1583,10 +1592,10 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         metrics: toMetrics(summary, incomeTrailing, cashFlowTrailing, latestQuarter),
         income,
         balance,
-        cashFlow,
+        cashFlow: cashFlowWithRevenue,
         incomeQuarterly,
         balanceQuarterly,
-        cashFlowQuarterly,
+        cashFlowQuarterly: cashFlowQuarterlyWithRevenue,
         estimates: toEstimates(summary, income, quarterlyRevenueRows as FundamentalsTimeSeriesFinancialsResult[]),
         priceTargets: toPriceTargets(summary),
         history: toPricePoints(chartResult),

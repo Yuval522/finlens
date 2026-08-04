@@ -45,7 +45,7 @@
  * up, so their same-labeled period genuinely differs.
  */
 
-import type { FinancialDataSource } from "./types";
+import type { CashFlowYear, FinancialDataSource, IncomeStatementYear } from "./types";
 
 export interface YearRow {
   fiscalYear: string;
@@ -506,4 +506,30 @@ export function warnIfShareCountDiscontinuity<T extends YearRow & { sharesOutsta
       );
     }
   }
+}
+
+/**
+ * Backfills `totalRevenue` onto each cash-flow row by matching its
+ * `fiscalYear` label against the already-merged income array covering the
+ * same periods — see CashFlowYear.totalRevenue's doc comment in types.ts
+ * for why this is a one-time post-merge join in getFundamentals() (yahoo.ts)
+ * rather than sourced per-provider the way `netIncome` is: none of the
+ * three cash-flow sources (Yahoo's fundamentalsTimeSeries cash-flow module,
+ * SEC EDGAR XBRL cash-flow facts, FMP's cash-flow endpoint) consistently
+ * carry a revenue figure, but every source's INCOME statement always does,
+ * and by the time this runs both `cashFlow`/`cashFlowQuarterly` and
+ * `income`/`incomeQuarterly` are already fully merged (including their
+ * TTM/MRQ-equivalent trailing row), so a single label match covers real
+ * fiscal years and the trailing row alike. A cash-flow period with no
+ * income-side match for its label (an isolated one-sided gap) is left with
+ * `totalRevenue: undefined` rather than a fabricated 0 — toPctOfRevenue
+ * (chart-transform.ts) already treats a missing/non-finite denominator as
+ * "no % to show".
+ */
+export function backfillCashFlowRevenue(cashFlow: CashFlowYear[], income: IncomeStatementYear[]): CashFlowYear[] {
+  const revenueByYear = new Map(income.map((row) => [row.fiscalYear, row.totalRevenue]));
+  return cashFlow.map((row) => {
+    const totalRevenue = revenueByYear.get(row.fiscalYear);
+    return totalRevenue != null ? { ...row, totalRevenue } : row;
+  });
 }

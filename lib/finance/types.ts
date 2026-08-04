@@ -201,6 +201,24 @@ export interface CashFlowYear {
    *  against `income[]` at render time since the two arrays aren't
    *  guaranteed to cover identical fiscal years. */
   netIncome: number;
+  /**
+   * Snapshot of that same fiscal period's total revenue, for the Cash Flow
+   * panel's "As a % of Revenue" View option (Free Cash Flow margin, CapEx
+   * as % of revenue, etc — see toPctOfRevenue in chart-transform.ts).
+   * Optional and backfilled via a post-merge join against the `income`/
+   * `incomeQuarterly` arrays in getFundamentals() (see
+   * backfillCashFlowRevenue in aggregate.ts), NOT sourced per-provider like
+   * `netIncome` above — Yahoo's cash-flow fundamentalsTimeSeries module has
+   * no revenue field at all, and SEC EDGAR/FMP's cash-flow endpoints don't
+   * consistently carry one either, but every source's income statement
+   * always does. A period with no income-side match for the same
+   * fiscalYear label (or any construction site that doesn't go through the
+   * getFundamentals() join, e.g. mock-data.ts's hand-authored fixtures)
+   * simply leaves this undefined — toPctOfRevenue already treats a
+   * missing/non-finite revenue denominator as "no % to show" (0%) rather
+   * than throwing or dividing by zero.
+   */
+  totalRevenue?: number;
   dataSource?: FinancialDataSource;
   dataDiscrepancy?: boolean;
 }

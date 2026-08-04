@@ -1,4 +1,5 @@
 import type { FundamentalsBundle, PricePoint } from "./types";
+import { backfillCashFlowRevenue } from "./aggregate";
 
 /**
  * Illustrative fallback data for AAPL, NVDA, and TEVA.TA.
@@ -545,5 +546,11 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
 };
 
 export function getMockFundamentals(symbol: string): FundamentalsBundle | null {
-  return MOCK_FUNDAMENTALS[symbol.toUpperCase()] ?? null;
+  const bundle = MOCK_FUNDAMENTALS[symbol.toUpperCase()];
+  if (!bundle) return null;
+  // Same post-merge revenue join getFundamentals() (yahoo.ts) applies to
+  // live data — see backfillCashFlowRevenue's doc comment (aggregate.ts).
+  // These hand-authored fixtures have no quarterly arrays (see the module
+  // doc comment above), so only the annual cashFlow needs the join.
+  return { ...bundle, cashFlow: backfillCashFlowRevenue(bundle.cashFlow, bundle.income) };
 }
