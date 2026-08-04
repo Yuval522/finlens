@@ -140,6 +140,102 @@ export async function getQuotes(symbols: string[]): Promise<MarketQuote[]> {
   });
 }
 
+/**
+ * Lightweight daily-bars fetch for one symbol — deliberately a standalone,
+ * single-purpose call rather than reusing getFundamentals()'s much heavier
+ * multi-module bundle (quoteSummary, fundamentalsTimeSeries x6, SEC EDGAR,
+ * FMP, ...), since the only current caller (lib/finance/indicators.ts, via
+ * the Strategy Builder's technical-indicator filters — RSI/SMA) needs
+ * nothing but a plain close-price series and may need to call this for
+ * many symbols in one screener run. Cached separately from quoteCache at a
+ * longer TTL: daily bars only gain a new data point once a day (today's
+ * still-forming bar aside), so there's no reason to refetch as often as a
+ * live price.
+ */
+const priceHistoryCache = new TtlCache<PricePoint[]>(CACHE_TTL_MS * 15);
+
+export async function getPriceHistory(symbol: string, days = 120): Promise<PricePoint[]> {
+  return priceHistoryCache.getOrSet(`history:${symbol}:${days}`, async () => {
+    const period1 = new Date();
+    period1.setDate(period1.getDate() - days);
+    try {
+      // yahoo-finance2's chart() has no built-in request-timeout option
+      // (unlike this app's own fetch calls, e.g. sec-edgar.ts's
+      // AbortSignal.timeout usage) — manually racing it against a timer is
+      // what stops one hung symbol from stalling an entire Strategy
+      // Builder run, which can call this for dozens of symbols in
+      // parallel (see lib/strategy/execute.ts).
+      const chart = await Promise.race([
+        yahooFinance.chart(symbol, { period1, interval: "1d" }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("getPriceHistory timed out")), 10_000)
+        ),
+      ]);
+      return toPricePoints(chart);
+    } catch (err) {
+      // Best-effort, like every optional-enrichment fetch in this
+      // codebase — a technical-indicator filter simply can't evaluate this
+      // one symbol rather than failing the whole screener run over it.
+      console.warn(
+        `[FinLens] getPriceHistory failed for ${symbol}:`,
+        err instanceof Error ? err.message : err
+      );
+      return [];
+    }
+  });
+}
+
+export interface StrategyQuote {
+  symbol: string;
+  name: string;
+  price: number | null;
+  changePercent: number | null;
+  marketCap: number | null;
+  peRatio: number | null;
+  dividendYieldPercent: number | null;
+  volume: number | null;
+}
+
+const strategyQuoteCache = new TtlCache<StrategyQuote[]>(CACHE_TTL_MS);
+
+/**
+ * Richer quote batch for the Natural Language Strategy Builder
+ * (lib/strategy/execute.ts) — a separate function/cache from getQuotes()
+ * rather than widening MarketQuote itself, so this new, still-evolving
+ * feature can't regress the shared MarketQuote shape every other page
+ * (Analysis, Portfolio, Watchlist, Topbar ticker, ...) already depends on.
+ * Pulls fields Yahoo's batched quote endpoint already returns but
+ * toMarketQuote() doesn't extract: trailingPE, trailingAnnualDividendYield
+ * (already a percentage per yahoo-finance2's own field doc, e.g. 2.5 for
+ * 2.5% — not a 0-1 fraction), and regularMarketVolume.
+ */
+export async function getStrategyQuotes(symbols: string[]): Promise<StrategyQuote[]> {
+  const unique = Array.from(new Set(symbols.filter(Boolean)));
+  if (unique.length === 0) return [];
+
+  const key = [...unique].sort().join(",");
+  return strategyQuoteCache.getOrSet(key, async () => {
+    try {
+      const results = (await yahooFinance.quote(unique, { return: "array" })) as unknown as Record<
+        string,
+        unknown
+      >[];
+      return results.map((q) => ({
+        symbol: String(q.symbol ?? ""),
+        name: String(q.shortName || q.longName || q.symbol || ""),
+        price: num(q.regularMarketPrice),
+        changePercent: num(q.regularMarketChangePercent),
+        marketCap: num(q.marketCap),
+        peRatio: num(q.trailingPE),
+        dividendYieldPercent: num(q.trailingAnnualDividendYield),
+        volume: num(q.regularMarketVolume),
+      }));
+    } catch (err) {
+      throw new MarketDataError(`Failed to fetch strategy quotes for ${unique.join(", ")}`, err);
+    }
+  });
+}
+
 /** Smart typeahead search across US, TASE, and other listed instruments. */
 export async function searchSymbols(query: string): Promise<SearchResultItem[]> {
   const trimmed = query.trim();

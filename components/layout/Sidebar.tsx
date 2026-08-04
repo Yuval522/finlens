@@ -8,6 +8,7 @@ import {
   Star,
   Briefcase,
   ScanSearch,
+  Sparkles,
   Globe2,
   Settings,
   ChevronLeft,
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { label: "Watchlist", href: "/watchlist", icon: Star },
   { label: "Portfolio", href: "/portfolio", icon: Briefcase },
   { label: "Screener", href: "/screener", icon: ScanSearch },
+  { label: "Strategy Builder", href: "/strategy", icon: Sparkles },
   { label: "Macro", href: "/macro", icon: Globe2 },
   { label: "Settings", href: "/settings", icon: Settings },
 ] as const;
