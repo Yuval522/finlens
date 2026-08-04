@@ -1,50 +1,107 @@
-import { createClient, type Client } from "@libsql/client";
+import { Pool, type QueryResultRow } from "@neondatabase/serverless";
 
 /**
  * Server-only database client. Never import this from a "use client"
- * component — @libsql/client depends on Node.js APIs (and, for the local
- * file: mode, a native binary) that don't exist in the browser.
+ * component — @neondatabase/serverless depends on Node.js APIs that don't
+ * exist in the browser.
  *
- * URL selection (see .env.local.example):
- * - Locally (and in any environment where TURSO_DATABASE_URL isn't set),
- *   this points at a plain SQLite file on disk (`file:./finlens-local.db`)
- *   — zero external accounts needed to develop or run this app on one
- *   machine, matching the original "just use SQLite" preference.
- * - In production on Vercel, set TURSO_DATABASE_URL (+ TURSO_AUTH_TOKEN)
- *   to a hosted Turso database instead. Turso speaks the exact same
- *   SQL/driver API as local SQLite, but over the network, which is what
- *   actually persists across Vercel's serverless invocations — a plain
- *   file on disk would NOT survive between requests/deploys there, since
- *   Vercel's function filesystem is ephemeral and read-only outside /tmp.
- *   Switching between the two modes is purely this one env var — no code
- *   changes needed when moving from local dev to the deployed app.
+ * Why Postgres/Neon instead of a local file: Vercel's serverless functions
+ * have a read-only filesystem outside /tmp, and even /tmp is ephemeral
+ * (wiped between cold starts) and not shared across concurrent instances —
+ * there is no way for a plain on-disk file to correctly back multi-user
+ * data there. That's an architectural fact of serverless hosting, not a
+ * missing setting, so unlike the previous Turso-based setup there is
+ * deliberately NO "falls back to a local file" branch here: this app needs
+ * a real network-reachable Postgres connection in every environment,
+ * local dev included, or it fails loudly (see dbErrorJson in
+ * lib/http/noStore.ts) instead of silently "working" on one machine and
+ * breaking the moment it's deployed.
+ *
+ * Connection string resolution (see .env.local.example for the full setup
+ * steps): reads DATABASE_URL, falling back to POSTGRES_URL — both are
+ * injected automatically into every environment (Production, Preview, and
+ * Development) the moment you connect the Neon integration from Vercel's
+ * dashboard Storage tab. No CLI install, no separate account signup, and
+ * no manually copying a URL/token into Environment Variables — Vercel's
+ * marketplace integration does all of that for you in one click. For
+ * local development, either run `vercel env pull .env.development.local`
+ * (after `vercel link`) to fetch the same value, or copy it from the
+ * Vercel dashboard by hand into your own .env.local.
  */
 
 declare global {
   // eslint-disable-next-line no-var
-  var __finlensDbClient: Client | undefined;
+  var __finlensDbPool: Pool | undefined;
   // eslint-disable-next-line no-var
   var __finlensDbMigrated: Promise<void> | undefined;
 }
 
-function buildClient(): Client {
-  const url = process.env.TURSO_DATABASE_URL ?? "file:./finlens-local.db";
-  const authToken = process.env.TURSO_AUTH_TOKEN;
-  return authToken ? createClient({ url, authToken }) : createClient({ url });
+function resolveConnectionString(): string {
+  const url = process.env.DATABASE_URL ?? process.env.POSTGRES_URL;
+  if (!url) {
+    throw new Error(
+      "No Postgres connection string found (checked DATABASE_URL, POSTGRES_URL). " +
+        "Connect the Neon integration from your Vercel project's Storage tab " +
+        "(auto-injects these for Production/Preview/Development), then for local " +
+        "dev run `vercel env pull .env.development.local` — see .env.local.example."
+    );
+  }
+  return url;
 }
 
 /**
  * Cached on `globalThis` rather than a plain module-level `let` — Next.js
  * dev mode hot-reloads route handler modules on every save, which would
- * otherwise construct a fresh client (and, for the local file: mode, a
- * fresh native connection) on every single edit. Same pattern commonly
- * used for Prisma/DB clients in Next.js dev.
+ * otherwise open a fresh pool on every single edit. Same pattern used for
+ * the previous libsql client and commonly used for Prisma/DB clients in
+ * Next.js dev. Reusing one Pool across warm serverless invocations (rather
+ * than opening/closing one per request) is also the more efficient of the
+ * two patterns Neon's driver supports for a long-lived Node.js function
+ * runtime (as opposed to a one-shot edge function).
  */
-export function getDb(): Client {
-  if (!globalThis.__finlensDbClient) {
-    globalThis.__finlensDbClient = buildClient();
+function getPool(): Pool {
+  if (!globalThis.__finlensDbPool) {
+    globalThis.__finlensDbPool = new Pool({ connectionString: resolveConnectionString() });
   }
-  return globalThis.__finlensDbClient;
+  return globalThis.__finlensDbPool;
+}
+
+type ExecuteQuery = string | { sql: string; args?: unknown[] };
+
+interface ExecuteResult<T extends QueryResultRow = Record<string, unknown>> {
+  rows: T[];
+}
+
+/**
+ * Thin adapter kept intentionally shaped like the previous libsql Client's
+ * `execute()` — same `{ sql, args }` input, same `{ rows }` output — so
+ * every call site (lib/auth/session.ts, every app/api/**\/route.ts) needed
+ * ZERO changes for this migration. The one real difference this papers
+ * over: SQLite/libsql uses positional `?` placeholders, Postgres uses
+ * `$1, $2, ...`. None of this app's hand-written SQL contains a literal
+ * `?` character outside of a placeholder position, so a plain left-to-right
+ * substitution is safe.
+ */
+function toPositionalPlaceholders(sql: string): string {
+  let n = 0;
+  return sql.replace(/\?/g, () => `$${++n}`);
+}
+
+async function execute<T extends QueryResultRow = Record<string, unknown>>(
+  query: ExecuteQuery
+): Promise<ExecuteResult<T>> {
+  const { sql, args } = typeof query === "string" ? { sql: query, args: undefined } : query;
+  const pool = getPool();
+  const result = await pool.query<T>(toPositionalPlaceholders(sql), args);
+  return { rows: result.rows };
+}
+
+/**
+ * Kept as a named export (rather than exposing the raw Pool) so route
+ * handlers keep calling `getDb().execute(...)` exactly as before.
+ */
+export function getDb(): { execute: typeof execute } {
+  return { execute };
 }
 
 const SCHEMA_STATEMENTS = [
@@ -53,13 +110,13 @@ const SCHEMA_STATEMENTS = [
     username TEXT NOT NULL UNIQUE,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at BIGINT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL
+    created_at BIGINT NOT NULL,
+    expires_at BIGINT NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`,
   // Deliberately a single JSON blob per (user_id, data_key) rather than
@@ -68,12 +125,13 @@ const SCHEMA_STATEMENTS = [
   // serializes to localStorage as one JSON object, so migrating from
   // "localStorage on one browser" to "a row owned by this user" is a
   // straight lift of the same JSON with no business-logic changes to
-  // derive.ts/aggregate.ts/etc.
+  // derive.ts/aggregate.ts/etc. The composite PRIMARY KEY here is what the
+  // user_data upsert's `ON CONFLICT (user_id, data_key)` clause targets.
   `CREATE TABLE IF NOT EXISTS user_data (
     user_id TEXT NOT NULL,
     data_key TEXT NOT NULL,
     data_json TEXT NOT NULL,
-    updated_at INTEGER NOT NULL,
+    updated_at BIGINT NOT NULL,
     PRIMARY KEY (user_id, data_key)
   )`,
 ];
