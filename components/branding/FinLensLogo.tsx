@@ -70,8 +70,12 @@ export function FinLensLogo({
  * shadow beneath the icon is darker, so this signed comparison (rather
  * than a plain color-distance threshold) keeps the glyph crisp without
  * dragging the shadow along as a gray smudge. Also used, composited onto a
- * solid #1A1A1A panel at square app-icon sizes, for app/icon.png (favicon)
- * and app/apple-icon.png — see app/layout.tsx.
+ * solid #1A1A1A panel at square app-icon sizes, for public/favicon.ico and
+ * public/apple-touch-icon.png — see the `icons` block in app/layout.tsx's
+ * metadata export, which is the single source of truth for every icon tag
+ * on the page (Next's app/icon.png / app/apple-icon.png file-convention
+ * icons were removed for exactly that reason — see app/layout.tsx's own
+ * doc comment).
  *
  * QA fix (live report: home-screen icon showed the glyph small and boxed
  * in with the OS's own white/dark framing around it, vs. a native app icon

@@ -13,32 +13,40 @@ export const metadata: Metadata = {
     "FinLens is a next-generation financial terminal with live market data, charting, technical indicators, and screening for US & TASE equities.",
   manifest: "/manifest.json",
   // QA fix (live report: Chrome desktop/mobile tab and the PWA home-screen
-  // shortcut kept falling back to a generic grey box with the letter "F").
-  // This project is Next.js App Router, so there's no index.html to hand-edit
-  // — app/icon.png and app/apple-icon.png (the file-convention favicon/
-  // apple-touch-icon, already correct and full-bleed as of the previous
-  // icon pass) already auto-generate <link rel="icon">/<link
-  // rel="apple-touch-icon"> tags, and Next merges those in ahead of
-  // whatever's declared here rather than replacing it. Declared explicitly
-  // anyway, for two things the file convention alone doesn't give us:
-  // 1) a true multi-resolution .ico (public/favicon.ico, 16/32/48px) for
-  //    browsers that still hard-request /favicon.ico directly, since the
-  //    file-convention route only ever produces a PNG; and 2) an explicit,
-  //    versioned query string on every href. Next's file-convention icon
-  //    routes are served at a fixed URL that never changes across deploys,
-  //    so a browser/OS that already cached the OLD icon there has no signal
-  //    to refetch it — these paths are either brand-new (never served
-  //    before, so no stale cache can exist) or explicitly version-stamped,
-  //    so a bump here (?v=2 -> ?v=3, ...) forces a fresh fetch on the next
-  //    deploy without needing a filename change.
+  // shortcut kept falling back to a generic grey box with the letter "F",
+  // or showed a stale/boxed-in icon, even after the underlying PNG/ICO
+  // files were pixel-verified correct). This project is Next.js App
+  // Router, so there's no index.html to hand-edit — this `icons` block is
+  // what actually generates the page's <link rel="icon">/<link
+  // rel="apple-touch-icon"> tags.
+  //
+  // This app used to ALSO have app/icon.png + app/apple-icon.png, Next's
+  // file-convention favicon/apple-touch-icon special files. Those
+  // auto-generate their own <link> tags at a FIXED url ("/icon.png",
+  // "/apple-icon.png") that Next prepends ahead of whatever's declared
+  // here — meaning a browser could still pick that first, permanently-
+  // cached-at-that-exact-url tag over this deliberately versioned one, even
+  // after this block's own href was updated. Removed both (renamed out of
+  // the special app/icon.png / app/apple-icon.png filenames — this repo's
+  // FUSE-mounted working copy doesn't allow deleting a file outright, but
+  // does allow renaming one out of the way, which is enough to stop Next
+  // from treating them as the icon-convention files) so this `icons` block
+  // is now the ONLY source of truth for every icon tag on the page.
+  //
+  // Every href below is either a brand-new path (public/favicon.ico,
+  // public/apple-touch-icon.png — never served under these exact names
+  // before, so no stale cache can exist for them) or carries an explicit
+  // version query string; bump ?v=3 -> ?v=4 the next time the artwork
+  // changes to force every client to refetch without needing a filename
+  // change.
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
-      { url: "/icons/icon-192-any.png?v=2", type: "image/png", sizes: "192x192" },
-      { url: "/icons/icon-512-any.png?v=2", type: "image/png", sizes: "512x512" },
+      { url: "/icons/icon-192-any.png?v=3", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon-512-any.png?v=3", type: "image/png", sizes: "512x512" },
     ],
     shortcut: ["/favicon.ico"],
-    apple: [{ url: "/apple-touch-icon.png?v=2", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png?v=3", sizes: "180x180", type: "image/png" }],
   },
 };
 
