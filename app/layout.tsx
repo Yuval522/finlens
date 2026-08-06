@@ -11,7 +11,23 @@ export const metadata: Metadata = {
   title: "FinLens — Financial Intelligence",
   description:
     "FinLens is a next-generation financial terminal with live market data, charting, technical indicators, and screening for US & TASE equities.",
-  manifest: "/manifest.json",
+  // ROOT CAUSE, confirmed directly (live report: icons kept looking stale/
+  // boxed-in across every device and browser no matter how many times the
+  // underlying PNG/ICO files were regenerated and pixel-verified correct):
+  // fetching /manifest.json plain returned OLD content, while appending
+  // any throwaway query string (e.g. /manifest.json?debug=1) returned the
+  // correct, up-to-date one INSTANTLY — proving the deployed code was
+  // always correct and the problem was a cached response sitting in front
+  // of that one exact, never-versioned URL. Since `<link rel="manifest">`
+  // (generated from this `manifest` field) had no cache-busting of its
+  // own, EVERY client requesting it — regardless of how fresh the icons
+  // block below or the underlying files were — kept being handed that
+  // stale manifest, which itself still pointed at old/pre-fix icon paths.
+  // No amount of fixing the icon files themselves could ever have broken
+  // that chain; only versioning this href does. Bump ?v=3 -> ?v=4 (in
+  // lockstep with the `icons` block below and manifest.json's own icon
+  // srcs) the next time anything icon-related changes.
+  manifest: "/manifest.json?v=3",
   // QA fix (live report: Chrome desktop/mobile tab and the PWA home-screen
   // shortcut kept falling back to a generic grey box with the letter "F",
   // or showed a stale/boxed-in icon, even after the underlying PNG/ICO
