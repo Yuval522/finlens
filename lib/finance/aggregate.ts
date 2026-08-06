@@ -546,21 +546,42 @@ export function backfillCashFlowRevenue(cashFlow: CashFlowYear[], income: Income
  * financial history wholesale. `quote.firstTradeDateEpochMs` (see its doc
  * comment in types.ts) is the one signal anchored to the CURRENT listing
  * rather than the symbol string, so getFundamentals() (yahoo.ts) uses it
- * here as a hard cutoff on the already-merged annual/quarterly arrays —
- * applied post-merge (not per-source pre-merge) so it catches ghost data
- * regardless of which of the three providers happened to contribute it for
- * a given period.
+ * here as a cutoff on the already-merged annual/quarterly arrays — applied
+ * post-merge (not per-source pre-merge) so it catches ghost data regardless
+ * of which of the three providers happened to contribute it for a given
+ * period.
  *
- * Deliberately YEAR-granularity, not exact-date: fiscalYear labels ("2023",
- * "2023-Q2") carry no day-level precision, and being any more aggressive
- * would risk discarding a genuinely-IPOed company's own final pre-IPO
- * fiscal year — routinely included in its own S-1/10-K as required
- * historical financials — purely because that year closed a few months
- * before the IPO priced. A row is discarded only when its entire labeled
- * fiscal year is STRICTLY before the listing year, which matches the shape
- * of the reported bug (multiple full years of an unrelated company's
- * history) without cutting a company's own legitimate last-private-year
- * disclosure.
+ * REGRESSION FIX (live bug report: SPCX — Space Exploration Technologies
+ * Corp / SpaceX, a real operating company that IPO'd 2026-06-12 — showed
+ * completely blank Income/Balance Sheet/Cash Flow tabs). The original
+ * version of this function used a hard `year >= listingYear` cutoff, which
+ * seemed safe (see the superseded doc comment this replaces) but actually
+ * discarded EVERY fiscal year before the IPO — including the 2-3 years of
+ * audited pre-IPO financials an S-1/F-1 is required to disclose (SEC Reg
+ * S-K Item 8 generally requires 2-3 years of audited statements in a
+ * registration statement, which is exactly why SEC EDGAR / Yahoo have that
+ * history at all for a company that just went public). For a company that
+ * IPOs mid-year with no complete fiscal year of its own filed yet (SPCX's
+ * case — IPO'd in June, and no full FY2026 10-K exists as of this fix),
+ * that hard cutoff left the annual arrays empty entirely: not "ghost data
+ * removed," but "every real row removed too."
+ *
+ * Fixed by widening the cutoff to a PRE_IPO_LOOKBACK_YEARS-year lookback
+ * window instead of the bare listing year — grounded in the original bug
+ * report's own framing ("financial reports from 3+ years ago" was the
+ * shape of the ghost-data problem, i.e. the recycled data was AT LEAST
+ * that old relative to the new listing), and in the SEC's own 2-3 year
+ * disclosure requirement for legitimate pre-IPO history. A row is now
+ * discarded only when its entire labeled fiscal year is more than
+ * PRE_IPO_LOOKBACK_YEARS years before the listing year — old enough that
+ * it can no longer plausibly be the current company's own required S-1
+ * disclosure, which is exactly the shape of genuine ticker-recycling ghost
+ * data (a wholly separate company's multi-year history, not a nearby
+ * pre-IPO year).
+ *
+ * Deliberately YEAR-granularity, not exact-date, for the same reason as
+ * before: fiscalYear labels ("2023", "2023-Q2") carry no day-level
+ * precision, so year-level slack is the right unit to reason about here.
  *
  * `listingDateMs` of null (Yahoo doesn't report firstTradeDateMilliseconds
  * for every symbol) is a no-op — with no anchor to compare against, keeping
@@ -576,16 +597,19 @@ export function backfillCashFlowRevenue(cashFlow: CashFlowYear[], income: Income
  * never guess" bucket as "TTM"/"MRQ" rather than being misread as year 0
  * and silently dropped.
  */
+const PRE_IPO_LOOKBACK_YEARS = 3;
+
 export function filterRowsBeforeListing<T extends { fiscalYear: string }>(
   rows: T[],
   listingDateMs: number | null
 ): T[] {
   if (listingDateMs == null) return rows;
   const listingYear = new Date(listingDateMs).getUTCFullYear();
+  const cutoffYear = listingYear - PRE_IPO_LOOKBACK_YEARS;
   return rows.filter((row) => {
     if (!/^\d{4}/.test(row.fiscalYear)) return true; // "TTM", "MRQ", blank, or any other non-year label
     const year = Number(row.fiscalYear.slice(0, 4));
-    return year >= listingYear;
+    return year >= cutoffYear;
   });
 }
 
