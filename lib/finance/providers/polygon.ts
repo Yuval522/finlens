@@ -102,6 +102,7 @@ export async function fetchPolygonQuote(symbol: string, apiKey: string): Promise
       dayHigh: num(result.h),
       dayLow: num(result.l),
       previousClose: null, // this endpoint's `c` IS the previous close — no separate value to report here
+      firstTradeDateEpochMs: null,
       source: "polygon",
     };
   } catch (err) {

@@ -7,7 +7,14 @@ import type {
   FundamentalsTimeSeriesFinancialsResult,
 } from "yahoo-finance2/modules/fundamentalsTimeSeries";
 import { TtlCache } from "./cache";
-import { mergeYearsBySource, warnIfTrailingRowImplausible, warnIfShareCountDiscontinuity, backfillCashFlowRevenue } from "./aggregate";
+import {
+  mergeYearsBySource,
+  warnIfTrailingRowImplausible,
+  warnIfShareCountDiscontinuity,
+  backfillCashFlowRevenue,
+  filterRowsBeforeListing,
+  filterPricePointsBeforeListing,
+} from "./aggregate";
 import { computeTrailingTwelveMonths } from "./ttm";
 import { guessCurrencyForSearchResult, toExchangeBadge } from "./exchange";
 import { getMockFundamentals } from "./mock-data";
@@ -121,6 +128,12 @@ function toMarketQuote(q: Record<string, unknown>): MarketQuote {
     dayHigh: num(q.regularMarketDayHigh),
     dayLow: num(q.regularMarketDayLow),
     previousClose: num(q.regularMarketPreviousClose),
+    // Ticker-recycling / ghost-data fix — see MarketQuote.firstTradeDateEpochMs's
+    // doc comment (types.ts). toEpochMs already handles both shapes this
+    // field has been observed in (a `Date` per the library's own DateInMs
+    // type, or a raw epoch-seconds number), same as preMarketTime/
+    // postMarketTime above.
+    firstTradeDateEpochMs: toEpochMs(q.firstTradeDateMilliseconds),
   };
 }
 
@@ -1389,6 +1402,14 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         throw new MarketDataError(`No live quote for ${symbol}`);
       }
 
+      // Ticker-recycling / ghost-data cutoff — see
+      // filterRowsBeforeListing/filterPricePointsBeforeListing's doc
+      // comments (aggregate.ts) for the full mechanism and rationale.
+      // Computed once, up front, so every merged statement array and the
+      // price-history series below can be filtered against the same
+      // anchor.
+      const listingDateMs = quote.firstTradeDateEpochMs;
+
       const assetProfile = summary.assetProfile;
 
       // Root-cause fix for the "duplicate quarter" bug — see
@@ -1449,29 +1470,43 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         ],
         { anchorField: "totalRevenue", backfillZeroFields: ["grossProfit", "operatingIncome"] }
       );
-      const income = applyKnownSplitAdjustmentToNonSecRows(incomeMerged, secFinancials.splits);
+      // Ticker-recycling / ghost-data fix (see filterRowsBeforeListing's doc
+      // comment in aggregate.ts) — applied AFTER the multi-source merge so
+      // it catches ghost data regardless of which of the three providers
+      // contributed a given period, and BEFORE the TTM/MRQ appendix below
+      // so those always-current synthetic rows are never at risk of it.
+      const income = filterRowsBeforeListing(
+        applyKnownSplitAdjustmentToNonSecRows(incomeMerged, secFinancials.splits),
+        listingDateMs
+      );
       // Cheap safety net for both this fix and the filed-date fix upstream —
       // see warnIfShareCountDiscontinuity's doc comment in aggregate.ts.
       warnIfShareCountDiscontinuity("income", symbol, income);
-      const balance = mergeYearsBySource(
-        "balance",
-        symbol,
-        [
-          { source: "sec-edgar", years: secFinancials.balance },
-          { source: "yahoo", years: yahooBalance },
-          { source: "fmp", years: fmpBalanceToYears(fmpBalanceRows) },
-        ],
-        { anchorField: "totalAssets", backfillZeroFields: ["totalLiabilities"] }
+      const balance = filterRowsBeforeListing(
+        mergeYearsBySource(
+          "balance",
+          symbol,
+          [
+            { source: "sec-edgar", years: secFinancials.balance },
+            { source: "yahoo", years: yahooBalance },
+            { source: "fmp", years: fmpBalanceToYears(fmpBalanceRows) },
+          ],
+          { anchorField: "totalAssets", backfillZeroFields: ["totalLiabilities"] }
+        ),
+        listingDateMs
       );
-      const cashFlow = mergeYearsBySource(
-        "cashFlow",
-        symbol,
-        [
-          { source: "sec-edgar", years: secFinancials.cashFlow },
-          { source: "yahoo", years: yahooCashFlow },
-          { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRows) },
-        ],
-        { anchorField: "operatingCashFlow" }
+      const cashFlow = filterRowsBeforeListing(
+        mergeYearsBySource(
+          "cashFlow",
+          symbol,
+          [
+            { source: "sec-edgar", years: secFinancials.cashFlow },
+            { source: "yahoo", years: yahooCashFlow },
+            { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRows) },
+          ],
+          { anchorField: "operatingCashFlow" }
+        ),
+        listingDateMs
       );
 
       // Quarterly counterparts — Chart Type: Quarterly view. Same merge
@@ -1513,27 +1548,37 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
       );
       // Same non-SEC split-adjustment gap as the annual series above, just
       // for the quarterly one — see applyKnownSplitAdjustmentToNonSecRows'
-      // doc comment in sec-edgar.ts.
-      const incomeQuarterly = applyKnownSplitAdjustmentToNonSecRows(incomeQuarterlyMerged, secFinancials.splits);
-      const balanceQuarterly = mergeYearsBySource(
-        "balanceQuarterly",
-        symbol,
-        [
-          { source: "sec-edgar", years: secFinancials.balanceQuarterly },
-          { source: "yahoo", years: yahooBalanceQuarterly },
-          { source: "fmp", years: fmpBalanceToYears(fmpBalanceRowsQuarterly) },
-        ],
-        { anchorField: "totalAssets", backfillZeroFields: ["totalLiabilities"] }
+      // doc comment in sec-edgar.ts. Ghost-data cutoff applied here too —
+      // same rationale as the annual arrays above.
+      const incomeQuarterly = filterRowsBeforeListing(
+        applyKnownSplitAdjustmentToNonSecRows(incomeQuarterlyMerged, secFinancials.splits),
+        listingDateMs
       );
-      const cashFlowQuarterly = mergeYearsBySource(
-        "cashFlowQuarterly",
-        symbol,
-        [
-          { source: "sec-edgar", years: secFinancials.cashFlowQuarterly },
-          { source: "yahoo", years: yahooCashFlowQuarterly },
-          { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRowsQuarterly) },
-        ],
-        { anchorField: "operatingCashFlow" }
+      const balanceQuarterly = filterRowsBeforeListing(
+        mergeYearsBySource(
+          "balanceQuarterly",
+          symbol,
+          [
+            { source: "sec-edgar", years: secFinancials.balanceQuarterly },
+            { source: "yahoo", years: yahooBalanceQuarterly },
+            { source: "fmp", years: fmpBalanceToYears(fmpBalanceRowsQuarterly) },
+          ],
+          { anchorField: "totalAssets", backfillZeroFields: ["totalLiabilities"] }
+        ),
+        listingDateMs
+      );
+      const cashFlowQuarterly = filterRowsBeforeListing(
+        mergeYearsBySource(
+          "cashFlowQuarterly",
+          symbol,
+          [
+            { source: "sec-edgar", years: secFinancials.cashFlowQuarterly },
+            { source: "yahoo", years: yahooCashFlowQuarterly },
+            { source: "fmp", years: fmpCashFlowToYears(fmpCashFlowRowsQuarterly) },
+          ],
+          { anchorField: "operatingCashFlow" }
+        ),
+        listingDateMs
       );
 
       // Trailing-twelve-month appendix — appended directly onto the merged
@@ -1621,7 +1666,13 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         cashFlowQuarterly: cashFlowQuarterlyWithRevenue,
         estimates: toEstimates(summary, income, quarterlyRevenueRows as FundamentalsTimeSeriesFinancialsResult[]),
         priceTargets: toPriceTargets(summary),
-        history: toPricePoints(chartResult),
+        // Ghost-data cutoff for the price series too (see
+        // filterPricePointsBeforeListing's doc comment, aggregate.ts) —
+        // Yahoo's chart endpoint returns whatever OHLC history exists under
+        // the symbol regardless of company identity, so a recycled ticker's
+        // price bars can extend years further back than this company's own
+        // first trade date.
+        history: filterPricePointsBeforeListing(toPricePoints(chartResult), listingDateMs),
       };
       return bundle;
     } catch (err) {

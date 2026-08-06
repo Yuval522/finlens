@@ -45,7 +45,7 @@
  * up, so their same-labeled period genuinely differs.
  */
 
-import type { CashFlowYear, FinancialDataSource, IncomeStatementYear } from "./types";
+import type { CashFlowYear, FinancialDataSource, IncomeStatementYear, PricePoint } from "./types";
 
 export interface YearRow {
   fiscalYear: string;
@@ -532,4 +532,81 @@ export function backfillCashFlowRevenue(cashFlow: CashFlowYear[], income: Income
     const totalRevenue = revenueByYear.get(row.fiscalYear);
     return totalRevenue != null ? { ...row, totalRevenue } : row;
   });
+}
+
+/**
+ * Ticker-recycling / ghost-data fix (live bug report: newly-IPOed stocks
+ * showing financial reports "from 3+ years ago" that belong to a different,
+ * unrelated company). Yahoo — and, just as often, SEC EDGAR, priority-1 in
+ * mergeYearsBySource precisely because it goes "10+ years deep for any
+ * SEC-registered filer" (see this file's top doc comment) — key their
+ * historical data purely by ticker SYMBOL, not by company identity: when a
+ * symbol is recycled after an older company is delisted/defunct, a
+ * brand-new IPO under that same symbol can inherit the OLD company's
+ * financial history wholesale. `quote.firstTradeDateEpochMs` (see its doc
+ * comment in types.ts) is the one signal anchored to the CURRENT listing
+ * rather than the symbol string, so getFundamentals() (yahoo.ts) uses it
+ * here as a hard cutoff on the already-merged annual/quarterly arrays —
+ * applied post-merge (not per-source pre-merge) so it catches ghost data
+ * regardless of which of the three providers happened to contribute it for
+ * a given period.
+ *
+ * Deliberately YEAR-granularity, not exact-date: fiscalYear labels ("2023",
+ * "2023-Q2") carry no day-level precision, and being any more aggressive
+ * would risk discarding a genuinely-IPOed company's own final pre-IPO
+ * fiscal year — routinely included in its own S-1/10-K as required
+ * historical financials — purely because that year closed a few months
+ * before the IPO priced. A row is discarded only when its entire labeled
+ * fiscal year is STRICTLY before the listing year, which matches the shape
+ * of the reported bug (multiple full years of an unrelated company's
+ * history) without cutting a company's own legitimate last-private-year
+ * disclosure.
+ *
+ * `listingDateMs` of null (Yahoo doesn't report firstTradeDateMilliseconds
+ * for every symbol) is a no-op — with no anchor to compare against, keeping
+ * every row a provider returned is strictly safer than guessing. Synthetic
+ * labels that aren't a bare year or "YYYY-Qn" — currently just "TTM" and
+ * "MRQ" (see toTrailingIncomeRow/toTrailingCashFlowRow and the MRQ balance
+ * appendix in yahoo.ts), both always-current-as-of-fetch by construction —
+ * parse to NaN and are never filtered out.
+ *
+ * Guards against `Number("")` — a JS quirk that resolves to `0`, not NaN —
+ * with an explicit leading-4-digit regex check before parsing, so a blank
+ * or otherwise malformed label safely falls into the same "always keep,
+ * never guess" bucket as "TTM"/"MRQ" rather than being misread as year 0
+ * and silently dropped.
+ */
+export function filterRowsBeforeListing<T extends { fiscalYear: string }>(
+  rows: T[],
+  listingDateMs: number | null
+): T[] {
+  if (listingDateMs == null) return rows;
+  const listingYear = new Date(listingDateMs).getUTCFullYear();
+  return rows.filter((row) => {
+    if (!/^\d{4}/.test(row.fiscalYear)) return true; // "TTM", "MRQ", blank, or any other non-year label
+    const year = Number(row.fiscalYear.slice(0, 4));
+    return year >= listingYear;
+  });
+}
+
+/**
+ * Same ticker-recycling / ghost-data fix as filterRowsBeforeListing above,
+ * applied to the daily price-bar series instead of merged statement rows.
+ * Unlike fiscalYear labels, PricePoint.date carries real day-level
+ * precision ("YYYY-MM-DD", ISO — see toPricePoints in yahoo.ts), and this
+ * cutoff is exact-date rather than year-granularity: Yahoo's chart endpoint
+ * returns whatever OHLC history exists under the symbol regardless of
+ * company identity, so a recycled ticker's price series can extend years
+ * further back than the current company's actual first trade date. ISO
+ * date strings sort correctly with a plain lexicographic `>=` comparison,
+ * so no Date parsing is needed per point. `listingDateMs` of null is a
+ * no-op, same rationale as filterRowsBeforeListing.
+ */
+export function filterPricePointsBeforeListing(
+  points: PricePoint[],
+  listingDateMs: number | null
+): PricePoint[] {
+  if (listingDateMs == null) return points;
+  const listingDateStr = new Date(listingDateMs).toISOString().slice(0, 10);
+  return points.filter((p) => p.date >= listingDateStr);
 }

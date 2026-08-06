@@ -117,6 +117,7 @@ export async function fetchAlphaVantageQuote(symbol: string, apiKey: string): Pr
       dayHigh: parseNum(quote["03. high"]),
       dayLow: parseNum(quote["04. low"]),
       previousClose: parseNum(quote["08. previous close"]),
+      firstTradeDateEpochMs: null,
       source: "alphaVantage",
     };
   } catch (err) {

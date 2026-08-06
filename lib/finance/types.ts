@@ -66,6 +66,19 @@ export interface MarketQuote {
   dayLow: number | null;
   previousClose: number | null;
   /**
+   * Epoch ms of the CURRENT company's first trade date under this symbol
+   * (Yahoo's `firstTradeDateMilliseconds`), null when Yahoo doesn't report
+   * one. Ticker-recycling / ghost-data fix: Yahoo (and SEC EDGAR) key
+   * historical data by ticker SYMBOL, not by company identity, so a symbol
+   * recycled from a delisted/defunct company can otherwise surface that OLD
+   * company's financial statements and price bars under a brand-new IPO.
+   * This is the one signal anchored to the actual listing rather than the
+   * symbol string, so getFundamentals() (yahoo.ts) uses it as a hard cutoff
+   * — see filterRowsBeforeListing/filterPricePointsBeforeListing in
+   * aggregate.ts — to discard anything dated before it.
+   */
+  firstTradeDateEpochMs: number | null;
+  /**
    * Which provider this specific quote came from — omitted (undefined) for
    * the normal case (Yahoo Finance, via getQuotes() in yahoo.ts), same
    * "absent means the default/primary source" convention as
