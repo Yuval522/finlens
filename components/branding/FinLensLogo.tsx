@@ -69,8 +69,21 @@ export function FinLensLogo({
  * glyph is brighter than its surroundings, while the artwork's soft drop
  * shadow beneath the icon is darker, so this signed comparison (rather
  * than a plain color-distance threshold) keeps the glyph crisp without
- * dragging the shadow along as a gray smudge. Also used, at square
- * app-icon sizes on a solid #1A1A1A panel, for public/icons/icon-192.png,
- * public/icons/icon-512.png, app/icon.png (favicon), and app/apple-icon.png
- * — see manifest.json and app/layout.tsx.
+ * dragging the shadow along as a gray smudge. Also used, composited onto a
+ * solid #1A1A1A panel at square app-icon sizes, for app/icon.png (favicon)
+ * and app/apple-icon.png — see app/layout.tsx.
+ *
+ * QA fix (live report: home-screen icon showed the glyph small and boxed
+ * in with the OS's own white/dark framing around it, vs. a native app icon
+ * like Gemini's that reads edge-to-edge). The favicon/apple-touch-icon and
+ * manifest.json's purpose:"any" icons (public/icons/icon-192-any.png,
+ * icon-512-any.png) are now composited full-bleed — glyph at 80% of canvas
+ * width, since neither iOS nor a plain "any" manifest icon crops the
+ * source at all (they only round the corners), so there's no reason to
+ * hold back the same safe-zone shrink Android's maskable format needs.
+ * manifest.json's separate purpose:"maskable" entries
+ * (icon-192-maskable.png, icon-512-maskable.png) keep the smaller ~62%
+ * width scale — maskable icons CAN be cropped to a circle/squircle/etc by
+ * the OS, so content has to stay inside that inner safe zone or risk being
+ * clipped. See manifest.json.
  */
