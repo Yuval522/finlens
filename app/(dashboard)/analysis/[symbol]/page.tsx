@@ -7,6 +7,7 @@ import { CompanyMetricsAccordions } from "@/components/ticker/CompanyMetricsAcco
 import { MobileTickerHeader } from "@/components/ticker/MobileTickerHeader";
 import { TickerPriceAndChart } from "@/components/ticker/TickerPriceAndChart";
 import { DataExplorerTabs } from "@/components/ticker/DataExplorerTabs";
+import { NonFundamentalNotice } from "@/components/ticker/NonFundamentalNotice";
 
 // Live upstream data — never let Next statically cache this route.
 export const dynamic = "force-dynamic";
@@ -58,14 +59,16 @@ export default async function AnalysisPage({
     reportingCurrency,
   } = bundle;
 
-  // Indices (^GSPC, ^TA125.TA, ^IXIC, ...) — and, more broadly, commodities,
-  // currency/forex pairs, and crypto — have no income statement, balance
-  // sheet, cash flow, analyst estimates, or valuation to show; Yahoo simply
-  // doesn't carry fundamentals data for any of these asset classes. Rather
-  // than render a tab strip full of empty/broken panels, hide the entire
-  // fundamentals section (tabs + the P/E-and-margins metrics accordions,
-  // equally meaningless here) and show only the header card and price
-  // chart, for every one of these asset types uniformly.
+  // Indices (^GSPC, ^TA125.TA, ^IXIC, ...) — and, more broadly, ETFs,
+  // mutual funds, commodities, currency/forex pairs, and crypto — have no
+  // income statement, balance sheet, cash flow, analyst estimates, or
+  // valuation to show; Yahoo simply doesn't carry fundamentals data for any
+  // of these asset classes. Rather than render a tab strip full of empty/
+  // broken panels, hide the fundamentals-shaped UI (tabs + the
+  // P/E-and-margins metrics accordions, equally meaningless here) and show
+  // only the header card and price chart — plus an explicit
+  // NonFundamentalNotice explaining why, below, so this reads as
+  // intentional rather than as a chunk of the page failing to load.
   const isNonFundamental = isNonFundamentalQuote(quote.symbol, quote.quoteType);
 
   return (
@@ -108,7 +111,9 @@ export default async function AnalysisPage({
         <div className="order-1 min-w-0 flex-1 space-y-6 lg:order-2">
           <TickerPriceAndChart initialQuote={quote} history={history} exchange={quote.exchange} />
 
-          {!isNonFundamental && (
+          {isNonFundamental ? (
+            <NonFundamentalNotice symbol={quote.symbol} quoteType={quote.quoteType} />
+          ) : (
             <DataExplorerTabs
               income={income}
               balance={balance}

@@ -105,15 +105,25 @@ const NON_FUNDAMENTAL_QUOTE_TYPES = new Set([
   "CURRENCY",
   "CRYPTOCURRENCY",
   "FUTURE", // Yahoo classifies commodities (GC=F, CL=F, SI=F, ...) as FUTURE, not COMMODITY
+  // QA fix (live report: ETFs like SPCX crashed the fundamentals fetch
+  // entirely — see the quoteSummary .catch() fix in yahoo.ts's
+  // getFundamentals() for the root cause). ETFs and mutual funds hold a
+  // basket of underlying securities rather than filing their own income
+  // statement/balance sheet/cash flow — there's no "Total Revenue" or
+  // "Operating Income" for a fund itself, only for the individual
+  // companies it holds, so a fundamentals tab strip is never meaningful
+  // for these regardless of whether the fetch happens to succeed.
+  "ETF",
+  "MUTUALFUND",
 ]);
 
 /**
  * True for ANY asset class that has no fundamentals to show — not just
- * indices, but commodities, currency/forex pairs, and crypto too. Broadens
- * isIndexQuote() above (kept as-is for anything still calling it directly)
- * with the same "authoritative quoteType first, exact provider-independent
- * symbol shape as a fallback" pattern already proven for isTaseListing/
- * isIndexQuote:
+ * indices, but commodities, currency/forex pairs, crypto, ETFs, and mutual
+ * funds too. Broadens isIndexQuote() above (kept as-is for anything still
+ * calling it directly) with the same "authoritative quoteType first, exact
+ * provider-independent symbol shape as a fallback" pattern already proven
+ * for isTaseListing/isIndexQuote:
  *   - "^..."     index            e.g. ^GSPC, ^TA125.TA, ^IXIC
  *   - "...=X"    currency/forex   e.g. EURUSD=X, ILS=X
  *   - "...=F"    futures/commodity e.g. GC=F, CL=F, SI=F
@@ -121,6 +131,11 @@ const NON_FUNDAMENTAL_QUOTE_TYPES = new Set([
  *                currency code — deliberately narrow so real hyphenated
  *                equity tickers like BRK-B never false-positive, since "B"
  *                isn't a 3-letter currency code)
+ * ETFs and mutual funds have no such provider-independent symbol shape —
+ * SPY, QQQ, SPCX are indistinguishable from an ordinary equity ticker by
+ * spelling alone — so those two rely entirely on quoteType, same as
+ * isTaseListing relies entirely on exchange for OTC-style tickers with no
+ * distinguishing suffix.
  */
 export function isNonFundamentalQuote(
   symbol: string | undefined | null,
@@ -135,4 +150,44 @@ export function isNonFundamentalQuote(
   if (sym.endsWith("=X") || sym.endsWith("=F")) return true;
   if (/-[A-Z]{3}$/.test(sym)) return true;
   return false;
+}
+
+/**
+ * Human-readable asset-class phrase for the "Fundamentals Not Available"
+ * empty state (see NonFundamentalNotice.tsx) shown wherever
+ * isNonFundamentalQuote() is true — explains WHY there's no income
+ * statement/balance sheet/cash flow instead of just silently omitting the
+ * tabs. Mirrors isNonFundamentalQuote's own "quoteType first, symbol shape
+ * as fallback" checks so the two functions never disagree about what a
+ * symbol is. Falls back to a generic phrase for any future quoteType this
+ * app doesn't have specific copy for yet, so the message never reads as
+ * broken even if Yahoo introduces a new asset class.
+ */
+export function nonFundamentalAssetLabel(
+  symbol: string | undefined | null,
+  quoteType: string | undefined | null
+): string {
+  const type = quoteType?.trim().toUpperCase();
+  switch (type) {
+    case "ETF":
+      return "an ETF";
+    case "MUTUALFUND":
+      return "a mutual fund";
+    case "INDEX":
+      return "a market index";
+    case "CRYPTOCURRENCY":
+      return "a cryptocurrency";
+    case "CURRENCY":
+      return "a currency pair";
+    case "COMMODITY":
+    case "FUTURE":
+      return "a commodity";
+  }
+
+  const sym = symbol?.trim().toUpperCase();
+  if (sym?.startsWith("^")) return "a market index";
+  if (sym?.endsWith("=X")) return "a currency pair";
+  if (sym?.endsWith("=F")) return "a commodity";
+  if (sym && /-[A-Z]{3}$/.test(sym)) return "a cryptocurrency";
+  return "a non-operating security";
 }

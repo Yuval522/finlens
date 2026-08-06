@@ -1225,33 +1225,56 @@ export async function getFundamentals(symbolRaw: string): Promise<FundamentalsBu
         fmpCashFlowRowsQuarterly,
       ] = await Promise.all([
         getQuotes([symbol]),
-        yahooFinance.quoteSummary(symbol, {
-          modules: [
-            "assetProfile",
-            "summaryDetail",
-            "defaultKeyStatistics",
-            "financialData",
-            // Analyst consensus (Phase 5: Estimates tab). Not on Yahoo's
-            // deprecated-module list and has no hardcoded-null fields —
-            // see toEstimates() doc comment for the real-world caveat that
-            // this typically only returns a handful of near-term periods.
-            "earningsTrend",
-            // Real trailing EPS actual/estimate/surprise (~4 quarters) —
-            // used to give the Estimates tab genuine historical beat/miss
-            // rows on the live path. See toEstimates() doc comment.
-            "earningsHistory",
-            // Buy/Hold/Sell analyst-rating counts (Estimates tab price
-            // targets card) — see toPriceTargets() doc comment. The price
-            // targets themselves (mean/high/low/median) come from
-            // financialData above, already fetched.
-            "recommendationTrend",
-            // Next/most-recent earnings-call date — powers the
-            // earnings-aware cache bypass below (getEarningsFreshnessEpoch).
-            // Fetched here too (not just in the lightweight probe) so the
-            // full bundle's own `summary` carries it for any future UI use.
-            "calendarEvents",
-          ],
-        }),
+        // QA fix (live report: ETFs like SPCX threw a generic "Unable to
+        // load fundamentals" error instead of loading at all): several of
+        // these modules are equity-only — an ETF/fund has no earnings
+        // calls, no analyst coverage, and no "financialData" income
+        // figures, so Yahoo's response for "earningsTrend"/"earningsHistory"/
+        // "recommendationTrend"/"financialData" on a non-equity quoteType
+        // fails the yahoo-finance2 library's own response validation and
+        // REJECTS THE WHOLE quoteSummary() CALL — unlike every other fetch
+        // in this Promise.all (balanceRows, cashFlowRows, incomeRows, ...
+        // all already end in their own `.catch(() => [])`), this one had no
+        // per-call catch, so that single rejection took down the entire
+        // Promise.all and the outer try/catch's generic MarketDataError
+        // fired for a symbol that actually has a perfectly good quote and
+        // price history to show. Every consumer of `summary` below already
+        // reads it defensively (summary.assetProfile, summary.financialData,
+        // etc. are all immediately optional-chained one level down — see
+        // e.g. toIncomeRows, toEstimates, toPriceTargets, the assetProfile
+        // destructure below), so falling back to an empty-but-correctly-
+        // typed object here is safe: every module just reads as "not
+        // present" instead of crashing, exactly like it already does for a
+        // module Yahoo genuinely omits for some other equity ticker.
+        yahooFinance
+          .quoteSummary(symbol, {
+            modules: [
+              "assetProfile",
+              "summaryDetail",
+              "defaultKeyStatistics",
+              "financialData",
+              // Analyst consensus (Phase 5: Estimates tab). Not on Yahoo's
+              // deprecated-module list and has no hardcoded-null fields —
+              // see toEstimates() doc comment for the real-world caveat that
+              // this typically only returns a handful of near-term periods.
+              "earningsTrend",
+              // Real trailing EPS actual/estimate/surprise (~4 quarters) —
+              // used to give the Estimates tab genuine historical beat/miss
+              // rows on the live path. See toEstimates() doc comment.
+              "earningsHistory",
+              // Buy/Hold/Sell analyst-rating counts (Estimates tab price
+              // targets card) — see toPriceTargets() doc comment. The price
+              // targets themselves (mean/high/low/median) come from
+              // financialData above, already fetched.
+              "recommendationTrend",
+              // Next/most-recent earnings-call date — powers the
+              // earnings-aware cache bypass below (getEarningsFreshnessEpoch).
+              // Fetched here too (not just in the lightweight probe) so the
+              // full bundle's own `summary` carries it for any future UI use.
+              "calendarEvents",
+            ],
+          })
+          .catch(() => ({}) as QuoteSummaryResult),
         yahooFinance.chart(symbol, { period1, interval: "1d" }),
         // Balance sheet data comes from a separate top-level method, not a
         // quoteSummary module (see toBalanceYears() doc comment). Caught
