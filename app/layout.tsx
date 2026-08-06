@@ -15,7 +15,12 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0F131A",
+  // QA update (new logo branding pass): matches manifest.json's theme_color
+  // — the dark charcoal from the new finlens-mark artwork — so the browser
+  // chrome (mobile address bar tint, installed-PWA title bar) and the
+  // manifest-driven "add to home screen" appearance stay in sync instead
+  // of showing two slightly different near-black shades.
+  themeColor: "#1A1A1A",
   width: "device-width",
   initialScale: 1,
 };

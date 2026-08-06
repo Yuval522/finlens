@@ -13,20 +13,20 @@ interface FinLensLogoProps {
 
 // Native asset dimensions (public/finlens-mark.png) — used to keep the
 // emblem's aspect ratio correct at any requested `size`.
-const MARK_NATIVE_WIDTH = 291;
-const MARK_NATIVE_HEIGHT = 269;
+const MARK_NATIVE_WIDTH = 201;
+const MARK_NATIVE_HEIGHT = 132;
 
 /**
- * FinLens brand emblem — the user's uploaded logo artwork (a chrome
- * magnifying glass over an ascending candlestick pattern), lifted from
- * public/finlens-mark.png. The source file ships as a large flattened
- * mockup (icon + outlined wordmark on an opaque brushed-metal panel);
- * the icon alone was isolated onto a transparent background so it reads
- * correctly on this app's dark slate theme instead of showing a gray box.
- * See public/finlens-mark.png provenance note below the component.
- * The "FinLens" wordmark stays as crisp gradient text (rather than the
- * source file's embossed outline text) so it stays legible at nav-bar
- * sizes and matches the app's cyan/emerald brand gradient.
+ * FinLens brand emblem — the 2026 rebrand's blue-to-teal waveform/pulse
+ * icon, lifted from public/finlens-mark.png. The source file ships as a
+ * flattened lockup (icon + "finlens" wordmark + tagline centered on an
+ * opaque dark-charcoal panel); the icon alone was isolated onto a
+ * transparent background so it reads correctly on this app's dark theme
+ * instead of showing a solid rectangle. See public/finlens-mark.png
+ * provenance note below the component. The "FinLens" wordmark stays as
+ * crisp gradient text (rather than rasterizing the source artwork's own
+ * wordmark) so it stays legible at nav-bar sizes and matches the app's
+ * cyan/emerald brand gradient.
  */
 export function FinLensLogo({
   size = 32,
@@ -60,11 +60,17 @@ export function FinLensLogo({
 
 /**
  * Provenance: public/finlens-mark.png was derived from the user-uploaded
- * logo.png (a 1536x1024 mockup render — icon + outlined wordmark centered
- * on an opaque brushed-metal gradient panel). The icon was isolated via
- * local-contrast edge detection + enclosed-region fill (not simple color
- * keying, since the icon's own chrome tones are close to the background
- * gray) to produce a clean transparent-background PNG suitable for a dark
- * UI. The original upload is left untouched at the project root
- * (logo.png) for reference.
+ * 1024x559 logo lockup (waveform/pulse icon + "finlens" wordmark + "Intuitive
+ * & Fast" tagline, centered on an opaque dark-charcoal panel). The icon
+ * alone was isolated by comparing the source against a heavily blurred
+ * copy of itself (the blur estimates the panel's own smooth vignette while
+ * washing out its fine brushed-texture grain) and keeping only pixels
+ * BRIGHTER than that local background — the icon's blue/teal gradient
+ * glyph is brighter than its surroundings, while the artwork's soft drop
+ * shadow beneath the icon is darker, so this signed comparison (rather
+ * than a plain color-distance threshold) keeps the glyph crisp without
+ * dragging the shadow along as a gray smudge. Also used, at square
+ * app-icon sizes on a solid #1A1A1A panel, for public/icons/icon-192.png,
+ * public/icons/icon-512.png, app/icon.png (favicon), and app/apple-icon.png
+ * — see manifest.json and app/layout.tsx.
  */
