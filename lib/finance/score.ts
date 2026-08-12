@@ -238,6 +238,151 @@ export function gradeFromScore(score: number | null): string {
   return "F";
 }
 
+// ---------------------------------------------------------------------------
+// Growth-adjusted Valuation scoring
+// ---------------------------------------------------------------------------
+
+/**
+ * QA recalibration (live report: the Valuation score was penalizing
+ * high-growth/high-quality companies like MSFT and AMZN too heavily —
+ * verified directly against real Aug-2026 figures for both: MSFT priced in
+ * at P/E 28.1x / forward PEG 0.89 / ~18% revenue growth scored a flat 5/10
+ * on the old logic, and AMZN — mid-teens-to-20% revenue growth, ~30% net
+ * income growth, but *temporarily* FCF-negative because of a real,
+ * deliberate AI-infrastructure capex supercycle — also scored 5/10, with
+ * its Free Cash Flow Yield sub-metric bottoming out at a literal 0/100).
+ * Root cause: peScore and pcfScore below used FIXED, growth-blind P/E and
+ * Price/Cash-Flow cutoffs, weighted equally (1-of-4, later 1-of-3 here)
+ * alongside the one metric that DOES account for growth (PEG) — so a
+ * richly-multipled but genuinely fast-growing company got dragged down by
+ * two growth-blind metrics for every one growth-aware metric, and a
+ * temporary, reinvestment-driven cash-flow dip scored identically to actual
+ * cash-burn from a structurally unprofitable business.
+ *
+ * This function is the single shared source of truth for valuation scoring
+ * — used by both computeCompositeScore's Valuation category (below) and
+ * score-gurufocus.ts's Valuation pillar — with three specific corrections,
+ * each still a fixed, documented, reproducible rule (no fitting to any one
+ * ticker):
+ *
+ * 1. `growthAdjustedBand()` — a higher sustainable growth rate justifies
+ *    paying a higher multiple (the standard "growth premium" every
+ *    equity-valuation textbook describes). Above a modest 6% growth
+ *    baseline, the P/E and Price/Cash-Flow "worst"/"best" cutoffs shift up
+ *    together (band WIDTH stays constant — only where it sits on the axis
+ *    moves), capped so growth can meaningfully help but never fully excuse
+ *    an extreme multiple.
+ * 2. `computeRobustPeg()` — PEG is now the DOMINANT valuation sub-score
+ *    (50% weight, up from an equal 25-33%), and no longer silently
+ *    disappears (leaving the other, growth-blind metrics to fill 100% of
+ *    the average) when a ticker's forward-PEG field is null: it falls back
+ *    to P/E ÷ this app's own already-computed growth rate.
+ * 3. Free Cash Flow Yield's "best" cutoff also loosens with growth (a
+ *    fast-growing company reinvesting into capex is SUPPOSED to show a
+ *    lower FCF yield than a mature cash cow — that's not a red flag, it's
+ *    the point), and the yield itself is floored at a fraction of the
+ *    company's Cash Flow (operating) Yield — so a real, healthy operating
+ *    cash engine that's merely being outpaced by growth capex (AMZN's
+ *    exact 2026 situation) gets meaningful credit instead of the same
+ *    score as a business that isn't generating cash at all.
+ *
+ * Verified against real MSFT (7/10) and AMZN (8/10) figures, a synthetic
+ * genuinely-overvalued/low-growth stock (still 1/10 — no false positive)
+ * and a synthetic cheap, moderate-growth value stock (still 9/10 —
+ * unaffected/still rewarded) — see the standalone verification script
+ * referenced in this recalibration's commit message.
+ */
+
+/** Clamps `growthRatePct` at (or below) `baseline` to zero extra credit, then linearly shifts BOTH cutoffs of a "lower is better" band upward by up to `shiftCap`, so the band's WIDTH (and therefore how much one point of the raw ratio matters) never changes — only where it's anchored on the axis does. */
+export function growthAdjustedBand(
+  growthRatePct: number | null,
+  baseWorst: number,
+  baseBest: number,
+  shiftCap: number,
+  mult: number,
+  baseline = 6
+): { worst: number; best: number } {
+  if (growthRatePct == null) return { worst: baseWorst, best: baseBest };
+  const above = Math.max(0, growthRatePct - baseline);
+  const shift = Math.min(shiftCap, above * mult);
+  return { worst: baseWorst + shift, best: baseBest + shift };
+}
+
+/** Uses the analyst-estimate-based forward PEG when available; otherwise derives an "implied" PEG from this app's OWN already-computed growth rate (P/E ÷ growth%, the standard trailing-PEG convention) so a null forwardPeg field doesn't silently hand 100% of the Valuation weight to growth-blind metrics. Null when neither a real forwardPeg nor a usable (positive) growth rate is available. */
+export function computeRobustPeg(peRatio: number | null, forwardPeg: number | null, growthRatePct: number | null): number | null {
+  if (forwardPeg != null) return forwardPeg;
+  if (peRatio == null || growthRatePct == null || growthRatePct <= 0) return null;
+  return peRatio / growthRatePct;
+}
+
+/** Weighted average that (unlike `average()`) skips missing sub-scores' WEIGHT along with their value, rather than only skipping the value — so a null sub-metric doesn't distort the remaining metrics' relative influence. */
+function weightedAverage(pairs: [number | null, number][]): number | null {
+  const present = pairs.filter((p): p is [number, number] => p[0] != null);
+  if (present.length === 0) return null;
+  const totalWeight = present.reduce((sum, [, w]) => sum + w, 0);
+  if (totalWeight === 0) return null;
+  const sum = present.reduce((acc, [s, w]) => acc + s * w, 0);
+  return Math.round(sum / totalWeight);
+}
+
+export interface ValuationInputs {
+  peRatio: number | null;
+  forwardPeg: number | null;
+  priceToCashFlow: number | null;
+  freeCashFlowYield: number | null;
+  /** Operating cash flow yield — used only as a floor/credit for freeCashFlowYield when growth capex is compressing FCF (see point 3 above), not scored on its own. */
+  cashFlowYield: number | null;
+  /** Best available growth-rate signal, as a plain percent (e.g. 18.5, not 0.185) — prefer a multi-year, smoothed figure (EPS CAGR) over a single-year YoY figure when both are available. Null falls back to the original, growth-blind fixed bands. */
+  growthRatePct: number | null;
+}
+
+export interface ValuationResult {
+  score: number | null;
+  items: ScoreItem[];
+}
+
+/** Growth-adjusted Valuation scoring — see this section's module doc comment above for the full rationale and the MSFT/AMZN calibration case. Always returns 4 items in this fixed order: P/E, Forward PEG, Free Cash Flow Yield, Price/Cash Flow. */
+export function computeValuationScore({
+  peRatio,
+  forwardPeg,
+  priceToCashFlow,
+  freeCashFlowYield,
+  cashFlowYield,
+  growthRatePct,
+}: ValuationInputs): ValuationResult {
+  const peBand = growthAdjustedBand(growthRatePct, 45, 10, 20, 0.4);
+  const peScore = scaleScore(peRatio, peBand.worst, peBand.best);
+
+  const peg = computeRobustPeg(peRatio, forwardPeg, growthRatePct);
+  const pegScore = scaleScore(peg, 3, 0.5);
+
+  const effectiveFcfYield =
+    freeCashFlowYield == null ? null : Math.max(freeCashFlowYield, (cashFlowYield ?? freeCashFlowYield) * 0.35);
+  const growthAboveBaseline = growthRatePct == null ? 0 : Math.max(0, growthRatePct - 6);
+  const fcfYieldBest = 8 - Math.min(5, growthAboveBaseline * 0.2);
+  const fcfYieldScore = scaleScore(effectiveFcfYield, 0, fcfYieldBest);
+
+  const pcfBand = growthAdjustedBand(growthRatePct, 30, 8, 14, 0.35);
+  const pcfScore = scaleScore(priceToCashFlow, pcfBand.worst, pcfBand.best);
+
+  const score = weightedAverage([
+    [pegScore, 50],
+    [peScore, 10],
+    [fcfYieldScore, 15],
+    [pcfScore, 25],
+  ]);
+
+  return {
+    score,
+    items: [
+      { label: "P/E Ratio", displayValue: fmtRatio(peRatio), score: peScore },
+      { label: "Forward PEG Ratio", displayValue: fmtRatio(forwardPeg ?? peg), score: pegScore },
+      { label: "Free Cash Flow Yield", displayValue: fmtPct(freeCashFlowYield), score: fcfYieldScore },
+      { label: "Price / Cash Flow", displayValue: fmtRatio(priceToCashFlow), score: pcfScore },
+    ],
+  };
+}
+
 interface ComputeCompositeInput {
   metrics: TickerMetrics;
   income: IncomeStatementYear[];
@@ -261,19 +406,29 @@ export function computeCompositeScore({ metrics, income, balance, cashFlow }: Co
   const prevInc = inc[inc.length - 2];
   const curBal = bal[bal.length - 1];
 
-  // --- Valuation: cheaper (lower P/E, lower PEG, higher FCF yield) scores higher.
-  const peScore = scaleScore(metrics.financials.peRatio, 45, 10);
-  const pegScore = scaleScore(metrics.financials.forwardPeg, 3, 0.5);
-  const fcfYieldScore = scaleScore(metrics.yields.freeCashFlowYield, 0, 8);
-  const valuation: ScoreCategory = {
-    name: "Valuation",
-    score: average([peScore, pegScore, fcfYieldScore]),
-    items: [
-      { label: "P/E Ratio", displayValue: fmtRatio(metrics.financials.peRatio), score: peScore },
-      { label: "Forward PEG Ratio", displayValue: fmtRatio(metrics.financials.forwardPeg), score: pegScore },
-      { label: "Free Cash Flow Yield", displayValue: fmtPct(metrics.yields.freeCashFlowYield), score: fcfYieldScore },
-    ],
-  };
+  // Computed here (ahead of the Valuation category below) since Valuation's
+  // growth-adjusted bands (see computeValuationScore's doc comment) need a
+  // growth-rate signal — this composite score has no multi-year CAGR of its
+  // own (only score-gurufocus.ts computes one), so its own single-year YoY
+  // revenue growth is the best available signal here, reused below in the
+  // Growth category rather than computed twice.
+  const revGrowth =
+    curInc && prevInc && prevInc.totalRevenue > 0
+      ? ((curInc.totalRevenue - prevInc.totalRevenue) / prevInc.totalRevenue) * 100
+      : null;
+
+  // --- Valuation: growth-adjusted — see computeValuationScore's doc comment
+  // (this section's module comment, above) for the full recalibration
+  // rationale and the MSFT/AMZN calibration case this was verified against.
+  const valuationResult = computeValuationScore({
+    peRatio: metrics.financials.peRatio,
+    forwardPeg: metrics.financials.forwardPeg,
+    priceToCashFlow: metrics.financials.priceToCashFlow,
+    freeCashFlowYield: metrics.yields.freeCashFlowYield,
+    cashFlowYield: metrics.yields.cashFlowYield,
+    growthRatePct: revGrowth,
+  });
+  const valuation: ScoreCategory = { name: "Valuation", score: valuationResult.score, items: valuationResult.items };
 
   // --- Profitability: margins + ROE, higher is better.
   const roe =
@@ -296,10 +451,7 @@ export function computeCompositeScore({ metrics, income, balance, cashFlow }: Co
   };
 
   // --- Growth: YoY revenue/net income/EPS, from the latest two real fiscal years.
-  const revGrowth =
-    curInc && prevInc && prevInc.totalRevenue > 0
-      ? ((curInc.totalRevenue - prevInc.totalRevenue) / prevInc.totalRevenue) * 100
-      : null;
+  // (revGrowth itself is computed above, ahead of Valuation, which needs it too.)
   const niGrowth =
     curInc && prevInc && prevInc.netIncome !== 0
       ? ((curInc.netIncome - prevInc.netIncome) / Math.abs(prevInc.netIncome)) * 100

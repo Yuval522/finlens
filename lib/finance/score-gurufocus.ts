@@ -1,5 +1,5 @@
 import { splitTrailingRow } from "./chart-transform";
-import { average, computePiotroskiScore, fmtPct, fmtRatio, scaleScore } from "./score";
+import { average, computePiotroskiScore, computeValuationScore, fmtPct, fmtRatio, scaleScore } from "./score";
 import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear, PricePoint, TickerMetrics } from "./types";
 
 /**
@@ -263,29 +263,36 @@ export function computeGuruFocusRating({
     ],
   };
 
-  // --- Valuation: cheaper scores higher, same direction as score.ts's own
-  // Valuation category, with Price/Cash Flow added. GuruFocus's real GF
+  // --- Valuation: growth-adjusted — see score.ts's computeValuationScore
+  // doc comment for the full recalibration rationale (live report: MSFT and
+  // AMZN both scored a flat 5/10 here under the old fixed-cutoff logic
+  // despite ~18-20% and ~16-30% growth respectively — verified against real
+  // Aug-2026 figures for both, now 7/10 and 8/10). Uses the Growth pillar's
+  // own multi-year EPS CAGR as the growth-rate signal (falling back to the
+  // single-year YoY figure), since that's the more representative,
+  // less-noisy signal this file already computes for its Growth pillar —
+  // score.ts's own composite score uses its own YoY figure instead, since
+  // it doesn't compute a multi-year CAGR of its own. GuruFocus's real GF
   // Value is a proprietary fair-value regression this app can't reproduce
-  // without their model, so this pillar reports relative cheapness across
-  // four independent multiples/yields instead of a specific fair-value
-  // price target.
-  const peScore = scaleScore(metrics.financials.peRatio, 45, 10);
-  const pegScore = scaleScore(metrics.financials.forwardPeg, 3, 0.5);
-  const fcfYieldScore = scaleScore(metrics.yields.freeCashFlowYield, 0, 8);
-  const pcfScore = scaleScore(metrics.financials.priceToCashFlow, 30, 8);
-  const valuationScore = average([peScore, pegScore, fcfYieldScore, pcfScore]);
+  // without their model, so this pillar reports relative, growth-adjusted
+  // cheapness across four independent multiples/yields instead of a
+  // specific fair-value price target.
+  const valuationResult = computeValuationScore({
+    peRatio: metrics.financials.peRatio,
+    forwardPeg: metrics.financials.forwardPeg,
+    priceToCashFlow: metrics.financials.priceToCashFlow,
+    freeCashFlowYield: metrics.yields.freeCashFlowYield,
+    cashFlowYield: metrics.yields.cashFlowYield,
+    growthRatePct: epsCagr ?? revGrowthYoY,
+  });
+  const valuationScore = valuationResult.score;
   const valuationRank = rankFromScore(valuationScore);
   const valuation: GuruPillar = {
     name: "Valuation",
     rank: valuationRank,
     explanation:
-      "How cheap the stock looks across four independent multiples/yields at once rather than any single ratio. GuruFocus's own GF Value line is a proprietary fair-value regression against historical median multiples and analyst estimates — not something this app can reproduce without their model, so this pillar reports relative cheapness instead of a specific fair-value price.",
-    items: [
-      { label: "P/E Ratio", displayValue: fmtRatio(metrics.financials.peRatio), score: peScore },
-      { label: "Forward PEG Ratio", displayValue: fmtRatio(metrics.financials.forwardPeg), score: pegScore },
-      { label: "Free Cash Flow Yield", displayValue: fmtPct(metrics.yields.freeCashFlowYield), score: fcfYieldScore },
-      { label: "Price / Cash Flow", displayValue: fmtRatio(metrics.financials.priceToCashFlow), score: pcfScore },
-    ],
+      "How cheap the stock looks across four independent multiples/yields at once, adjusted for growth — a higher sustainable growth rate justifies a higher P/E, Price/Cash-Flow, and lower FCF yield (the standard 'growth premium'), and the Forward PEG Ratio (P/E divided by growth) carries the most weight of the four for exactly that reason. GuruFocus's real GF Value line is a proprietary fair-value regression against historical median multiples and analyst estimates — not something this app can reproduce without their model, so this pillar reports relative, growth-adjusted cheapness instead of a specific fair-value price.",
+    items: valuationResult.items,
   };
 
   // --- Momentum: trailing 1/6/12-month price return, higher is better.
