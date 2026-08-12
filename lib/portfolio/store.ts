@@ -2,6 +2,14 @@
 
 import { useSyncExternalStore } from "react";
 import { toDisplayUnit } from "@/lib/format/currency";
+import {
+  makeAdjustmentTransaction,
+  makeBuyTransaction,
+  makeCashTransaction,
+  makeSellTransaction,
+  poolForCurrency,
+  type PortfolioTransaction,
+} from "./history";
 
 /**
  * Client-only portfolio store, persisted to localStorage — same rationale
@@ -42,6 +50,20 @@ export interface PortfolioCash {
 interface PortfolioData {
   holdings: PortfolioHolding[];
   cash: PortfolioCash;
+  /**
+   * Transaction-Aware Historical Portfolio Value fix: append-only ledger of
+   * every buy/sell/share-correction/cash-edit, each with a real date — see
+   * lib/portfolio/history.ts's module doc comment for why this exists (the
+   * old "Portfolio Value" chart had no real history to plot, only today's
+   * blended totals, so it faked a straight-line ramp). Populated by
+   * addHolding/sellHolding/updateHolding/updateCash below; never edited or
+   * pruned directly. Defaults to `[]` for both brand-new portfolios and any
+   * pre-existing saved portfolio from before this field existed — see
+   * buildBootstrapTransactions in history.ts for how a holding/cash balance
+   * with no matching ledger entries still gets a real, price-driven history
+   * instead of silently showing $0.
+   */
+  transactions: PortfolioTransaction[];
 }
 
 const STORAGE_KEY = "finlens:portfolio";
@@ -102,9 +124,16 @@ const SEED_DATA: PortfolioData = {
     { symbol: "GBTC", name: "Grayscale Bitcoin Trust", currency: "USD", shares: 20, purchasePrice: 53.29, currentPrice: 53.29, changePercent: 0, dividendYieldPercent: 0, dividendsPaid: 0 },
   ],
   cash: { usd: 0, ils: 0 },
+  // Deliberately empty — see the `transactions` field's doc comment on
+  // PortfolioData. These 11 seeded positions have no real purchase dates
+  // (they came from a one-time trade-blotter screenshot, not a dated
+  // transaction log), so reconstructPortfolioHistory's bootstrap logic
+  // treats all of them as a single as-of-range-start opening position
+  // rather than this array claiming to know dates it doesn't.
+  transactions: [],
 };
 
-const EMPTY_DATA: PortfolioData = { holdings: [], cash: { usd: 0, ils: 0 } };
+const EMPTY_DATA: PortfolioData = { holdings: [], cash: { usd: 0, ils: 0 }, transactions: [] };
 
 let data: PortfolioData = SEED_DATA;
 let hydrated = false;
@@ -126,6 +155,21 @@ function isHolding(value: unknown): value is PortfolioHolding {
   );
 }
 
+function isTransaction(value: unknown): value is PortfolioTransaction {
+  if (!value || typeof value !== "object") return false;
+  const t = value as Record<string, unknown>;
+  return (
+    typeof t.id === "string" &&
+    typeof t.date === "string" &&
+    (t.symbol === null || typeof t.symbol === "string") &&
+    typeof t.sharesDelta === "number" &&
+    typeof t.price === "number" &&
+    (t.pool === "usd" || t.pool === "ils") &&
+    typeof t.cashDelta === "number" &&
+    typeof t.kind === "string"
+  );
+}
+
 function readFromStorage(): PortfolioData | null {
   if (typeof window === "undefined") return null;
   try {
@@ -138,7 +182,8 @@ function readFromStorage(): PortfolioData | null {
       parsed.cash && typeof parsed.cash.usd === "number" && typeof parsed.cash.ils === "number"
         ? { usd: parsed.cash.usd, ils: parsed.cash.ils }
         : { usd: 0, ils: 0 };
-    return { holdings, cash };
+    const transactions = Array.isArray(parsed.transactions) ? parsed.transactions.filter(isTransaction) : [];
+    return { holdings, cash, transactions };
   } catch {
     return null;
   }
@@ -276,7 +321,13 @@ export function addHolding(holding: PortfolioHolding): void {
   } else {
     holdings = [...data.holdings, { ...holding, symbol }];
   }
-  data = { ...data, holdings, cash: { ...data.cash, [pool]: Math.max(0, data.cash[pool] - cost) } };
+  const transaction = makeBuyTransaction(symbol, holding.shares, holding.purchasePrice, holding.currency);
+  data = {
+    ...data,
+    holdings,
+    cash: { ...data.cash, [pool]: Math.max(0, data.cash[pool] - cost) },
+    transactions: [...data.transactions, transaction],
+  };
   persist();
   notify();
 }
@@ -284,7 +335,11 @@ export function addHolding(holding: PortfolioHolding): void {
 export function removeHolding(symbolRaw: string): void {
   ensureHydrated();
   const symbol = symbolRaw.toUpperCase();
-  data = { ...data, holdings: data.holdings.filter((h) => h.symbol !== symbol) };
+  const existing = data.holdings.find((h) => h.symbol === symbol);
+  const transactions = existing
+    ? [...data.transactions, makeAdjustmentTransaction(symbol, -existing.shares, existing.purchasePrice, existing.currency)]
+    : data.transactions;
+  data = { ...data, holdings: data.holdings.filter((h) => h.symbol !== symbol), transactions };
   persist();
   notify();
 }
@@ -314,6 +369,7 @@ export function sellHolding(symbolRaw: string, sharesToSell: number, sellPrice: 
   const proceeds = clampedShares * sellPrice;
   const pool = cashPoolForCurrency(existing.currency);
   const remainingShares = existing.shares - clampedShares;
+  const transaction = makeSellTransaction(symbol, clampedShares, sellPrice, existing.currency);
   data = {
     ...data,
     cash: { ...data.cash, [pool]: data.cash[pool] + proceeds },
@@ -321,6 +377,7 @@ export function sellHolding(symbolRaw: string, sharesToSell: number, sellPrice: 
       remainingShares > 0
         ? data.holdings.map((h) => (h.symbol === symbol ? { ...h, shares: remainingShares } : h))
         : data.holdings.filter((h) => h.symbol !== symbol),
+    transactions: [...data.transactions, transaction],
   };
   persist();
   notify();
@@ -338,6 +395,18 @@ export function sellHolding(symbolRaw: string, sharesToSell: number, sellPrice: 
 export function updateHolding(symbolRaw: string, patch: { shares?: number; purchasePrice?: number }): void {
   ensureHydrated();
   const symbol = symbolRaw.toUpperCase();
+  const existing = data.holdings.find((h) => h.symbol === symbol);
+  const nextShares = patch.shares != null && patch.shares > 0 ? patch.shares : existing?.shares;
+  // Transaction-Aware Historical Portfolio Value fix: a share-count
+  // correction changes what the ledger needs to reconcile to (see
+  // buildBootstrapTransactions in history.ts), so it's logged as a
+  // zero-cash "adjustment" entry — purchasePrice-only edits don't need one,
+  // since reconstructPortfolioHistory prices every date by real historical
+  // closes, never by a holding's stored purchasePrice/cost basis.
+  const transactions =
+    existing && nextShares != null && nextShares !== existing.shares
+      ? [...data.transactions, makeAdjustmentTransaction(symbol, nextShares - existing.shares, patch.purchasePrice ?? existing.purchasePrice, existing.currency)]
+      : data.transactions;
   data = {
     ...data,
     holdings: data.holdings.map((h) =>
@@ -349,6 +418,7 @@ export function updateHolding(symbolRaw: string, patch: { shares?: number; purch
           }
         : h
     ),
+    transactions,
   };
   persist();
   notify();
@@ -366,7 +436,20 @@ export function updateHolding(symbolRaw: string, patch: { shares?: number; purch
  */
 export function updateCash(next: PortfolioCash): void {
   ensureHydrated();
-  data = { ...data, cash: { usd: Math.max(0, next.usd), ils: Math.max(0, next.ils) } };
+  const clamped = { usd: Math.max(0, next.usd), ils: Math.max(0, next.ils) };
+  // Transaction-Aware Historical Portfolio Value fix: log the DELTA (not
+  // the raw new totals) as a dated cash transaction for each pool that
+  // actually changed, so a manual Cash Balance edit (deposit, withdrawal,
+  // or correction) shows up in the ledger reconstruction at the date it
+  // was made instead of silently being absorbed into the bootstrap gap.
+  const usdDelta = clamped.usd - data.cash.usd;
+  const ilsDelta = clamped.ils - data.cash.ils;
+  const transactions = [
+    ...data.transactions,
+    ...(Math.abs(usdDelta) > 1e-9 ? [makeCashTransaction("usd", usdDelta)] : []),
+    ...(Math.abs(ilsDelta) > 1e-9 ? [makeCashTransaction("ils", ilsDelta)] : []),
+  ];
+  data = { ...data, cash: clamped, transactions };
   persist();
   notify();
 }
@@ -436,7 +519,8 @@ export function hydrateFromServer(next: unknown): void {
     cashCandidate && typeof cashCandidate.usd === "number" && typeof cashCandidate.ils === "number"
       ? { usd: cashCandidate.usd, ils: cashCandidate.ils }
       : { usd: 0, ils: 0 };
-  data = candidate ? { holdings, cash } : EMPTY_DATA;
+  const transactions = candidate && Array.isArray(candidate.transactions) ? candidate.transactions.filter(isTransaction) : [];
+  data = candidate ? { holdings, cash, transactions } : EMPTY_DATA;
   hydrated = true;
   persist();
   notify();
@@ -458,6 +542,7 @@ export function usePortfolio() {
   return {
     holdings: snapshot.holdings,
     cash: snapshot.cash,
+    transactions: snapshot.transactions,
     addHolding,
     removeHolding,
     updateCash,

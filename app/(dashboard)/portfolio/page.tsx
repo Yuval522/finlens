@@ -28,7 +28,7 @@ function moneyIls(v: number): string {
 }
 
 function PortfolioContent() {
-  const { holdings, cash, refreshLivePrices } = usePortfolio();
+  const { holdings, cash, transactions, refreshLivePrices } = usePortfolio();
   const [displayCurrency, setDisplayCurrency] = useState<"USD" | "ILS">("USD");
   const [modalOpen, setModalOpen] = useState(false);
   const [cashModalOpen, setCashModalOpen] = useState(false);
@@ -209,7 +209,7 @@ function PortfolioContent() {
       {hasHoldings ? (
         <>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <PortfolioValueChart startValue={totals.totalCostBasis} endValue={totals.totalPositionValue} />
+            <PortfolioValueChart holdings={holdings} cash={cash} transactions={transactions} />
             <AssetAllocationChart holdings={displayHoldings} totalCashUsd={totals.totalCashUsd} />
           </div>
           <HoldingsTable
