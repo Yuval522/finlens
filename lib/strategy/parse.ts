@@ -1,5 +1,13 @@
 import { getAnthropicClient, STRATEGY_PARSE_MODEL } from "@/lib/ai/anthropic";
-import { STRATEGY_METRICS, STRATEGY_OPERATORS, type ParsedStrategy, type StrategyFilter, type StrategyMetric } from "./types";
+import {
+  STRATEGY_METRICS,
+  STRATEGY_OPERATORS,
+  MAX_FILTERS,
+  type ParsedStrategy,
+  type StrategyFilter,
+  type StrategyMetric,
+} from "./types";
+import { parseStrategyMock } from "./mock-parse";
 
 /**
  * Natural-language -> structured filter spec, via Claude's tool-use
@@ -14,7 +22,6 @@ import { STRATEGY_METRICS, STRATEGY_OPERATORS, type ParsedStrategy, type Strateg
  */
 
 const MAX_QUERY_LENGTH = 500;
-const MAX_FILTERS = 6;
 
 const SYSTEM_PROMPT = `You translate a user's plain-language stock screening strategy into a structured filter spec. The user may write in English or Hebrew (or a mix) — understand either, and always write "explanation" back in the SAME language the user wrote in.
 
@@ -125,13 +132,29 @@ function sanitizeParsedStrategy(raw: unknown): ParsedStrategy {
   const explanation = typeof obj.explanation === "string" ? obj.explanation.slice(0, 2000) : "";
   const unsupported = obj.unsupported === true || (filters.length === 0 && !sortBy);
 
-  return { filters, sortBy, sortDirection, limit, explanation, unsupported };
+  return { filters, sortBy, sortDirection, limit, explanation, unsupported, mock: false };
 }
 
 export async function parseStrategy(query: string): Promise<ParsedStrategy> {
   const trimmed = query.trim().slice(0, MAX_QUERY_LENGTH);
   if (!trimmed) {
-    return { filters: [], sortBy: null, sortDirection: null, limit: null, explanation: "", unsupported: true };
+    return { filters: [], sortBy: null, sortDirection: null, limit: null, explanation: "", unsupported: true, mock: false };
+  }
+
+  // Offline/demo fallback: ANTHROPIC_API_KEY isn't configured in this
+  // environment at all (a deploy/dev-environment gap, not a per-request
+  // failure) -- rather than fail every request with a "not configured
+  // yet" error, fall back to a local, keyword-based parser (mock-parse.ts)
+  // so the rest of the Strategy Builder (execution engine, results table,
+  // transparency panel) can still be exercised end-to-end without a live
+  // key. This check is deliberately on the *environment* up front, not on
+  // catching the client-construction error below -- a key that's PRESENT
+  // but invalid/revoked/rate-limited must still surface as a real, loud
+  // StrategyParseError via the try/catch below, never silently degrade to
+  // keyword-matching in a way that could mask a genuine production
+  // incident once a key is actually configured.
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return parseStrategyMock(trimmed);
   }
 
   // Everything that can fail before we have a validated ParsedStrategy in

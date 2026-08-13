@@ -36,6 +36,9 @@ export type StrategyMetric = (typeof STRATEGY_METRICS)[number];
 export const STRATEGY_OPERATORS = ["gt", "gte", "lt", "lte", "eq"] as const;
 export type StrategyOperator = (typeof STRATEGY_OPERATORS)[number];
 
+/** Shared cap on filter count, used by both the real parser's sanitizeParsedStrategy (lib/strategy/parse.ts) and the offline fallback parser (lib/strategy/mock-parse.ts) — kept here, a dependency-free module, so those two never need to import from each other just for this constant. */
+export const MAX_FILTERS = 6;
+
 export interface StrategyFilter {
   metric: StrategyMetric;
   operator: StrategyOperator;
@@ -64,6 +67,19 @@ export interface ParsedStrategy {
    * of running an empty screen.
    */
   unsupported: boolean;
+  /**
+   * True when this ParsedStrategy came from lib/strategy/mock-parse.ts's
+   * offline keyword parser instead of a real Claude tool-use call —
+   * always because ANTHROPIC_API_KEY isn't configured in this
+   * environment (see parseStrategy in lib/strategy/parse.ts). The UI
+   * (app/(dashboard)/strategy/page.tsx) shows an explicit "offline demo
+   * mode" indicator whenever this is true, so a simplified
+   * keyword-matched result is never mistaken for genuine Claude-parsed
+   * natural language understanding — same "never silently fake data"
+   * principle this codebase applies everywhere else (see e.g.
+   * lib/finance/mock-data.ts's `source: "mock"` tagging).
+   */
+  mock: boolean;
 }
 
 export interface StrategyResultRow {

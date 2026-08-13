@@ -131,12 +131,31 @@ export default function StrategyBuilderPage() {
         <>
           {/* Generated filtering logic — transparency panel, shown regardless of result count */}
           <div className="glass-card space-y-3 rounded-xl p-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              What we understood
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                What we understood
+              </h2>
+              {response.parsed.mock && (
+                <span
+                  title="ANTHROPIC_API_KEY isn't configured — filters below were matched by a local keyword parser, not by Claude."
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-400"
+                >
+                  <Sparkles className="h-3 w-3" />
+                  Offline demo mode
+                </span>
+              )}
+            </div>
             <p dir="auto" className="text-sm text-foreground">
               {response.parsed.explanation || "No explanation returned."}
             </p>
+            {response.parsed.mock && (
+              <p className="text-xs text-muted-foreground">
+                No live Anthropic API key is configured, so this ran through a simplified local keyword matcher
+                instead of Claude — good enough to try the interface, but it won&apos;t understand phrasing the
+                real model would. Add <code className="font-mono">ANTHROPIC_API_KEY</code> to enable full natural
+                language parsing.
+              </p>
+            )}
             {response.parsed.filters.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {response.parsed.filters.map((f, i) => (
