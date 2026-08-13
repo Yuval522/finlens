@@ -109,6 +109,52 @@ function technicalMetricValue(values: TechnicalValues, metric: StrategyMetric): 
   }
 }
 
+/**
+ * Stage 2 fires one getPriceHistory() call per lookup target — each a real
+ * Yahoo chart() network request (lib/finance/yahoo.ts). This used to fire
+ * all of them at once via a single Promise.all across up to
+ * MAX_TECHNICAL_LOOKUPS (60) symbols. Against an unofficial, unauthenticated
+ * endpoint, a 60-way concurrent burst from one serverless invocation is a
+ * realistic way to trip Yahoo's own rate limiting — and because
+ * getPriceHistory catches its own errors and returns `[]` rather than
+ * throwing (by design, so one bad symbol can't fail an entire screener
+ * run — see that function's doc comment), a burst-triggered wave of
+ * failures wouldn't surface as an error anywhere: every technical filter
+ * would just quietly evaluate against `null` data for every symbol
+ * (missing data never matches, per passesFilter) and the run would return
+ * zero results with a normal 200 response — indistinguishable from "no
+ * stocks genuinely match" from the API's perspective. This runs the
+ * lookups in smaller sequential batches instead, which cuts the peak
+ * burst size and gives Yahoo's endpoint (and this function's per-symbol
+ * timeout race) breathing room, while still completing well within one
+ * request's lifetime for a universe this size.
+ */
+const TECHNICAL_LOOKUP_BATCH_SIZE = 12;
+
+async function computeTechnicalValuesBatched(
+  symbols: string[]
+): Promise<{ bySymbol: Map<string, TechnicalValues>; failedCount: number }> {
+  const bySymbol = new Map<string, TechnicalValues>();
+  let failedCount = 0;
+  for (let i = 0; i < symbols.length; i += TECHNICAL_LOOKUP_BATCH_SIZE) {
+    const batch = symbols.slice(i, i + TECHNICAL_LOOKUP_BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (symbol) => ({ symbol, values: await computeTechnicalValues(symbol) }))
+    );
+    for (const { symbol, values } of results) {
+      bySymbol.set(symbol, values);
+      // A lookup that returned every field null almost always means
+      // getPriceHistory silently came back empty for this symbol (rate
+      // limit, timeout, or a genuinely delisted/renamed ticker) rather
+      // than "this stock has flat/undefined technicals" — real price
+      // history essentially never produces null RSI/SMA-vs-price for a
+      // liquid, actively-traded universe symbol.
+      if (values.rsi14 == null && values.priceVsSma50 == null && values.priceVsSma200 == null) failedCount++;
+    }
+  }
+  return { bySymbol, failedCount };
+}
+
 export async function executeStrategy(parsed: ParsedStrategy): Promise<StrategyRunResult> {
   const quoteFilters = parsed.filters.filter((f) => QUOTE_METRICS.has(f.metric));
   const technicalFilters = parsed.filters.filter((f) => TECHNICAL_METRICS.has(f.metric));
@@ -119,13 +165,33 @@ export async function executeStrategy(parsed: ParsedStrategy): Promise<StrategyR
   let survivors = quotes.filter((q) => quoteFilters.every((f) => passesFilter(quoteMetricValue(q, f.metric), f)));
 
   // --- Stage 2: technical filters, only for stage-1 survivors, capped ---
-  const technicalBySymbol = new Map<string, TechnicalValues>();
+  let technicalBySymbol = new Map<string, TechnicalValues>();
   if (needsTechnical) {
-    const lookupTargets = survivors.slice(0, MAX_TECHNICAL_LOOKUPS);
-    const computed = await Promise.all(
-      lookupTargets.map(async (q) => ({ symbol: q.symbol, values: await computeTechnicalValues(q.symbol) }))
-    );
-    for (const { symbol, values } of computed) technicalBySymbol.set(symbol, values);
+    // Prioritize by market cap descending before applying the
+    // MAX_TECHNICAL_LOOKUPS cap — STRATEGY_UNIVERSE_SYMBOLS is grouped by
+    // GICS sector (Technology first, then Financials, ...), so slicing
+    // stage-1 survivors in their raw list order silently gave near-total
+    // Technology-sector coverage and near-zero coverage everywhere else
+    // whenever survivors exceeded the cap, an accident of list ordering
+    // rather than a deliberate relevance choice. Largest-first ensures the
+    // symbols that get a technical lookup are consistently the most
+    // liquid/relevant ones regardless of which sectors happen to survive
+    // stage 1, or how STRATEGY_UNIVERSE_SYMBOLS happens to be ordered.
+    const prioritized = [...survivors].sort((a, b) => (b.marketCap ?? 0) - (a.marketCap ?? 0));
+    const lookupTargets = prioritized.slice(0, MAX_TECHNICAL_LOOKUPS);
+    const { bySymbol, failedCount } = await computeTechnicalValuesBatched(lookupTargets.map((q) => q.symbol));
+    technicalBySymbol = bySymbol;
+
+    if (lookupTargets.length > 0 && failedCount / lookupTargets.length > 0.5) {
+      // Loud, specific, and actionable — this is exactly the failure mode
+      // that otherwise looks identical to "nothing matched" from the
+      // outside (see this function's doc comment above).
+      console.warn(
+        `[FinLens] executeStrategy — ${failedCount}/${lookupTargets.length} technical (RSI/SMA) lookups came back ` +
+          "with no data, likely Yahoo rate-limiting this batch rather than a genuine lack of matches. " +
+          "Technical filter results for this run may be artificially low."
+      );
+    }
 
     // Symbols beyond the cap never got a technical lookup — they can't
     // possibly satisfy a technical filter (missing data never matches,

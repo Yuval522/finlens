@@ -50,6 +50,17 @@ export async function POST(request: Request) {
     }
 
     const run = await executeStrategy(parsed);
+    // Success-path visibility: every failure mode on this route already
+    // logs loudly (StrategyParseError, MarketDataError, dbErrorJson below),
+    // but a run that completes normally with zero matches looked
+    // identical in server logs whether that was a genuinely empty result
+    // or a silent upstream data failure (see execute.ts's own diagnostic
+    // for the specific technical-lookup case). This makes every run's
+    // funnel counts visible regardless of outcome.
+    console.log(
+      `[FinLens] POST /api/strategy — ${run.results.length}/${run.universeSize} matched ` +
+        `(filters=${JSON.stringify(parsed.filters)}, sortBy=${parsed.sortBy}, mock=${parsed.mock})`
+    );
     return noStoreJson(run);
   } catch (err) {
     if (err instanceof StrategyParseError) {
