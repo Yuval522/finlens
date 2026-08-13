@@ -264,15 +264,37 @@ export function ScorePanel({
   quoteCurrency,
 }: ScorePanelProps) {
   const [model, setModel] = useState<RatingModel>("composite");
-  const composite = computeCompositeScore({ metrics, income, balance, cashFlow });
-  const piotroski = computePiotroskiScore(income, balance, cashFlow, currency);
-  const guru = computeGuruFocusRating({ metrics, income, balance, cashFlow, currency, history });
+  // Computed FIRST, ahead of composite/guru — QA fix (live report: MSFT
+  // showed "Significantly Undervalued" / -20.4% here at the same time its
+  // Valuation score/rank below sat at a mediocre 6/10, because the two were
+  // computed by entirely separate code paths that never talked to each
+  // other). Both scoring calls below now receive this SAME
+  // premiumDiscountPct as an input (see score.ts's ValuationInputs doc
+  // comment), so the Fair Value card and the Valuation score/rank can no
+  // longer visibly contradict each other the way they used to.
   const fairValue = computeFairValueBand({
     income,
     history,
     quotePrice,
     quoteCurrency,
     reportingCurrency: currency,
+  });
+  const composite = computeCompositeScore({
+    metrics,
+    income,
+    balance,
+    cashFlow,
+    fairValueDiscountPct: fairValue?.premiumDiscountPct ?? null,
+  });
+  const piotroski = computePiotroskiScore(income, balance, cashFlow, currency);
+  const guru = computeGuruFocusRating({
+    metrics,
+    income,
+    balance,
+    cashFlow,
+    currency,
+    history,
+    fairValueDiscountPct: fairValue?.premiumDiscountPct ?? null,
   });
   const fairValueHistory = computeFairValueHistory({
     income,

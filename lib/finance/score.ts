@@ -334,6 +334,26 @@ export interface ValuationInputs {
   cashFlowYield: number | null;
   /** Best available growth-rate signal, as a plain percent (e.g. 18.5, not 0.185) — prefer a multi-year, smoothed figure (EPS CAGR) over a single-year YoY figure when both are available. Null falls back to the original, growth-blind fixed bands. */
   growthRatePct: number | null;
+  /**
+   * QA recalibration (live report: MSFT's Fair Value Estimate card showed
+   * "Significantly Undervalued" / -20.4% discount to fair value at the same
+   * time its Valuation score sat at a mediocre 6/10 — the two numbers were
+   * computed by entirely separate code paths (this multiples-only formula
+   * vs. lib/finance/fair-value.ts's growth-adjusted historical-multiple
+   * intrinsic-value model) with no way for one to inform the other, so they
+   * could — and did — visibly contradict each other on the same screen).
+   * `fairValueDiscountPct` is fair-value.ts's own `premiumDiscountPct`:
+   * positive = trading ABOVE fair value (expensive), negative = trading
+   * BELOW it (cheap) — same sign convention, passed straight through by the
+   * caller (see ScorePanel.tsx, which computes the Fair Value band once and
+   * feeds the same number into both this function and the Fair Value
+   * Estimate card, so the two can no longer disagree). Null when there
+   * isn't enough historical price/fundamentals overlap to compute a fair
+   * value estimate at all (recent IPOs, thin coverage) — falls back to the
+   * other four multiples-based sub-scores exactly as before this field
+   * existed, via weightedAverage's existing null-skipping behavior.
+   */
+  fairValueDiscountPct: number | null;
 }
 
 export interface ValuationResult {
@@ -341,7 +361,19 @@ export interface ValuationResult {
   items: ScoreItem[];
 }
 
-/** Growth-adjusted Valuation scoring — see this section's module doc comment above for the full rationale and the MSFT/AMZN calibration case. Always returns 4 items in this fixed order: P/E, Forward PEG, Free Cash Flow Yield, Price/Cash Flow. */
+/**
+ * Growth-adjusted, intrinsic-value-aware Valuation scoring — see this
+ * section's module doc comment above for the growth-adjustment rationale
+ * and the MSFT/AMZN calibration case, and `fairValueDiscountPct`'s own doc
+ * comment just above for the intrinsic-value integration this section adds.
+ * Fair Value Discount and Forward PEG — the two inputs that are actually
+ * growth/intrinsic-value-aware, rather than a raw static multiple — now
+ * carry a combined 65% of the weight (35% + 30%), so a stock this app's own
+ * intrinsic-value model already flags as significantly underpriced can no
+ * longer be simultaneously scored as mediocre by the same Valuation
+ * pillar/category. Always returns 5 items in this fixed order: P/E,
+ * Forward PEG, Free Cash Flow Yield, Price/Cash Flow, Fair Value Discount.
+ */
 export function computeValuationScore({
   peRatio,
   forwardPeg,
@@ -349,6 +381,7 @@ export function computeValuationScore({
   freeCashFlowYield,
   cashFlowYield,
   growthRatePct,
+  fairValueDiscountPct,
 }: ValuationInputs): ValuationResult {
   const peBand = growthAdjustedBand(growthRatePct, 45, 10, 20, 0.4);
   const peScore = scaleScore(peRatio, peBand.worst, peBand.best);
@@ -365,11 +398,20 @@ export function computeValuationScore({
   const pcfBand = growthAdjustedBand(growthRatePct, 30, 8, 14, 0.35);
   const pcfScore = scaleScore(priceToCashFlow, pcfBand.worst, pcfBand.best);
 
+  // +30/-30 band roughly mirrors fair-value.ts's own labelFromPremiumDiscount
+  // buckets (<=-20 "Significantly Undervalued" lands around 83/100 here,
+  // >=+20 "Significantly Overvalued" lands around 17/100) so this
+  // sub-score's magnitude stays intuitively readable against the Fair
+  // Value Estimate card's own qualitative label rather than being an
+  // arbitrarily-scaled number that happens to point the same direction.
+  const fairValueScore = scaleScore(fairValueDiscountPct, 30, -30);
+
   const score = weightedAverage([
-    [pegScore, 50],
+    [fairValueScore, 35],
+    [pegScore, 30],
+    [pcfScore, 15],
     [peScore, 10],
-    [fcfYieldScore, 15],
-    [pcfScore, 25],
+    [fcfYieldScore, 10],
   ]);
 
   return {
@@ -379,6 +421,7 @@ export function computeValuationScore({
       { label: "Forward PEG Ratio", displayValue: fmtRatio(forwardPeg ?? peg), score: pegScore },
       { label: "Free Cash Flow Yield", displayValue: fmtPct(freeCashFlowYield), score: fcfYieldScore },
       { label: "Price / Cash Flow", displayValue: fmtRatio(priceToCashFlow), score: pcfScore },
+      { label: "Fair Value Discount", displayValue: fmtPct(fairValueDiscountPct != null ? -fairValueDiscountPct : null), score: fairValueScore },
     ],
   };
 }
@@ -388,6 +431,8 @@ interface ComputeCompositeInput {
   income: IncomeStatementYear[];
   balance: BalanceSheetYear[];
   cashFlow: CashFlowYear[];
+  /** lib/finance/fair-value.ts's premiumDiscountPct, computed ONCE by the caller (see ScorePanel.tsx) and passed in here — see computeValuationScore's ValuationInputs doc comment for why this must be the exact same number the Fair Value Estimate card shows, not a second, locally-recomputed one. Optional/nullable — every existing caller before this field existed still works, just without the Fair Value Discount sub-score contributing (weightedAverage redistributes its weight to the other four). */
+  fairValueDiscountPct?: number | null;
 }
 
 /**
@@ -399,7 +444,13 @@ interface ComputeCompositeInput {
  * bank vs. a software company," which would need peer-relative benchmarks
  * this app doesn't have.
  */
-export function computeCompositeScore({ metrics, income, balance, cashFlow }: ComputeCompositeInput): CompositeScoreResult {
+export function computeCompositeScore({
+  metrics,
+  income,
+  balance,
+  cashFlow,
+  fairValueDiscountPct = null,
+}: ComputeCompositeInput): CompositeScoreResult {
   const inc = splitTrailingRow(income).historical;
   const bal = splitTrailingRow(balance).historical;
   const curInc = inc[inc.length - 1];
@@ -427,6 +478,7 @@ export function computeCompositeScore({ metrics, income, balance, cashFlow }: Co
     freeCashFlowYield: metrics.yields.freeCashFlowYield,
     cashFlowYield: metrics.yields.cashFlowYield,
     growthRatePct: revGrowth,
+    fairValueDiscountPct,
   });
   const valuation: ScoreCategory = { name: "Valuation", score: valuationResult.score, items: valuationResult.items };
 

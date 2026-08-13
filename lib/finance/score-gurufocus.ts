@@ -112,6 +112,8 @@ interface ComputeGuruInput {
   currency: string;
   /** Daily closes, oldest first — for the Momentum pillar's trailing return calculations. */
   history: PricePoint[];
+  /** lib/finance/fair-value.ts's premiumDiscountPct, computed ONCE by the caller (see ScorePanel.tsx) and passed straight through here — see score.ts's ValuationInputs.fairValueDiscountPct doc comment for why the Valuation pillar must consume the exact same number the Fair Value Estimate card shows, rather than a second, locally-recomputed one that could drift from it. Optional/nullable for the same reason (recent IPOs, thin coverage — falls back to the other four Valuation sub-scores). */
+  fairValueDiscountPct?: number | null;
 }
 
 export function computeGuruFocusRating({
@@ -121,6 +123,7 @@ export function computeGuruFocusRating({
   cashFlow,
   currency,
   history,
+  fairValueDiscountPct = null,
 }: ComputeGuruInput): GuruFocusRatingResult {
   const inc = splitTrailingRow(income).historical;
   const bal = splitTrailingRow(balance).historical;
@@ -263,20 +266,25 @@ export function computeGuruFocusRating({
     ],
   };
 
-  // --- Valuation: growth-adjusted — see score.ts's computeValuationScore
-  // doc comment for the full recalibration rationale (live report: MSFT and
-  // AMZN both scored a flat 5/10 here under the old fixed-cutoff logic
-  // despite ~18-20% and ~16-30% growth respectively — verified against real
-  // Aug-2026 figures for both, now 7/10 and 8/10). Uses the Growth pillar's
-  // own multi-year EPS CAGR as the growth-rate signal (falling back to the
+  // --- Valuation: growth-adjusted AND intrinsic-value-aware — see
+  // score.ts's computeValuationScore doc comment for the full recalibration
+  // rationale. Growth-adjustment history: MSFT and AMZN both scored a flat
+  // 5/10 here under the original fixed-cutoff logic despite ~18-20% and
+  // ~16-30% growth respectively (fixed, now 7/10 and 8/10 on growth-
+  // adjustment alone). Intrinsic-value integration (this pass): MSFT's Fair
+  // Value Estimate card showed "Significantly Undervalued" / -20.4%
+  // discount at the SAME TIME this pillar still showed a mediocre 6/10 —
+  // the two were computed independently with no way to agree with each
+  // other. `fairValueDiscountPct` (fair-value.ts's premiumDiscountPct,
+  // computed once by the caller — see ScorePanel.tsx) now carries the
+  // single largest weight of any Valuation sub-score, so a stock this app's
+  // own intrinsic-value model already flags as significantly underpriced
+  // can no longer be simultaneously scored as mediocre here. Growth rate
+  // uses the Growth pillar's own multi-year EPS CAGR (falling back to the
   // single-year YoY figure), since that's the more representative,
   // less-noisy signal this file already computes for its Growth pillar —
   // score.ts's own composite score uses its own YoY figure instead, since
-  // it doesn't compute a multi-year CAGR of its own. GuruFocus's real GF
-  // Value is a proprietary fair-value regression this app can't reproduce
-  // without their model, so this pillar reports relative, growth-adjusted
-  // cheapness across four independent multiples/yields instead of a
-  // specific fair-value price target.
+  // it doesn't compute a multi-year CAGR of its own.
   const valuationResult = computeValuationScore({
     peRatio: metrics.financials.peRatio,
     forwardPeg: metrics.financials.forwardPeg,
@@ -284,6 +292,7 @@ export function computeGuruFocusRating({
     freeCashFlowYield: metrics.yields.freeCashFlowYield,
     cashFlowYield: metrics.yields.cashFlowYield,
     growthRatePct: epsCagr ?? revGrowthYoY,
+    fairValueDiscountPct,
   });
   const valuationScore = valuationResult.score;
   const valuationRank = rankFromScore(valuationScore);
@@ -291,7 +300,7 @@ export function computeGuruFocusRating({
     name: "Valuation",
     rank: valuationRank,
     explanation:
-      "How cheap the stock looks across four independent multiples/yields at once, adjusted for growth — a higher sustainable growth rate justifies a higher P/E, Price/Cash-Flow, and lower FCF yield (the standard 'growth premium'), and the Forward PEG Ratio (P/E divided by growth) carries the most weight of the four for exactly that reason. GuruFocus's real GF Value line is a proprietary fair-value regression against historical median multiples and analyst estimates — not something this app can reproduce without their model, so this pillar reports relative, growth-adjusted cheapness instead of a specific fair-value price.",
+      "How cheap the stock looks across five signals at once: four independent multiples/yields, each adjusted for growth (a higher sustainable growth rate justifies a higher P/E, Price/Cash-Flow, and lower FCF yield — the standard 'growth premium'), plus this app's own Fair Value Estimate discount/premium (see the band below), which now carries the single largest weight of the five so this rank can't contradict that card. GuruFocus's real GF Value line is a proprietary fair-value regression against historical median multiples and analyst estimates — not something this app can reproduce without their model; the Fair Value Estimate below is FinLens's own independently-derived approximation instead.",
     items: valuationResult.items,
   };
 
