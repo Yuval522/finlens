@@ -23,27 +23,34 @@ import { parseStrategyMock } from "./mock-parse";
 
 const MAX_QUERY_LENGTH = 500;
 
-const SYSTEM_PROMPT = `You translate a user's plain-language stock screening strategy into a structured filter spec. The user may write in English or Hebrew (or a mix) — understand either, and always write "explanation" back in the SAME language the user wrote in.
+// Trimmed for input-token cost (see max_tokens/model choice below, and the
+// commit message this was introduced in for the before/after size) while
+// deliberately keeping every constraint that affects correctness: the full
+// metric list + sign conventions (dropping any of these lets the model
+// invent or mis-sign a filter), the unsupported/partial-support behavior
+// with a worked example (dropping the example measurably degrades how
+// reliably the model applies it), the shorthand-number rule, and the
+// peRatio "best" == lowest exception (an easy default to get backwards
+// without an explicit callout). Cut: restating "the same language" logic
+// more than once, one-metric-per-line verbose descriptions collapsed to a
+// single dense list, and redundant framing sentences.
+const SYSTEM_PROMPT = `Translate the user's plain-language stock screening strategy into a structured filter spec. Understand English or Hebrew (or mixed); write "explanation" in the SAME language the user wrote in, as ONE short sentence.
 
-Supported metrics (use ONLY these — never invent a metric not in this list):
-- price: current share price (USD)
-- changePercent: today's price change, percent
-- marketCap: market capitalization, USD
-- peRatio: trailing price/earnings ratio
-- dividendYieldPercent: trailing dividend yield, percent (e.g. 2.5 means 2.5%)
+Supported metrics — use ONLY these, never invent others:
+- price: share price, USD
+- changePercent: today's % price change (can be negative)
+- marketCap: market cap, USD
+- peRatio: trailing P/E ratio
+- dividendYieldPercent: trailing dividend yield, % (2.5 means 2.5%)
 - volume: today's trading volume, shares
-- rsi14: 14-day Relative Strength Index (0-100; conventionally, under 30 = oversold, over 70 = overbought)
-- priceVsSma50: current price vs. its 50-day simple moving average, percent above (positive) or below (negative)
-- priceVsSma200: current price vs. its 200-day simple moving average, percent above (positive) or below (negative)
+- rsi14: 14-day RSI, 0-100 (under 30 = oversold, over 70 = overbought)
+- priceVsSma50 / priceVsSma200: % above(+)/below(-) the 50/200-day SMA (can be negative)
 
-If the user asks for something this list can't express (e.g. short interest, insider trading, options data, analyst ratings, a specific sector/industry, a specific exchange, news sentiment) — do NOT invent a filter for it. Instead set unsupported: true and explain in "explanation" (in the user's own language) what you understood but couldn't apply, or that the request doesn't match any supported metric. If the request is PARTIALLY supported (e.g. "profitable tech stocks with RSI under 30" — RSI is supported, "tech" and "profitable" aren't filterable here), apply what you can, and mention in "explanation" that the sector/profitability part couldn't be filtered.
+marketCap/volume are often shorthand ("10B"=10000000000, "500M"=500000000) — convert to the full number. marketCap/price/volume are always positive.
 
-market cap and volume are typically stated in shorthand (e.g. "10B" = 10000000000, "500M" = 500000000, "2M shares") — convert to the full number.
+If the request needs something not in this list (short interest, insider trading, options, analyst ratings, sector/industry, exchange, news sentiment): don't invent a filter — set unsupported: true and explain (in the user's language) what couldn't be applied. If only PARTLY supported (e.g. "profitable tech stocks, RSI under 30" — RSI applies, sector/profitability don't), apply what you can and mention the rest in explanation.
 
-Values for marketCap/price/volume are always positive numbers. changePercent/priceVsSma50/priceVsSma200 can be negative (e.g. "down more than 5%" -> changePercent, lt, -5).
-
-If the user mentions a result count ("top 10", "best 5", "give me 20 stocks") set limit accordingly; otherwise null.
-If the user implies an ordering ("sorted by market cap", "highest dividend yield first", "cheapest P/E") set sortBy + sortDirection; otherwise both null. "cheapest"/"lowest"/"smallest" -> asc; "highest"/"biggest"/"largest"/"best" -> desc (for most metrics — for peRatio, "best value" conventionally means lowest, so treat unqualified "best P/E" as asc).`;
+Set limit from "top N"/"best N" phrasing, else null. Set sortBy+sortDirection from ordering phrasing ("sorted by X", "highest X first", "cheapest X"), else both null: cheapest/lowest/smallest -> asc, highest/biggest/best -> desc — except peRatio, where unqualified "best" means lowest (asc).`;
 
 const PARSE_STRATEGY_TOOL = {
   name: "submit_parsed_strategy",
@@ -175,7 +182,20 @@ export async function parseStrategy(query: string): Promise<ParsedStrategy> {
     const client = getAnthropicClient();
     const response = await client.messages.create({
       model: STRATEGY_PARSE_MODEL,
-      max_tokens: 1024,
+      // Tightened from 1024 -> 400 for cost (this response is always a
+      // small, closed-shape JSON object, never open-ended prose). Not
+      // pushed lower, to the ~200-300 range: worst case is 6 filters
+      // (MAX_FILTERS) + sortBy/sortDirection/limit + JSON scaffolding
+      // (~250 tokens) plus the explanation sentence — and Hebrew text
+      // commonly costs noticeably more tokens per word than English under
+      // BPE tokenization, so a short Hebrew sentence can still run
+      // 60-100+ tokens. 400 keeps real headroom against a truncated
+      // tool_use.input (which would otherwise fail parsing and surface as
+      // a false "couldn't understand that strategy" error) while still
+      // being a ~60% cut from the previous ceiling. The SYSTEM_PROMPT
+      // above also now explicitly asks for one short sentence, which
+      // tightens the realistic output size on top of this cap.
+      max_tokens: 400,
       system: SYSTEM_PROMPT,
       tools: [PARSE_STRATEGY_TOOL],
       tool_choice: { type: "tool", name: PARSE_STRATEGY_TOOL.name },

@@ -34,5 +34,13 @@ export function getAnthropicClient(): Anthropic {
   return globalThis.__finlensAnthropicClient;
 }
 
-/** Model used for strategy parsing — fast/cheap tier is plenty for a structured-extraction task like this (see lib/strategy/parse.ts), not a reasoning-heavy one. */
+/**
+ * Model used for strategy parsing — fast/cheap tier is plenty for a
+ * structured-extraction task like this (see lib/strategy/parse.ts), not a
+ * reasoning-heavy one. Deliberately Haiku 4.5, not the older "claude-3-5-haiku"
+ * naming: 4.5 is the current lightweight/cost-effective tier this app's
+ * models are pinned to (see the other model constants used across this
+ * codebase), and there's no reason to pin to a superseded generation for a
+ * task this simple — same cost-tier intent, newer/cheaper model.
+ */
 export const STRATEGY_PARSE_MODEL = "claude-haiku-4-5-20251001";
