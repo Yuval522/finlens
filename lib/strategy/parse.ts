@@ -134,10 +134,23 @@ export async function parseStrategy(query: string): Promise<ParsedStrategy> {
     return { filters: [], sortBy: null, sortDirection: null, limit: null, explanation: "", unsupported: true };
   }
 
-  const client = getAnthropicClient();
-  let response;
+  // Everything that can fail before we have a validated ParsedStrategy in
+  // hand — client construction (throws a plain Error synchronously if
+  // ANTHROPIC_API_KEY isn't set, see lib/ai/anthropic.ts), the network
+  // call itself, and the tool_choice/response-shape checks below — is
+  // deliberately inside ONE try/catch so every failure mode is normalized
+  // into a StrategyParseError. Previously getAnthropicClient() was called
+  // *before* this try/catch: a missing/misconfigured API key threw a bare
+  // Error that the route handler's `instanceof StrategyParseError` check
+  // didn't recognize, so it fell through to the route's generic
+  // catch-all (dbErrorJson) — surfacing a misleading "Something went
+  // wrong on our end" 500 instead of the friendly, already-written
+  // "Strategy Builder isn't configured yet" 503 message. Confirmed via
+  // Vercel's production runtime error logs as the exact failure mode
+  // behind this bug report (ANTHROPIC_API_KEY unset on Vercel).
   try {
-    response = await client.messages.create({
+    const client = getAnthropicClient();
+    const response = await client.messages.create({
       model: STRATEGY_PARSE_MODEL,
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
@@ -145,14 +158,29 @@ export async function parseStrategy(query: string): Promise<ParsedStrategy> {
       tool_choice: { type: "tool", name: PARSE_STRATEGY_TOOL.name },
       messages: [{ role: "user", content: trimmed }],
     });
+
+    const toolUse = response.content.find((block) => block.type === "tool_use");
+    if (!toolUse || toolUse.type !== "tool_use") {
+      // Can happen if the model hits max_tokens before emitting the
+      // forced tool call, or (rare) if the API changes response shape —
+      // log the raw stop_reason/content so this is diagnosable from
+      // server logs rather than a bare "did not include a parsed
+      // strategy" with no further detail.
+      throw new StrategyParseError(
+        `Model response did not include a parsed strategy (stop_reason: ${response.stop_reason})`,
+        response
+      );
+    }
+
+    // sanitizeParsedStrategy is written defensively (every field access
+    // guarded, never assumes toolUse.input has a particular shape) and
+    // shouldn't throw — but it's still inside this try/catch so that if a
+    // future edit to it, or a genuinely unexpected tool_use.input shape,
+    // ever does throw, that surfaces as the same clean 502/503 + logged
+    // cause instead of an opaque 500.
+    return sanitizeParsedStrategy(toolUse.input);
   } catch (err) {
-    throw new StrategyParseError("Failed to reach the strategy-parsing model", err);
+    if (err instanceof StrategyParseError) throw err;
+    throw new StrategyParseError("Failed to reach or parse a response from the strategy-parsing model", err);
   }
-
-  const toolUse = response.content.find((block) => block.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") {
-    throw new StrategyParseError("Model response did not include a parsed strategy");
-  }
-
-  return sanitizeParsedStrategy(toolUse.input);
 }
