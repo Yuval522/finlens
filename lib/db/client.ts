@@ -173,7 +173,7 @@ const SCHEMA_STATEMENTS = [
   // refreshed by a background cron job (app/api/cron/refresh-strategy-universe,
   // lib/strategy/universe-refresh.ts) instead of live Yahoo Finance calls
   // made at request time by lib/strategy/execute.ts. This is what lets a
-  // screening query run instantly and reliably against ~180 symbols'
+  // screening query run instantly and reliably against several hundred symbols'
   // worth of RSI/SMA technicals without a burst of live network calls (and
   // its associated rate-limit risk) on every single request. Every column
   // besides symbol/name/updated_at is nullable — any individual fetch

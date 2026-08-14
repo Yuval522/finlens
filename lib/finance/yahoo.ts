@@ -215,15 +215,37 @@ export interface StrategyQuote {
 const strategyQuoteCache = new TtlCache<StrategyQuote[]>(CACHE_TTL_MS);
 
 /**
+ * Max symbols sent to Yahoo's unofficial batched quote endpoint per HTTP
+ * request. It's a GET with every symbol joined into one query string, so
+ * an unbounded batch risks tripping a URL-length limit or just being a
+ * much bigger single point of failure than it needs to be — especially
+ * once STRATEGY_UNIVERSE_SYMBOLS (lib/finance/symbols.ts) grew from ~180
+ * to 400+ names. 150 is a conservative chunk size other yahoo-finance2
+ * users have reported working reliably; nothing here depends on it being
+ * exactly that number.
+ */
+const STRATEGY_QUOTE_CHUNK_SIZE = 150;
+
+/**
  * Richer quote batch for the Natural Language Strategy Builder
- * (lib/strategy/execute.ts) — a separate function/cache from getQuotes()
- * rather than widening MarketQuote itself, so this new, still-evolving
- * feature can't regress the shared MarketQuote shape every other page
- * (Analysis, Portfolio, Watchlist, Topbar ticker, ...) already depends on.
- * Pulls fields Yahoo's batched quote endpoint already returns but
- * toMarketQuote() doesn't extract: trailingPE, trailingAnnualDividendYield
- * (already a percentage per yahoo-finance2's own field doc, e.g. 2.5 for
- * 2.5% — not a 0-1 fraction), and regularMarketVolume.
+ * (lib/strategy/execute.ts, lib/strategy/universe-refresh.ts) — a separate
+ * function/cache from getQuotes() rather than widening MarketQuote itself,
+ * so this new, still-evolving feature can't regress the shared MarketQuote
+ * shape every other page (Analysis, Portfolio, Watchlist, Topbar ticker,
+ * ...) already depends on. Pulls fields Yahoo's batched quote endpoint
+ * already returns but toMarketQuote() doesn't extract: trailingPE,
+ * trailingAnnualDividendYield (already a percentage per yahoo-finance2's
+ * own field doc, e.g. 2.5 for 2.5% — not a 0-1 fraction), and
+ * regularMarketVolume.
+ *
+ * Chunks large symbol lists into STRATEGY_QUOTE_CHUNK_SIZE-sized batches
+ * (see that constant's doc comment) and, unlike a single all-or-nothing
+ * call, tolerates one chunk failing without discarding every other chunk's
+ * results — this is called with the FULL ~400+ symbol universe both by the
+ * refresh cron (universe-refresh.ts) and, on a cold DB before that cron has
+ * ever run, by execute.ts directly inside a live user request, so a
+ * transient failure on one chunk shouldn't turn into a total screening
+ * failure. Only throws if every chunk fails.
  */
 export async function getStrategyQuotes(symbols: string[]): Promise<StrategyQuote[]> {
   const unique = Array.from(new Set(symbols.filter(Boolean)));
@@ -231,25 +253,47 @@ export async function getStrategyQuotes(symbols: string[]): Promise<StrategyQuot
 
   const key = [...unique].sort().join(",");
   return strategyQuoteCache.getOrSet(key, async () => {
-    try {
-      const results = (await yahooFinance.quote(unique, { return: "array" })) as unknown as Record<
-        string,
-        unknown
-      >[];
-      return results.map((q) => ({
-        symbol: String(q.symbol ?? ""),
-        name: String(q.shortName || q.longName || q.symbol || ""),
-        price: num(q.regularMarketPrice),
-        changePercent: num(q.regularMarketChangePercent),
-        marketCap: num(q.marketCap),
-        peRatio: num(q.trailingPE),
-        dividendYieldPercent: num(q.trailingAnnualDividendYield),
-        volume: num(q.regularMarketVolume),
-      }));
-    } catch (err) {
-      throw new MarketDataError(`Failed to fetch strategy quotes for ${unique.join(", ")}`, err);
+    const chunks: string[][] = [];
+    for (let i = 0; i < unique.length; i += STRATEGY_QUOTE_CHUNK_SIZE) {
+      chunks.push(unique.slice(i, i + STRATEGY_QUOTE_CHUNK_SIZE));
     }
+
+    const settled = await Promise.allSettled(chunks.map((chunk) => fetchStrategyQuoteChunk(chunk)));
+
+    const out: StrategyQuote[] = [];
+    let failedChunks = 0;
+    for (const result of settled) {
+      if (result.status === "fulfilled") {
+        out.push(...result.value);
+      } else {
+        failedChunks++;
+        console.warn("[FinLens] getStrategyQuotes — one chunk failed, continuing with the rest:", result.reason);
+      }
+    }
+
+    if (failedChunks > 0 && out.length === 0) {
+      throw new MarketDataError(`Failed to fetch strategy quotes for ${unique.length} symbols (all chunks failed)`);
+    }
+    return out;
   });
+}
+
+async function fetchStrategyQuoteChunk(chunk: string[]): Promise<StrategyQuote[]> {
+  try {
+    const results = (await yahooFinance.quote(chunk, { return: "array" })) as unknown as Record<string, unknown>[];
+    return results.map((q) => ({
+      symbol: String(q.symbol ?? ""),
+      name: String(q.shortName || q.longName || q.symbol || ""),
+      price: num(q.regularMarketPrice),
+      changePercent: num(q.regularMarketChangePercent),
+      marketCap: num(q.marketCap),
+      peRatio: num(q.trailingPE),
+      dividendYieldPercent: num(q.trailingAnnualDividendYield),
+      volume: num(q.regularMarketVolume),
+    }));
+  } catch (err) {
+    throw new MarketDataError(`Failed to fetch strategy quotes for ${chunk.join(", ")}`, err);
+  }
 }
 
 /** Smart typeahead search across US, TASE, and other listed instruments. */

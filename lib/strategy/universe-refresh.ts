@@ -18,9 +18,11 @@ import { computeTechnicalValuesBatchedWithProgress, type TechnicalValues } from 
  *    see vercel.json's comment. A single daily run has to be resilient to
  *    not fully completing within one invocation's time budget.
  * 2. A serverless function has a hard wall-clock time limit (maxDuration —
- *    see the cron route). ~180 symbols x a real Yahoo chart() fetch each
+ *    see the cron route). 400+ symbols x a real Yahoo chart() fetch each
  *    (batched, see technical.ts) can plausibly take longer than that limit
- *    in a slow-network run.
+ *    in a slow-network run — the priority-by-staleness ordering below is
+ *    what makes that OK: a single run doesn't need to finish the whole
+ *    universe, it just needs to make forward progress on the stalest rows.
  *
  * So this is deliberately built to degrade gracefully rather than assume
  * one run always finishes the whole universe:
