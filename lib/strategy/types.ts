@@ -94,6 +94,13 @@ export interface StrategyResultRow {
   rsi14: number | null;
   priceVsSma50: number | null;
   priceVsSma200: number | null;
+  /**
+   * Set only when StrategyRunResult.relaxed is true — a plain-language
+   * description of which filter(s) this row falls short on and by how
+   * much (e.g. "RSI is 34 (target: < 30)"). Null for every row in a
+   * normal strict-match result. See execute.ts's findClosestMatches.
+   */
+  almostMatchNote: string | null;
 }
 
 export interface StrategyRunResult {
@@ -101,4 +108,25 @@ export interface StrategyRunResult {
   results: StrategyResultRow[];
   /** Total symbols in the screening universe this run considered — see STRATEGY_UNIVERSE_SYMBOLS's doc comment for why this is a bounded, curated list rather than the whole market. */
   universeSize: number;
+  /**
+   * True when zero stocks satisfied every filter exactly, so `results`
+   * holds the closest near-misses instead (ranked by how far off they are
+   * — see execute.ts's findClosestMatches) rather than an empty screen.
+   * The UI must show a clearly distinct banner whenever this is true —
+   * these are NOT stocks that passed the strategy, they're the closest
+   * approximations to it.
+   */
+  relaxed: boolean;
+  /** Plain-language summary shown once at the top of a relaxed result set (e.g. "No exact matches — showing the 10 closest stocks instead."). Null when relaxed is false. */
+  relaxedNote: string | null;
+  /**
+   * Epoch ms of the OLDEST data point actually used to produce this run's
+   * results (across every symbol that contributed, not just the ones
+   * returned) — lets the UI honestly show "data as of X ago" instead of
+   * implying real-time freshness. Precomputed rows (lib/strategy/
+   * universe-refresh.ts) are only as fresh as the last cron run; live
+   * fallback rows are always "now". Null only if the universe was
+   * entirely empty (shouldn't happen in practice).
+   */
+  dataAsOf: number | null;
 }

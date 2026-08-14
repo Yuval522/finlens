@@ -45,8 +45,10 @@ export async function POST(request: Request) {
     const parsed = await parseStrategy(query);
     if (parsed.unsupported && parsed.filters.length === 0) {
       // Nothing we can execute — return the model's explanation without
-      // spending a whole universe scan on zero filters.
-      return noStoreJson({ parsed, results: [], universeSize: 0 });
+      // spending a whole universe scan on zero filters. Shaped as a full
+      // StrategyRunResult (see lib/strategy/types.ts) so the client never
+      // has to special-case this response.
+      return noStoreJson({ parsed, results: [], universeSize: 0, relaxed: false, relaxedNote: null, dataAsOf: null });
     }
 
     const run = await executeStrategy(parsed);

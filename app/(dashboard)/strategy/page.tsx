@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Loader2, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Sparkles, TriangleAlert, Wand2 } from "lucide-react";
 import { CompanyLogo } from "@/components/dashboard/CompanyLogo";
 import { formatPrice, formatPercent, formatMarketCap, changeDirection } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
-import type { ParsedStrategy, StrategyResultRow } from "@/lib/strategy/types";
+import type { ParsedStrategy, StrategyMetric, StrategyResultRow } from "@/lib/strategy/types";
+import { STRATEGY_METRIC_LABELS, STRATEGY_OPERATOR_LABELS } from "@/lib/strategy/format";
 
 /**
  * Natural Language Strategy Builder — free-text input (English/Hebrew) ->
@@ -23,11 +24,46 @@ const EXAMPLE_QUERIES = [
   "מניות עם שווי שוק מעל 50 מיליארד דולר שעלו היום",
 ];
 
+/**
+ * Assisted input: one insertable natural-language snippet per supported
+ * StrategyMetric (lib/strategy/types.ts), phrased to map cleanly onto the
+ * closed-vocabulary parser (lib/strategy/parse.ts / mock-parse.ts) — this
+ * is the "guide users toward phrasing that maps cleanly" half of the
+ * Strategy Builder v2 upgrade; the filter chips shown after a run
+ * (STRATEGY_METRIC_LABELS below) are the "confirm what was understood"
+ * half.
+ */
+const METRIC_HINTS: { metric: StrategyMetric; snippet: string }[] = [
+  { metric: "marketCap", snippet: "market cap over $10 billion" },
+  { metric: "peRatio", snippet: "P/E under 20" },
+  { metric: "dividendYieldPercent", snippet: "dividend yield over 3%" },
+  { metric: "rsi14", snippet: "RSI below 30" },
+  { metric: "priceVsSma50", snippet: "above its 50-day average" },
+  { metric: "priceVsSma200", snippet: "above its 200-day average" },
+  { metric: "changePercent", snippet: "up more than 5% today" },
+  { metric: "price", snippet: "priced under $50" },
+  { metric: "volume", snippet: "volume over 5 million" },
+];
+
 interface StrategyResponse {
   parsed: ParsedStrategy;
   results: StrategyResultRow[];
   universeSize: number;
+  relaxed?: boolean;
+  relaxedNote?: string | null;
+  dataAsOf?: number | null;
   error?: string;
+}
+
+/** Coarse "how stale is this" label for StrategyRunResult.dataAsOf — precomputed rows are only as fresh as the last refresh cron run (see lib/strategy/universe-refresh.ts), so this is deliberately approximate rather than a live-updating clock. */
+function formatDataAge(epochMs: number): string {
+  const minutes = Math.round((Date.now() - epochMs) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} hr${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 export default function StrategyBuilderPage() {
@@ -36,6 +72,13 @@ export default function StrategyBuilderPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<StrategyResponse | null>(null);
+
+  function insertHint(snippet: string) {
+    setQuery((prev) => {
+      const trimmed = prev.trim();
+      return trimmed.length === 0 ? snippet.charAt(0).toUpperCase() + snippet.slice(1) : `${trimmed} and ${snippet}`;
+    });
+  }
 
   async function runStrategy(q: string) {
     const trimmed = q.trim();
@@ -118,6 +161,23 @@ export default function StrategyBuilderPage() {
             {loading ? "Running…" : "Run strategy"}
           </button>
         </div>
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-3">
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Wand2 className="h-3 w-3" />
+            Add a filter:
+          </span>
+          {METRIC_HINTS.map(({ metric, snippet }) => (
+            <button
+              key={metric}
+              type="button"
+              onClick={() => insertHint(snippet)}
+              title={`Insert: "${snippet}"`}
+              className="rounded-full border border-dashed border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+            >
+              {STRATEGY_METRIC_LABELS[metric]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {error && (
@@ -163,12 +223,12 @@ export default function StrategyBuilderPage() {
                     key={i}
                     className="rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[11px] text-muted-foreground"
                   >
-                    {f.metric} {OPERATOR_LABEL[f.operator]} {f.value}
+                    {STRATEGY_METRIC_LABELS[f.metric]} {STRATEGY_OPERATOR_LABELS[f.operator]} {f.value}
                   </span>
                 ))}
                 {response.parsed.sortBy && (
                   <span className="rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
-                    sort: {response.parsed.sortBy} {response.parsed.sortDirection}
+                    sort: {STRATEGY_METRIC_LABELS[response.parsed.sortBy]} {response.parsed.sortDirection}
                   </span>
                 )}
               </div>
@@ -181,12 +241,26 @@ export default function StrategyBuilderPage() {
             )}
           </div>
 
+          {/* Relaxed/near-miss banner — shown ONLY when the strict query matched nothing and
+              execute.ts fell back to closest-match scoring (see StrategyRunResult.relaxed). This
+              must read as clearly distinct from a normal result set, never blended in silently. */}
+          {response.relaxed && (
+            <div className="glass-card flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-400">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{response.relaxedNote ?? "No exact matches — showing the closest stocks instead."}</span>
+            </div>
+          )}
+
           {/* Results */}
           {response.results.length > 0 && (
             <div className="glass-card min-w-0 rounded-xl p-3 sm:p-4">
-              <p className="mb-2 px-1 text-xs text-muted-foreground">
-                {response.results.length} match{response.results.length === 1 ? "" : "es"} out of{" "}
-                {response.universeSize} screened stocks
+              <p className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-1 text-xs text-muted-foreground">
+                <span>
+                  {response.relaxed
+                    ? `${response.results.length} closest match${response.results.length === 1 ? "" : "es"}`
+                    : `${response.results.length} match${response.results.length === 1 ? "" : "es"} out of ${response.universeSize} screened stocks`}
+                </span>
+                {response.dataAsOf != null && <span>Data as of {formatDataAge(response.dataAsOf)}</span>}
               </p>
               <div className="-mx-1 overflow-x-auto">
                 <table className="w-full min-w-[720px] border-collapse text-xs">
@@ -199,11 +273,17 @@ export default function StrategyBuilderPage() {
                       <th className="px-2 py-2 text-right font-medium">P/E</th>
                       <th className="px-2 py-2 text-right font-medium">Div Yield</th>
                       <th className="px-2 py-2 text-right font-medium">RSI-14</th>
+                      {response.relaxed && <th className="px-2 py-2 text-left font-medium">Why it&apos;s close</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {response.results.map((row) => (
-                      <StrategyRow key={row.symbol} row={row} onClick={() => router.push(`/analysis/${row.symbol}`)} />
+                      <StrategyRow
+                        key={row.symbol}
+                        row={row}
+                        showAlmostMatchNote={Boolean(response.relaxed)}
+                        onClick={() => router.push(`/analysis/${row.symbol}`)}
+                      />
                     ))}
                   </tbody>
                 </table>
@@ -214,7 +294,9 @@ export default function StrategyBuilderPage() {
           {response.results.length === 0 && !response.parsed.unsupported && (
             <div className="glass-card flex flex-col items-center justify-center gap-2 rounded-xl py-16 text-center">
               <Sparkles className="h-6 w-6 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">No stocks in the screening universe currently match.</p>
+              <p className="text-sm text-muted-foreground">
+                No stocks in the screening universe have enough data to evaluate this strategy right now.
+              </p>
             </div>
           )}
         </>
@@ -223,15 +305,15 @@ export default function StrategyBuilderPage() {
   );
 }
 
-const OPERATOR_LABEL: Record<string, string> = {
-  gt: ">",
-  gte: "≥",
-  lt: "<",
-  lte: "≤",
-  eq: "=",
-};
-
-function StrategyRow({ row, onClick }: { row: StrategyResultRow; onClick: () => void }) {
+function StrategyRow({
+  row,
+  showAlmostMatchNote,
+  onClick,
+}: {
+  row: StrategyResultRow;
+  showAlmostMatchNote: boolean;
+  onClick: () => void;
+}) {
   const direction = changeDirection(row.changePercent);
   return (
     <tr
@@ -271,6 +353,11 @@ function StrategyRow({ row, onClick }: { row: StrategyResultRow; onClick: () => 
       <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
         {row.rsi14 == null ? "—" : row.rsi14.toFixed(0)}
       </td>
+      {showAlmostMatchNote && (
+        <td className="max-w-[220px] px-2 py-2.5 text-left text-[11px] text-amber-400/90" title={row.almostMatchNote ?? undefined}>
+          <span className="line-clamp-2">{row.almostMatchNote ?? "—"}</span>
+        </td>
+      )}
     </tr>
   );
 }
