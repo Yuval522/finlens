@@ -11,7 +11,22 @@
 export class TtlCache<T> {
   private store = new Map<string, { value: T; expiresAt: number }>();
 
-  constructor(private readonly ttlMs: number) {}
+  /**
+   * `maxSize` is optional (default: unbounded, the original behavior — no
+   * existing call site passes a second argument, so this is purely
+   * additive). Added for lib/strategy/query-cache.ts, whose keys are
+   * derived from arbitrary free-text user queries rather than a small,
+   * bounded set of symbols — without a cap, a long-lived warm serverless
+   * instance fielding many distinct queries would grow this map forever.
+   * Eviction is plain FIFO by insertion order (a `Map` already iterates in
+   * insertion order in JS), not LRU — simpler, and good enough for a
+   * cache whose main goal is catching exact-repeat queries within a
+   * session/short window rather than perfectly maximizing hit rate.
+   */
+  constructor(
+    private readonly ttlMs: number,
+    private readonly maxSize?: number
+  ) {}
 
   get(key: string): T | undefined {
     const entry = this.store.get(key);
@@ -24,6 +39,10 @@ export class TtlCache<T> {
   }
 
   set(key: string, value: T): void {
+    if (this.maxSize != null && !this.store.has(key) && this.store.size >= this.maxSize) {
+      const oldestKey = this.store.keys().next().value;
+      if (oldestKey !== undefined) this.store.delete(oldestKey);
+    }
     this.store.set(key, { value, expiresAt: Date.now() + this.ttlMs });
   }
 

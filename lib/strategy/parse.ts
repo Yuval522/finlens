@@ -8,6 +8,7 @@ import {
   type StrategyMetric,
 } from "./types";
 import { parseStrategyMock } from "./mock-parse";
+import { getCachedParsedStrategy, setCachedParsedStrategy } from "./query-cache";
 
 /**
  * Natural-language -> structured filter spec, via Claude's tool-use
@@ -164,6 +165,19 @@ export async function parseStrategy(query: string): Promise<ParsedStrategy> {
     return parseStrategyMock(trimmed);
   }
 
+  // Query cache: an identical-after-normalization repeat of a query this
+  // process has already parsed skips the Anthropic call entirely (see
+  // query-cache.ts for exactly what "identical" means here, and why this
+  // is intentionally scoped to the real-parse path only — caching the
+  // already-free mock path would provide no cost benefit, and would risk
+  // serving a stale mock:true result for a query asked again after
+  // ANTHROPIC_API_KEY becomes configured mid-process-lifetime).
+  const cached = getCachedParsedStrategy(trimmed);
+  if (cached) {
+    console.log("[FinLens] parseStrategy — query cache hit, skipping Anthropic call");
+    return cached;
+  }
+
   // Everything that can fail before we have a validated ParsedStrategy in
   // hand — client construction (throws a plain Error synchronously if
   // ANTHROPIC_API_KEY isn't set, see lib/ai/anthropic.ts), the network
@@ -221,7 +235,9 @@ export async function parseStrategy(query: string): Promise<ParsedStrategy> {
     // future edit to it, or a genuinely unexpected tool_use.input shape,
     // ever does throw, that surfaces as the same clean 502/503 + logged
     // cause instead of an opaque 500.
-    return sanitizeParsedStrategy(toolUse.input);
+    const parsed = sanitizeParsedStrategy(toolUse.input);
+    setCachedParsedStrategy(trimmed, parsed);
+    return parsed;
   } catch (err) {
     if (err instanceof StrategyParseError) throw err;
     throw new StrategyParseError("Failed to reach or parse a response from the strategy-parsing model", err);
