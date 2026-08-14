@@ -1,5 +1,6 @@
+import type { Metadata } from "next";
 import { AlertTriangle } from "lucide-react";
-import { getFundamentals } from "@/lib/finance/yahoo";
+import { getFundamentals, getQuotes } from "@/lib/finance/yahoo";
 import { MarketDataError } from "@/lib/finance/types";
 import { isNonFundamentalQuote } from "@/lib/finance/exchange";
 import { CompanyProfileHeader } from "@/components/ticker/CompanyProfileHeader";
@@ -11,6 +12,62 @@ import { NonFundamentalNotice } from "@/components/ticker/NonFundamentalNotice";
 
 // Live upstream data — never let Next statically cache this route.
 export const dynamic = "force-dynamic";
+
+/**
+ * SEO audit finding (seo-audit-finlens-2026-08-14.md): this was the single
+ * highest-value on-page gap — every route shared one static title/
+ * description from the root layout, so an Apple page and a Tesla page
+ * reported identical metadata to search engines. This is FinLens's best
+ * source of long-tail search traffic once public (hundreds of "[ticker]
+ * stock analysis" queries), so each symbol gets its own title/description
+ * built from a real live quote.
+ *
+ * Deliberately uses the lightweight getQuotes() (a single quote-cache
+ * lookup) rather than the page component's own getFundamentals() call —
+ * that's a much heavier multi-module bundle (quoteSummary,
+ * fundamentalsTimeSeries x6, SEC EDGAR, FMP, ...) that generateMetadata
+ * doesn't need just to build a title. Falls back to a generic-but-still-
+ * unique title (rather than throwing, or falling through to the root
+ * layout's fully generic one) if the quote lookup fails for any reason —
+ * metadata generation failing should never take down the page itself.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ symbol: string }>;
+}): Promise<Metadata> {
+  const { symbol: rawSymbol } = await params;
+  const symbol = decodeURIComponent(rawSymbol);
+
+  try {
+    const [quote] = await getQuotes([symbol]);
+    if (!quote) throw new Error("no quote returned");
+
+    const priceText =
+      quote.price != null
+        ? `${quote.price.toFixed(2)} ${quote.currency}${
+            quote.changePercent != null
+              ? ` (${quote.changePercent >= 0 ? "+" : ""}${quote.changePercent.toFixed(2)}%)`
+              : ""
+          }`
+        : null;
+
+    const title = `${quote.name} (${quote.symbol}) Stock Price, Chart & Analysis | FinLens`;
+    const description = priceText
+      ? `${quote.name} (${quote.symbol}) — ${priceText} on ${quote.exchange}. Live price, RSI, moving averages, and financials on FinLens.`
+      : `${quote.name} (${quote.symbol}) stock analysis on ${quote.exchange} — live price, technical indicators, and financials on FinLens.`;
+
+    return {
+      title,
+      description,
+      openGraph: { title, description },
+      twitter: { card: "summary", title, description },
+    };
+  } catch {
+    const title = `${symbol} Stock Analysis | FinLens`;
+    return { title, openGraph: { title }, twitter: { card: "summary", title } };
+  }
+}
 
 export default async function AnalysisPage({
   params,

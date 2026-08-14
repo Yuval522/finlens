@@ -6,11 +6,39 @@ import "@fontsource-variable/open-sans";
 import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
 import { AppAuthGate } from "@/components/auth/AppAuthGate";
+import { getSiteUrl } from "@/lib/seo/site-url";
+
+const SITE_URL = getSiteUrl();
+const TITLE = "FinLens — Natural Language Stock Screener for US & TASE Markets";
+const DESCRIPTION =
+  "FinLens is a next-generation financial terminal: describe a screening strategy in plain English or Hebrew and get live results, plus charting, technical indicators, and unique TASE (Tel Aviv Stock Exchange) coverage alongside US equities.";
 
 export const metadata: Metadata = {
-  title: "FinLens — Financial Intelligence",
-  description:
-    "FinLens is a next-generation financial terminal with live market data, charting, technical indicators, and screening for US & TASE equities.",
+  // Lets every relative URL in this metadata block (and any page's own
+  // metadata/generateMetadata that doesn't set an absolute one) resolve
+  // against the real site domain — see lib/seo/site-url.ts.
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  // SEO audit finding (seo-audit-finlens-2026-08-14.md): no Open Graph /
+  // Twitter Card tags at all — links shared in Slack/X/WhatsApp showed no
+  // preview. Reuses the existing app icon as the preview image; a
+  // dedicated 1200x630 social-card image would look better but this is a
+  // real image today rather than a blank preview.
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: SITE_URL,
+    siteName: "FinLens",
+    images: [{ url: "/icons/icon-512-any.png?v=3", width: 512, height: 512 }],
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: TITLE,
+    description: DESCRIPTION,
+    images: ["/icons/icon-512-any.png?v=3"],
+  },
   // ROOT CAUSE, confirmed directly (live report: icons kept looking stale/
   // boxed-in across every device and browser no matter how many times the
   // underlying PNG/ICO files were regenerated and pixel-verified correct):
@@ -85,6 +113,36 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="font-sans antialiased bg-background text-foreground">
+        {/*
+          SEO audit finding (seo-audit-finlens-2026-08-14.md): AppAuthGate
+          (see components/auth/AppAuthGate.tsx) is a client component that
+          deliberately holds back rendering `children` until the initial
+          session check resolves — necessary so a page never flashes a
+          previous user's locally-cached data, but it means the server-
+          rendered HTML every crawler receives, for every route, was
+          nothing but a loading spinner. This block is a sibling of
+          AppAuthGate, not a child of it, so it's unconditionally present
+          in that same server-rendered HTML regardless of auth/hydration
+          state — real, truthful copy describing the actual product
+          (FinLens has no separate marketing site to link to instead).
+          Visually hidden (sr-only) rather than shown, since a real visitor
+          already gets this same information from the app UI itself once
+          it hydrates; a screen reader still announces it, which is the
+          intended behavior for sr-only content, not a side effect.
+        */}
+        <div className="sr-only">
+          <h1>FinLens — Natural Language Stock Screener for US &amp; TASE Markets</h1>
+          <p>
+            FinLens is a financial terminal for individual investors. Describe a screening
+            strategy in plain English or Hebrew — for example &quot;large cap tech stocks with
+            RSI under 30&quot; or &quot;dividend yield over 3% and P/E under 20&quot; — and get live
+            results instead of manually configuring filters. FinLens combines that natural
+            language Strategy Builder with interactive charting, technical indicators (RSI,
+            moving averages, MACD, Bollinger Bands), a stock screener, watchlists, and
+            portfolio tracking, with coverage spanning both US equities and the Tel Aviv Stock
+            Exchange (TASE) — a combination not offered by other stock screening tools.
+          </p>
+        </div>
         <AppAuthGate>{children}</AppAuthGate>
       </body>
     </html>
