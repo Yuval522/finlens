@@ -168,6 +168,32 @@ const SCHEMA_STATEMENTS = [
     updated_at BIGINT NOT NULL,
     PRIMARY KEY (user_id, provider)
   )`,
+  // Strategy Builder precomputed universe metrics: one row per curated
+  // screening symbol (lib/finance/symbols.ts's STRATEGY_UNIVERSE_SYMBOLS),
+  // refreshed by a background cron job (app/api/cron/refresh-strategy-universe,
+  // lib/strategy/universe-refresh.ts) instead of live Yahoo Finance calls
+  // made at request time by lib/strategy/execute.ts. This is what lets a
+  // screening query run instantly and reliably against ~180 symbols'
+  // worth of RSI/SMA technicals without a burst of live network calls (and
+  // its associated rate-limit risk) on every single request. Every column
+  // besides symbol/name/updated_at is nullable — any individual fetch
+  // (quote or technical) can legitimately fail for one symbol without
+  // that blocking the row from existing at all; execute.ts's live-fetch
+  // fallback path only kicks in for a symbol with NO row here yet.
+  `CREATE TABLE IF NOT EXISTS strategy_universe_metrics (
+    symbol TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    price DOUBLE PRECISION,
+    change_percent DOUBLE PRECISION,
+    market_cap DOUBLE PRECISION,
+    pe_ratio DOUBLE PRECISION,
+    dividend_yield_percent DOUBLE PRECISION,
+    volume DOUBLE PRECISION,
+    rsi14 DOUBLE PRECISION,
+    price_vs_sma50 DOUBLE PRECISION,
+    price_vs_sma200 DOUBLE PRECISION,
+    updated_at BIGINT NOT NULL
+  )`,
 ];
 
 /**
