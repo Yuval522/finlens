@@ -261,16 +261,18 @@ export default function StrategyBuilderPage() {
                         // underline (border-collapse: the more specific/
                         // heavier per-cell border wins over the tr's), same
                         // technique as the Portfolio table's fork header.
-                        // QA fix: extended to a 3-sided retro bracket —
-                        // top and left are now also dotted border-warning
-                        // (previously the left divider stayed neutral
-                        // border-border/70, matching every other column's
-                        // plain gray divider; now explicitly warning-
-                        // colored per the request to fully outline this
-                        // cell's corner). Right side intentionally stays
-                        // unset/0-width — the table's own right edge, not
-                        // meant to be boxed in.
-                        <th className="border-l border-t border-b-2 border-dotted border-warning px-2 py-1.5 pl-3 text-left font-medium text-warning">
+                        // QA fix: left divider is now warning-colored
+                        // (previously neutral border-border/70 like every
+                        // other column's plain gray divider) and continues
+                        // all the way down through every data row below
+                        // (see the matching border-l border-warning on the
+                        // <td> in StrategyRow), instead of stopping at the
+                        // header — one continuous vertical line for the
+                        // whole column's height. A 3-sided top+left+bottom
+                        // bracket was tried and reverted per feedback: the
+                        // top edge should stay open/clean, only left+bottom
+                        // are boxed.
+                        <th className="border-l border-b-2 border-dotted border-warning px-2 py-1.5 pl-3 text-left font-medium text-warning">
                           Why it&apos;s close
                         </th>
                       )}
@@ -355,9 +357,13 @@ function StrategyRow({
         // QA fix: matches the header's text-primary -> text-warning switch
         // (see the "Why it's close" <th> doc comment above) — same softer
         // burnt-amber for the row text, not just the header, per the
-        // report that the full-brightness coral read too neon here.
+        // report that the full-brightness coral read too neon here. The
+        // left divider also switched from neutral border-border/70 to
+        // border-warning so it continues the header's dotted orange line
+        // all the way down through every row instead of stopping at the
+        // header — one unbroken vertical line for the column's full height.
         <td
-          className="max-w-[220px] border-l border-dotted border-border/70 px-2 py-2 pl-3 text-left text-[11px] text-warning/90"
+          className="max-w-[220px] border-l border-dotted border-warning px-2 py-2 pl-3 text-left text-[11px] text-warning/90"
           title={row.almostMatchNote ?? undefined}
         >
           <span className="line-clamp-2">{row.almostMatchNote ?? "—"}</span>
