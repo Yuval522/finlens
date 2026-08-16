@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
 import { Led } from "@/components/shared/Led";
-import { formatPercent } from "@/lib/format/currency";
+import { formatChange, formatPercent } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
 import { computeHolding, type HoldingComputed } from "@/lib/portfolio/derive";
 import type { PortfolioHolding } from "@/lib/portfolio/store";
@@ -29,17 +29,26 @@ type SortKey =
   | "currentPrice"
   | "positionValue"
   | "gainLoss"
+  | "gainLossPercent"
   | "dividendsPaid"
   | "dividendYieldPercent";
 
-const COLUMNS: { key: SortKey; label: string; align?: "right" }[] = [
+// QA fix: "Gain/Loss" used to be one COLUMNS entry rendering a single <th>
+// (and one combined "$X (+Y%)" <td>) — now split into two data columns
+// (dollar amount, percentage), but the reference design still shows ONE
+// "Gain/Loss" header label spanning both of them, not two separate column
+// labels. COLUMNS is split at that point (BEFORE/AFTER) so the render can
+// inject one hand-built colSpan=2 <th> for the group in between, instead of
+// every column going through the same generic single-column header cell.
+const COLUMNS_BEFORE_GAIN: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "symbol", label: "Symbol" },
   { key: "name", label: "Name" },
   { key: "shares", label: "Shares", align: "right" },
   { key: "purchasePrice", label: "Purchase Price", align: "right" },
   { key: "currentPrice", label: "Current Price", align: "right" },
   { key: "positionValue", label: "Position Value", align: "right" },
-  { key: "gainLoss", label: "Gain/Loss", align: "right" },
+];
+const COLUMNS_AFTER_GAIN: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "dividendsPaid", label: "Dividend Paid", align: "right" },
   { key: "dividendYieldPercent", label: "Dividend Yield", align: "right" },
 ];
@@ -178,6 +187,35 @@ export function HoldingsTable({ holdings, onEdit, onSell, ticks }: HoldingsTable
     router.push(`/analysis/${encodeURIComponent(symbol)}`);
   }
 
+  // Shared sortable-header-cell renderer — factored out so the Gain/Loss
+  // group split doesn't require duplicating this button/chevron markup for
+  // both COLUMNS_BEFORE_GAIN and COLUMNS_AFTER_GAIN.
+  function renderHeaderCell(col: { key: SortKey; label: string; align?: "right" }) {
+    return (
+      <th key={col.key} className={cn("px-2 py-2 font-medium", col.align === "right" && "text-right")}>
+        <button
+          type="button"
+          onClick={() => handleSort(col.key)}
+          className={cn(
+            "inline-flex items-center gap-1 transition-colors hover:text-foreground",
+            col.align === "right" && "flex-row-reverse"
+          )}
+        >
+          {col.label}
+          {sortKey === col.key ? (
+            sortDir === "asc" ? (
+              <ChevronUp className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )
+          ) : (
+            <ChevronDown className="h-3 w-3 opacity-0" />
+          )}
+        </button>
+      </th>
+    );
+  }
+
   if (holdings.length === 0) return null;
 
   return (
@@ -196,32 +234,41 @@ export function HoldingsTable({ holdings, onEdit, onSell, ticks }: HoldingsTable
         <table className="w-full min-w-[820px] border-collapse text-xs">
           <thead>
             <tr className="border-b border-slate-700/80 text-left text-muted-foreground">
-              {COLUMNS.map((col) => (
-                <th
-                  key={col.key}
-                  className={cn("px-2 py-2 font-medium", col.align === "right" && "text-right")}
+              {COLUMNS_BEFORE_GAIN.map(renderHeaderCell)}
+
+              {/* QA fix: grouped "Gain/Loss" header spanning the two new
+                  sub-columns (dollar amount, percentage) below it — colored
+                  the brand orange per the reference, with an orange dotted
+                  bottom border in place of the row's default solid gray
+                  divider for just this cell (border-b-2 on the <th> itself
+                  wins the border-collapse conflict against the thinner
+                  tr-level border, same technique as the Strategy Builder
+                  table's "Why it's close" divider). colSpan=2 makes this
+                  cell exactly as wide as the two <td>s beneath it, so the
+                  divider visually "splits" across both. */}
+              <th
+                colSpan={2}
+                className="border-b-2 border-dotted border-primary px-2 py-2 text-right font-medium text-primary"
+              >
+                <button
+                  type="button"
+                  onClick={() => handleSort("gainLoss")}
+                  className="inline-flex flex-row-reverse items-center gap-1 transition-colors hover:opacity-80"
                 >
-                  <button
-                    type="button"
-                    onClick={() => handleSort(col.key)}
-                    className={cn(
-                      "inline-flex items-center gap-1 transition-colors hover:text-foreground",
-                      col.align === "right" && "flex-row-reverse"
-                    )}
-                  >
-                    {col.label}
-                    {sortKey === col.key ? (
-                      sortDir === "asc" ? (
-                        <ChevronUp className="h-3 w-3" />
-                      ) : (
-                        <ChevronDown className="h-3 w-3" />
-                      )
+                  Gain/Loss
+                  {sortKey === "gainLoss" || sortKey === "gainLossPercent" ? (
+                    sortDir === "asc" ? (
+                      <ChevronUp className="h-3 w-3" />
                     ) : (
-                      <ChevronDown className="h-3 w-3 opacity-0" />
-                    )}
-                  </button>
-                </th>
-              ))}
+                      <ChevronDown className="h-3 w-3" />
+                    )
+                  ) : (
+                    <ChevronDown className="h-3 w-3 opacity-0" />
+                  )}
+                </button>
+              </th>
+
+              {COLUMNS_AFTER_GAIN.map(renderHeaderCell)}
               <th className="px-2 py-2 text-right font-medium">Actions</th>
             </tr>
           </thead>
@@ -260,6 +307,11 @@ export function HoldingsTable({ holdings, onEdit, onSell, ticks }: HoldingsTable
                   <td className="px-2 py-2.5 text-right font-mono font-semibold text-foreground">
                     {money(h.positionValue)}
                   </td>
+                  {/* QA fix: split into two columns — dollar amount (with
+                      the direction LED, sign-prefixed via formatChange) and
+                      percentage, both carrying the same green/red color so
+                      the pair still reads as one unit despite being two
+                      cells, matching the reference. */}
                   <td className="px-2 py-2.5 text-right">
                     <span
                       className={cn(
@@ -268,8 +320,16 @@ export function HoldingsTable({ holdings, onEdit, onSell, ticks }: HoldingsTable
                       )}
                     >
                       <Led up={gainUp} />
-                      {money(Math.abs(h.gainLoss))} ({formatPercent(h.gainLossPercent)})
+                      {formatChange(h.gainLoss, "USD")}
                     </span>
+                  </td>
+                  <td
+                    className={cn(
+                      "px-2 py-2.5 text-right font-mono font-medium",
+                      gainUp ? "text-success" : "text-destructive"
+                    )}
+                  >
+                    ({formatPercent(h.gainLossPercent)})
                   </td>
                   <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
                     {money(h.dividendsPaid)}
