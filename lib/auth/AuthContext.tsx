@@ -64,7 +64,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const GUEST_MODE = false;
-const GUEST_USER: AuthUser = { id: "guest", username: "Guest", email: "guest@finlens.local" };
+const GUEST_USER: AuthUser = { id: "guest", username: "Guest", email: "guest@stox.local" };
 
 type DataKey = "portfolio" | "watchlist" | "settings";
 
