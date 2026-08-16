@@ -71,11 +71,22 @@ def save_on_background(size: int, path: str, bg_hex: str, scale: float) -> None:
 
 
 if __name__ == "__main__":
-    # favicon.ico — multi-size, transparent (standard browser-tab convention)
-    sizes = [16, 32, 48]
-    imgs = [glyph_rgba(max(1, s // GRID)).resize((s, s), Image.NEAREST) for s in sizes]
-    imgs[0].save("public/favicon.ico", sizes=[(s, s) for s in sizes], append_images=imgs[1:])
-    print(f"wrote public/favicon.ico ({sizes})")
+    # favicon.ico — multi-size, transparent (standard browser-tab convention).
+    # Bug fix: this used to save FROM the smallest (16x16) frame with
+    # `sizes=[...]` + `append_images=[...]` — Pillow's ICO writer doesn't
+    # actually use append_images to embed extra frames; `sizes` tells it to
+    # DOWNSCALE THE SOURCE IMAGE to each listed size. Saving from the
+    # 16x16 source meant every "size" it wrote was just that same 16x16
+    # image relabeled, and Pillow's own multi-size detection collapsed
+    # them back down to a single (16,16) frame on read (confirmed via
+    # `Image.open(...).info["sizes"]` after the old script ran). Fixed by
+    # generating the LARGEST frame as the source and letting `sizes`
+    # downscale from it, per Pillow's documented ICO usage — now produces
+    # three genuinely distinct embedded resolutions.
+    ico_sizes = [16, 32, 48]
+    ico_source = glyph_rgba(max(1, max(ico_sizes) // GRID)).resize((max(ico_sizes), max(ico_sizes)), Image.NEAREST)
+    ico_source.save("public/favicon.ico", sizes=[(s, s) for s in ico_sizes])
+    print(f"wrote public/favicon.ico ({ico_sizes})")
 
     # "any"-purpose manifest icons — transparent, glyph fills the canvas
     save_transparent(192, "public/icons/icon-192-any.png")
