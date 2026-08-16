@@ -243,7 +243,14 @@ export default function StrategyBuilderPage() {
                       <th className="px-2 py-1.5 text-right font-medium">Div Yield</th>
                       <th className="px-2 py-1.5 text-right font-medium">RSI-14</th>
                       {response.relaxed && (
-                        <th className="border-l border-dotted border-border/70 px-2 py-1.5 pl-3 text-left font-medium">
+                        // QA fix: this header inherited text-muted-foreground
+                        // from the parent <tr> like every other column, but
+                        // the reference design shows it in the brand primary
+                        // orange — distinct from the gray NAME/PRICE/etc.
+                        // headers, signaling it's a different kind of column
+                        // (an explanation, not a data field). text-primary
+                        // overrides the inherited muted color for just this <th>.
+                        <th className="border-l border-dotted border-border/70 px-2 py-1.5 pl-3 text-left font-medium text-primary">
                           Why it&apos;s close
                         </th>
                       )}

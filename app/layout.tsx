@@ -34,14 +34,14 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     url: SITE_URL,
     siteName: "FinLens",
-    images: [{ url: "/icons/icon-512-any.png?v=3", width: 512, height: 512 }],
+    images: [{ url: "/icons/icon-512-any.png?v=4", width: 512, height: 512 }],
     type: "website",
   },
   twitter: {
     card: "summary",
     title: TITLE,
     description: DESCRIPTION,
-    images: ["/icons/icon-512-any.png?v=3"],
+    images: ["/icons/icon-512-any.png?v=4"],
   },
   // ROOT CAUSE, confirmed directly (live report: icons kept looking stale/
   // boxed-in across every device and browser no matter how many times the
@@ -56,10 +56,12 @@ export const metadata: Metadata = {
   // block below or the underlying files were — kept being handed that
   // stale manifest, which itself still pointed at old/pre-fix icon paths.
   // No amount of fixing the icon files themselves could ever have broken
-  // that chain; only versioning this href does. Bump ?v=3 -> ?v=4 (in
-  // lockstep with the `icons` block below and manifest.json's own icon
-  // srcs) the next time anything icon-related changes.
-  manifest: "/manifest.json?v=3",
+  // that chain; only versioning this href does. Bumped ?v=3 -> ?v=4 for the
+  // robot-head favicon regeneration (see scripts/gen-favicon.py); bump
+  // ?v=4 -> ?v=5 (in lockstep with the `icons` block below and
+  // manifest.json's own icon srcs) the next time anything icon-related
+  // changes again.
+  manifest: "/manifest.json?v=4",
   // QA fix (live report: Chrome desktop/mobile tab and the PWA home-screen
   // shortcut kept falling back to a generic grey box with the letter "F",
   // or showed a stale/boxed-in icon, even after the underlying PNG/ICO
@@ -81,20 +83,20 @@ export const metadata: Metadata = {
   // from treating them as the icon-convention files) so this `icons` block
   // is now the ONLY source of truth for every icon tag on the page.
   //
-  // Every href below is either a brand-new path (public/favicon.ico,
-  // public/apple-touch-icon.png — never served under these exact names
-  // before, so no stale cache can exist for them) or carries an explicit
-  // version query string; bump ?v=3 -> ?v=4 the next time the artwork
-  // changes to force every client to refetch without needing a filename
-  // change.
+  // Every href below carries an explicit version query string; bump
+  // ?v=4 -> ?v=5 the next time the artwork changes to force every client
+  // to refetch without needing a filename change. (Bumped 3 -> 4 here for
+  // the pixel-robot-head favicon regeneration — see scripts/gen-favicon.py,
+  // which rasterizes the same 10x10 grid as components/branding/
+  // RobotHeadMark.tsx so the tab icon and in-app logo never drift apart.)
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
-      { url: "/icons/icon-192-any.png?v=3", type: "image/png", sizes: "192x192" },
-      { url: "/icons/icon-512-any.png?v=3", type: "image/png", sizes: "512x512" },
+      { url: "/icons/icon-192-any.png?v=4", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon-512-any.png?v=4", type: "image/png", sizes: "512x512" },
     ],
     shortcut: ["/favicon.ico"],
-    apple: [{ url: "/apple-touch-icon.png?v=3", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png?v=4", sizes: "180x180", type: "image/png" }],
   },
 };
 

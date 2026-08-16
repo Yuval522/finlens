@@ -91,25 +91,34 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       <FinLensLogo size={24} showWordmark className="shrink-0 md:hidden" />
       <SymbolSearchInput />
 
-      {updatedAt && (
-        <span className="hidden shrink-0 items-center gap-1.5 font-mono text-[11px] text-muted-foreground md:flex">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
-          {SCREENER_UNIVERSE.length} tickers · updated {updatedAt} UTC
-        </span>
-      )}
+      {/* QA fix: the status readout used to sit directly after the search
+          box with no flex-grow of its own, leaving a large empty gap
+          before the avatar (which was the only element pulling right via
+          ml-auto) — so it read as floating just right of search rather
+          than anchored to the far right edge next to the avatar, on every
+          page that renders this shared Topbar. Moving ml-auto onto this
+          wrapper (and off the avatar div) pins status+avatar together as
+          one right-aligned group instead. */}
+      <div className="ml-auto flex shrink-0 items-center gap-3">
+        {updatedAt && (
+          <span className="hidden shrink-0 items-center gap-1.5 font-mono text-[11px] text-muted-foreground md:flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
+            {SCREENER_UNIVERSE.length} tickers · updated {updatedAt} UTC
+          </span>
+        )}
 
-      <div ref={menuRef} className="relative ml-auto">
-        <button
-          type="button"
-          onClick={() => setMenuOpen((v) => !v)}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
-          aria-label={loggedIn ? "Open user menu" : "Open account menu"}
-          aria-expanded={menuOpen}
-        >
-          {loggedIn && user ? initialsFor(user.username) : <User className="h-5 w-5" />}
-        </button>
+        <div ref={menuRef} className="relative">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+            aria-label={loggedIn ? "Open user menu" : "Open account menu"}
+            aria-expanded={menuOpen}
+          >
+            {loggedIn && user ? initialsFor(user.username) : <User className="h-5 w-5" />}
+          </button>
 
-        {menuOpen && (
+          {menuOpen && (
           <div className="absolute right-0 top-[calc(100%+4px)] w-56 rounded-md border border-border bg-card py-1 shadow-lg">
             {loggedIn && user ? (
               <>
@@ -153,8 +162,9 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                 </button>
               </>
             )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
 
       <AuthModal open={authModalOpen} onClose={() => setAuthModalOpen(false)} initialTab={authTab} />
