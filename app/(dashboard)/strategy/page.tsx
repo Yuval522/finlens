@@ -265,14 +265,22 @@ export default function StrategyBuilderPage() {
                         // (previously neutral border-border/70 like every
                         // other column's plain gray divider) and continues
                         // all the way down through every data row below
-                        // (see the matching border-l border-warning on the
-                        // <td> in StrategyRow), instead of stopping at the
-                        // header — one continuous vertical line for the
-                        // whole column's height. A 3-sided top+left+bottom
-                        // bracket was tried and reverted per feedback: the
-                        // top edge should stay open/clean, only left+bottom
-                        // are boxed.
-                        <th className="border-l border-b-2 border-dotted border-warning px-2 py-1.5 pl-3 text-left font-medium text-warning">
+                        // (see the matching border-l-2 border-warning on
+                        // the <td> in StrategyRow), instead of stopping at
+                        // the header — one continuous vertical line for
+                        // the whole column's height. A 3-sided top+left+
+                        // bottom bracket was tried and reverted per
+                        // feedback: the top edge should stay open/clean,
+                        // only left+bottom are boxed.
+                        // QA fix: left and bottom now share the EXACT same
+                        // width (border-l-2 to match the existing
+                        // border-b-2, both were previously border-l's
+                        // default 1px vs. border-b-2's 2px) plus identical
+                        // border-dotted border-warning color/style, so the
+                        // corner where they meet reads as one uniform,
+                        // continuous dotted line rather than two visually
+                        // different rules bolted together.
+                        <th className="border-l-2 border-b-2 border-dotted border-warning px-2 py-1.5 pl-3 text-left font-medium text-warning">
                           Why it&apos;s close
                         </th>
                       )}
@@ -362,8 +370,12 @@ function StrategyRow({
         // border-warning so it continues the header's dotted orange line
         // all the way down through every row instead of stopping at the
         // header — one unbroken vertical line for the column's full height.
+        // border-l-2 (not the plain default-width border-l used elsewhere
+        // in this table) matches the header th's border-l-2/border-b-2
+        // exactly, so the whole column reads as one uniform-weight dotted
+        // rule rather than a thinner line under the header.
         <td
-          className="max-w-[220px] border-l border-dotted border-warning px-2 py-2 pl-3 text-left text-[11px] text-warning/90"
+          className="max-w-[220px] border-l-2 border-dotted border-warning px-2 py-2 pl-3 text-left text-[11px] text-warning/90"
           title={row.almostMatchNote ?? undefined}
         >
           <span className="line-clamp-2">{row.almostMatchNote ?? "—"}</span>

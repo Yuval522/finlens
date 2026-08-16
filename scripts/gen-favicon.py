@@ -49,10 +49,27 @@ def glyph_rgba(cell_px: int) -> Image.Image:
     return base.resize((cell_px * GRID, cell_px * GRID), Image.NEAREST)
 
 
-def save_transparent(size: int, path: str) -> None:
-    img = glyph_rgba(max(1, size // GRID)).resize((size, size), Image.NEAREST)
-    img.save(path)
-    print(f"wrote {path} ({size}x{size}, transparent)")
+def save_opaque_fullbleed(size: int, path: str, bg_hex: str) -> None:
+    """QA fix (live report, repeated across several rounds): PWA/home-screen
+    icons kept showing a white box/backdrop behind the robot head even
+    though every transparent PNG was independently pixel-verified to have
+    alpha=0 at its corners. Root cause isn't a bug in these files — it's
+    that many Android launchers (and some browsers) don't reliably honor
+    transparency OR the declared "maskable" icon for a PWA shortcut, and
+    silently composite the "any"-purpose icon onto a default WHITE
+    backdrop when creating the home-screen icon. The only way to guarantee
+    the visible result is never white, regardless of what backdrop-filling
+    behavior the OS applies, is for the file itself to have no transparency
+    left to fill. Same full-bleed layout as the old save_transparent (glyph
+    already fills ~100% of the grid per ROWS — this doesn't shrink/pad it
+    like save_on_background's maskable safe-zone treatment), just composited
+    onto a solid canvas first instead of staying RGBA-transparent."""
+    bg = tuple(int(bg_hex[i : i + 2], 16) for i in (1, 3, 5)) + (255,)
+    canvas = Image.new("RGBA", (size, size), bg)
+    glyph = glyph_rgba(max(1, size // GRID)).resize((size, size), Image.NEAREST)
+    canvas.alpha_composite(glyph, (0, 0))
+    canvas.convert("RGB").save(path)
+    print(f"wrote {path} ({size}x{size}, opaque bg {bg_hex}, full-bleed)")
 
 
 def save_on_background(size: int, path: str, bg_hex: str, scale: float) -> None:
@@ -71,37 +88,54 @@ def save_on_background(size: int, path: str, bg_hex: str, scale: float) -> None:
 
 
 if __name__ == "__main__":
-    # favicon.ico — multi-size, transparent (standard browser-tab convention).
-    # Bug fix: this used to save FROM the smallest (16x16) frame with
-    # `sizes=[...]` + `append_images=[...]` — Pillow's ICO writer doesn't
-    # actually use append_images to embed extra frames; `sizes` tells it to
-    # DOWNSCALE THE SOURCE IMAGE to each listed size. Saving from the
-    # 16x16 source meant every "size" it wrote was just that same 16x16
-    # image relabeled, and Pillow's own multi-size detection collapsed
-    # them back down to a single (16,16) frame on read (confirmed via
-    # `Image.open(...).info["sizes"]` after the old script ran). Fixed by
-    # generating the LARGEST frame as the source and letting `sizes`
-    # downscale from it, per Pillow's documented ICO usage — now produces
-    # three genuinely distinct embedded resolutions.
+    ICON_BG = "#0F131A"  # matches manifest.json's background_color
+
+    # favicon.ico — multi-size, OPAQUE (see save_opaque_fullbleed doc
+    # comment: eliminates any chance of an OS/launcher filling transparent
+    # regions with white). Bug fix, still relevant: this used to save FROM
+    # the smallest (16x16) frame with `sizes=[...]` + `append_images=[...]`
+    # — Pillow's ICO writer doesn't actually use append_images to embed
+    # extra frames; `sizes` downscales THE SOURCE IMAGE to each listed
+    # size. Saving from 16x16 meant every "size" was that same 16x16 image
+    # relabeled, collapsing to a single (16,16) frame on read (confirmed
+    # via `Image.open(...).info["sizes"]`). Fixed by generating the
+    # LARGEST frame as the source and letting `sizes` downscale from it —
+    # now produces three genuinely distinct embedded resolutions, each
+    # built via the opaque full-bleed canvas rather than glyph_rgba direct.
     ico_sizes = [16, 32, 48]
-    ico_source = glyph_rgba(max(1, max(ico_sizes) // GRID)).resize((max(ico_sizes), max(ico_sizes)), Image.NEAREST)
-    ico_source.save("public/favicon.ico", sizes=[(s, s) for s in ico_sizes])
-    print(f"wrote public/favicon.ico ({ico_sizes})")
+    ico_bg = tuple(int(ICON_BG[i : i + 2], 16) for i in (1, 3, 5)) + (255,)
+    ico_max = max(ico_sizes)
+    ico_canvas = Image.new("RGBA", (ico_max, ico_max), ico_bg)
+    ico_canvas.alpha_composite(glyph_rgba(max(1, ico_max // GRID)).resize((ico_max, ico_max), Image.NEAREST), (0, 0))
+    # Composited onto an opaque bg above, so alpha is already 255 everywhere
+    # — no RGB round-trip needed, this is just saved as-is (ICO supports RGBA).
+    ico_canvas.save("public/favicon.ico", sizes=[(s, s) for s in ico_sizes])
+    print(f"wrote public/favicon.ico ({ico_sizes}, opaque bg {ICON_BG})")
 
-    # "any"-purpose manifest icons — transparent, glyph fills the canvas
-    save_transparent(192, "public/icons/icon-192-any.png")
-    save_transparent(512, "public/icons/icon-512-any.png")
+    # "any"-purpose manifest icons — QA fix: switched from transparent to
+    # opaque full-bleed (see save_opaque_fullbleed doc comment) after
+    # repeated live reports of a white backdrop behind the robot head on
+    # phone home screens despite the transparent files themselves always
+    # pixel-verifying correct. These are also what app/layout.tsx's
+    # openGraph/twitter `images` fields point at — a solid dark background
+    # is the more standard choice for social-preview cards anyway (many
+    # platforms composite transparent PNGs onto a white canvas of their
+    # own for link previews, same failure mode as the home-screen case).
+    save_opaque_fullbleed(192, "public/icons/icon-192-any.png", ICON_BG)
+    save_opaque_fullbleed(512, "public/icons/icon-512-any.png", ICON_BG)
 
-    # "maskable" manifest icons — opaque background matching
-    # manifest.json's background_color, glyph confined to a safe zone so
-    # Android's circular/squircle mask never crops it
-    save_on_background(192, "public/icons/icon-192-maskable.png", "#0F131A", 0.6)
-    save_on_background(512, "public/icons/icon-512-maskable.png", "#0F131A", 0.6)
+    # "maskable" manifest icons — already opaque (unchanged), glyph
+    # confined to a safe zone so Android's circular/squircle mask never
+    # crops it. Kept as its own save_on_background call (different
+    # scale/padding treatment than the full-bleed icons above).
+    save_on_background(192, "public/icons/icon-192-maskable.png", ICON_BG, 0.6)
+    save_on_background(512, "public/icons/icon-512-maskable.png", ICON_BG, 0.6)
 
     # legacy (pre "-any"/"-maskable" split) filenames — still present on
-    # disk from before that split; keep them in sync rather than orphaned
-    save_transparent(192, "public/icons/icon-192.png")
-    save_transparent(512, "public/icons/icon-512.png")
+    # disk from before that split; keep them in sync (same opaque
+    # treatment as the "-any" icons above, not orphaned as transparent).
+    save_opaque_fullbleed(192, "public/icons/icon-192.png", ICON_BG)
+    save_opaque_fullbleed(512, "public/icons/icon-512.png", ICON_BG)
 
     # apple-touch-icon — iOS doesn't render transparency reliably, opaque
     # background matching the app's dark theme color (viewport.themeColor

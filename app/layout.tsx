@@ -34,14 +34,14 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     url: SITE_URL,
     siteName: "FinLens",
-    images: [{ url: "/icons/icon-512-any.png?v=6", width: 512, height: 512 }],
+    images: [{ url: "/icons/icon-512-any.png?v=7", width: 512, height: 512 }],
     type: "website",
   },
   twitter: {
     card: "summary",
     title: TITLE,
     description: DESCRIPTION,
-    images: ["/icons/icon-512-any.png?v=6"],
+    images: ["/icons/icon-512-any.png?v=7"],
   },
   // ROOT CAUSE, confirmed directly (live report: icons kept looking stale/
   // boxed-in across every device and browser no matter how many times the
@@ -56,11 +56,11 @@ export const metadata: Metadata = {
   // block below or the underlying files were — kept being handed that
   // stale manifest, which itself still pointed at old/pre-fix icon paths.
   // No amount of fixing the icon files themselves could ever have broken
-  // that chain; only versioning this href does. Bumped ?v=5 -> ?v=6 in
-  // lockstep with the favicon.ico multi-size fix below — bump ?v=6 -> ?v=7
+  // that chain; only versioning this href does. Bumped ?v=6 -> ?v=7 in
+  // lockstep with the opaque-background icon fix below — bump ?v=7 -> ?v=8
   // (in lockstep with the `icons` block below and manifest.json's own icon
   // srcs) the next time anything icon-related changes again.
-  manifest: "/manifest.json?v=6",
+  manifest: "/manifest.json?v=7",
   // QA fix (live report: Chrome desktop/mobile tab and the PWA home-screen
   // shortcut kept falling back to a generic grey box with the letter "F",
   // or showed a stale/boxed-in icon, even after the underlying PNG/ICO
@@ -96,7 +96,7 @@ export const metadata: Metadata = {
   // in every major browser, often ignored by normal cache-control/refresh
   // behavior entirely. Same fix as the manifest.json case above: an
   // explicit, bump-able query string is now on both of these too. Every
-  // href below carries one; bump ?v=6 -> ?v=7 the next time the artwork
+  // href below carries one; bump ?v=7 -> ?v=8 the next time the artwork
   // changes to force every client to refetch without needing a filename
   // change. (?v=3 -> ?v=4: pixel-robot-head favicon regeneration, see
   // scripts/gen-favicon.py, which rasterizes the same 10x10 grid as
@@ -110,18 +110,32 @@ export const metadata: Metadata = {
   // "size" was that same 16x16 image relabeled, and it collapsed back to
   // one embedded (16,16) frame on read — confirmed via
   // Image.open(...).info["sizes"]. Now generates from the largest (48x48)
-  // frame so all three sizes are genuinely distinct. Every embedded frame
-  // was independently re-verified transparent (RGBA, alpha=0 at the
-  // corners) both before and after this fix — this was never a
-  // transparency bug, only a "missing higher-res frames" one.)
+  // frame so all three sizes are genuinely distinct.
+  //
+  // ROOT CAUSE #3 (live report, repeated across several rounds: robot-head
+  // icon still showed a WHITE background/box behind it on phone home
+  // screens, despite every "-any" PNG and favicon.ico independently
+  // pixel-verifying alpha=0/transparent at their corners each time). The
+  // files were never actually the bug — many Android launchers (and some
+  // browsers) don't reliably honor PNG transparency, or the declared
+  // "maskable" manifest icon, for a PWA home-screen shortcut, and silently
+  // composite the "any"-purpose icon onto a default WHITE backdrop
+  // instead. ?v=6 -> ?v=7: switched favicon.ico + both "-any" icons (see
+  // scripts/gen-favicon.py's save_opaque_fullbleed) from transparent to
+  // opaque, filled with the app's own dark background color (#0F131A,
+  // matches manifest.json's background_color) — eliminating any
+  // transparency for an OS/launcher to fill with white in the first
+  // place, regardless of whether it respects the maskable icon or PNG
+  // alpha correctly. The already-opaque maskable/apple-touch-icon files
+  // were untouched — they never had this problem.)
   icons: {
     icon: [
-      { url: "/favicon.ico?v=6", sizes: "any" },
-      { url: "/icons/icon-192-any.png?v=6", type: "image/png", sizes: "192x192" },
-      { url: "/icons/icon-512-any.png?v=6", type: "image/png", sizes: "512x512" },
+      { url: "/favicon.ico?v=7", sizes: "any" },
+      { url: "/icons/icon-192-any.png?v=7", type: "image/png", sizes: "192x192" },
+      { url: "/icons/icon-512-any.png?v=7", type: "image/png", sizes: "512x512" },
     ],
-    shortcut: ["/favicon.ico?v=6"],
-    apple: [{ url: "/apple-touch-icon.png?v=6", sizes: "180x180", type: "image/png" }],
+    shortcut: ["/favicon.ico?v=7"],
+    apple: [{ url: "/apple-touch-icon.png?v=7", sizes: "180x180", type: "image/png" }],
   },
 };
 
