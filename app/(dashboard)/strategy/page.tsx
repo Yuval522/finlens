@@ -261,7 +261,16 @@ export default function StrategyBuilderPage() {
                         // underline (border-collapse: the more specific/
                         // heavier per-cell border wins over the tr's), same
                         // technique as the Portfolio table's fork header.
-                        <th className="border-b-2 border-l border-dotted border-border/70 border-b-warning px-2 py-1.5 pl-3 text-left font-medium text-warning">
+                        // QA fix: extended to a 3-sided retro bracket —
+                        // top and left are now also dotted border-warning
+                        // (previously the left divider stayed neutral
+                        // border-border/70, matching every other column's
+                        // plain gray divider; now explicitly warning-
+                        // colored per the request to fully outline this
+                        // cell's corner). Right side intentionally stays
+                        // unset/0-width — the table's own right edge, not
+                        // meant to be boxed in.
+                        <th className="border-l border-t border-b-2 border-dotted border-warning px-2 py-1.5 pl-3 text-left font-medium text-warning">
                           Why it&apos;s close
                         </th>
                       )}
