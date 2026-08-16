@@ -236,24 +236,34 @@ export function HoldingsTable({ holdings, onEdit, onSell, ticks }: HoldingsTable
             <tr className="border-b border-slate-700/80 text-left text-muted-foreground">
               {COLUMNS_BEFORE_GAIN.map(renderHeaderCell)}
 
-              {/* QA fix: grouped "Gain/Loss" header spanning the two new
-                  sub-columns (dollar amount, percentage) below it — colored
-                  the brand orange per the reference, with an orange dotted
-                  bottom border in place of the row's default solid gray
-                  divider for just this cell (border-b-2 on the <th> itself
-                  wins the border-collapse conflict against the thinner
-                  tr-level border, same technique as the Strategy Builder
-                  table's "Why it's close" divider). colSpan=2 makes this
-                  cell exactly as wide as the two <td>s beneath it, so the
-                  divider visually "splits" across both. */}
-              <th
-                colSpan={2}
-                className="border-b-2 border-dotted border-primary px-2 py-2 text-right font-medium text-primary"
-              >
+              {/* QA fix: reference is a branching "fork" connector, not a
+                  plain underline — a vertical dotted stem drops from the
+                  centered "Gain/Loss" label, splits into a horizontal
+                  dotted bar spanning the two sub-columns, then two more
+                  dotted verticals drop from that bar's ends straight into
+                  the $ / % columns below. Built as one relatively-positioned
+                  <th colSpan={2}> containing the label (align-top, pulled up
+                  via less bottom padding than the fork needs, which is what
+                  makes it read as "slightly higher" than the plain headers
+                  — those default to vertical-align:middle and re-center
+                  within the now-taller row, while this cell's own content
+                  stays pinned to the top) plus an absolutely-positioned
+                  fork graphic anchored to the cell's bottom edge (so its
+                  two drop-lines always land exactly on the header row's
+                  bottom border regardless of the row's actual height).
+                  Each line segment is a 0-width/0-height div with a
+                  border-{l,r,t} border-dotted — the same "border as a
+                  dotted rule" technique already used for the Strategy
+                  Builder table's "Why it's close" vertical divider,
+                  applied three times here instead of once. left-1/4 /
+                  right-1/4 land the two drops at the horizontal center of
+                  each sub-column, assuming the $ and % <td>s below split
+                  the colSpan=2 width roughly evenly. */}
+              <th colSpan={2} className="relative px-2 pb-5 pt-1.5 text-center align-top font-medium text-primary">
                 <button
                   type="button"
                   onClick={() => handleSort("gainLoss")}
-                  className="inline-flex flex-row-reverse items-center gap-1 transition-colors hover:opacity-80"
+                  className="relative inline-flex items-center gap-1 transition-colors hover:opacity-80"
                 >
                   Gain/Loss
                   {sortKey === "gainLoss" || sortKey === "gainLossPercent" ? (
@@ -266,6 +276,17 @@ export function HoldingsTable({ holdings, onEdit, onSell, ticks }: HoldingsTable
                     <ChevronDown className="h-3 w-3 opacity-0" />
                   )}
                 </button>
+
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3" aria-hidden="true">
+                  {/* stem: label -> fork */}
+                  <span className="absolute left-1/2 top-0 h-1.5 w-0 -translate-x-1/2 border-l border-dotted border-primary" />
+                  {/* horizontal fork bar */}
+                  <span className="absolute left-1/4 right-1/4 top-1.5 border-t border-dotted border-primary" />
+                  {/* left drop -> $ column */}
+                  <span className="absolute left-1/4 top-1.5 h-1.5 w-0 -translate-x-1/2 border-l border-dotted border-primary" />
+                  {/* right drop -> % column */}
+                  <span className="absolute right-1/4 top-1.5 h-1.5 w-0 translate-x-1/2 border-r border-dotted border-primary" />
+                </div>
               </th>
 
               {COLUMNS_AFTER_GAIN.map(renderHeaderCell)}
