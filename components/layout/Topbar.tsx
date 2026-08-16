@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LogIn, LogOut, Menu, User, UserPlus } from "lucide-react";
 import { FinLensLogo } from "@/components/branding/FinLensLogo";
 import { SymbolSearchInput } from "@/components/search/SymbolSearchInput";
+import { SCREENER_UNIVERSE } from "@/lib/finance/screener-data";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { AuthModal } from "@/components/auth/AuthModal";
 
@@ -54,6 +55,26 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 
   const loggedIn = ready && user != null;
 
+  // QA fix (reversal of an earlier removal): a follow-up reference
+  // screenshot of the Screener page showed this exact search bar IS part
+  // of the persistent topbar, alongside a "N tickers · updated HH:MM UTC"
+  // status readout before the avatar. The earlier removal was based on it
+  // visually clashing with the Strategy Builder page's own large "$"
+  // command input — that page-specific clash doesn't mean the topbar
+  // shouldn't have it at all. Time is computed client-side (UTC, HH:MM) to
+  // avoid an SSR/client hydration mismatch; starts null so nothing renders
+  // until the first tick.
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  useEffect(() => {
+    function tick() {
+      const now = new Date();
+      setUpdatedAt(`${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")}`);
+    }
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   return (
     <header className="glass-panel sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-border px-4 md:px-6">
       {/* Mobile UX audit fix: h-9 w-9 (36px) is under the ~44px minimum
@@ -69,6 +90,13 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       </button>
       <FinLensLogo size={24} showWordmark className="shrink-0 md:hidden" />
       <SymbolSearchInput />
+
+      {updatedAt && (
+        <span className="hidden shrink-0 items-center gap-1.5 font-mono text-[11px] text-muted-foreground md:flex">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
+          {SCREENER_UNIVERSE.length} tickers · updated {updatedAt} UTC
+        </span>
+      )}
 
       <div ref={menuRef} className="relative ml-auto">
         <button

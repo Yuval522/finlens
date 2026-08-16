@@ -148,17 +148,22 @@ function SettingsContent() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-500/15 text-slate-300">
-            <SettingsIcon className="h-4 w-4" />
-          </span>
-          <div>
-            <h1 className="text-lg font-semibold text-foreground">Settings</h1>
-            <p className="text-xs text-muted-foreground">Preferences are saved to your account</p>
-          </div>
+      {/* Retro-Digital redesign: page hero centered (icon, title, subtitle
+          stacked) instead of the old left-aligned icon+title row; the
+          "Saved" flash keeps its own corner position via absolute
+          placement on this now-relative wrapper rather than sharing the
+          old justify-between row (which would fight with centering). */}
+      <div className="relative flex flex-col items-center gap-2 text-center">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
+          <SettingsIcon className="h-4 w-4" />
+        </span>
+        <div>
+          <h1 className="text-lg font-semibold text-foreground">Settings</h1>
+          <p className="text-xs text-muted-foreground">Preferences are saved to your account</p>
         </div>
-        {savedFlash && <span className="text-xs font-medium text-success">Saved</span>}
+        {savedFlash && (
+          <span className="absolute right-0 top-1 text-xs font-medium text-success">Saved</span>
+        )}
       </div>
 
       {/* Profile & Account */}

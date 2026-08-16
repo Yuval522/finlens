@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowDown, ArrowUp, Minus } from "lucide-react";
+import { Minus } from "lucide-react";
 import type { MarketQuote } from "@/lib/finance/types";
 import {
   changeDirection,
@@ -9,6 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 import { CompanyLogo } from "./CompanyLogo";
 import { WatchlistButton } from "@/components/shared/WatchlistButton";
+import { Led } from "@/components/shared/Led";
 
 interface MarketQuoteCardProps {
   quote: MarketQuote;
@@ -18,8 +19,6 @@ interface MarketQuoteCardProps {
   flash?: { direction: "up" | "down" | "flat"; key: number };
 }
 
-const DIRECTION_GLYPH = { up: ArrowUp, down: ArrowDown, flat: Minus } as const;
-
 /**
  * QA polish pass ("density gap vs iCharts" audit): more internal padding
  * (p-4 -> p-5), a bumped/bolder price figure, and the trend arrow moved out
@@ -28,10 +27,14 @@ const DIRECTION_GLYPH = { up: ArrowUp, down: ArrowDown, flat: Minus } as const;
  * inline arrow+percent text" treatment, and giving the card real
  * whitespace/typographic hierarchy instead of packing everything into one
  * tight row.
+ *
+ * Retro-Digital redesign: that top-right badge now shows a blinking LED
+ * dot (see components/shared/Led.tsx) instead of an ArrowUp/ArrowDown
+ * glyph for up/down; "flat" (no change) still shows a plain Minus glyph,
+ * since a static LED wouldn't communicate "no data / unchanged" well.
  */
 export function MarketQuoteCard({ quote, showWatchlistToggle = false, flash }: MarketQuoteCardProps) {
   const direction = changeDirection(quote.change);
-  const DirectionIcon = DIRECTION_GLYPH[direction];
   const priceFlashClass =
     flash?.direction === "up" ? "price-flash-up" : flash?.direction === "down" ? "price-flash-down" : undefined;
 
@@ -66,13 +69,13 @@ export function MarketQuoteCard({ quote, showWatchlistToggle = false, flash }: M
         <span
           className={cn(
             "flex h-6 w-6 items-center justify-center rounded-full",
-            direction === "up" && "bg-success/10 text-success",
-            direction === "down" && "bg-destructive/10 text-destructive",
+            direction === "up" && "bg-success/10",
+            direction === "down" && "bg-destructive/10",
             direction === "flat" && "bg-accent text-muted-foreground"
           )}
           aria-hidden="true"
         >
-          <DirectionIcon className="h-3.5 w-3.5" />
+          {direction === "flat" ? <Minus className="h-3.5 w-3.5" /> : <Led up={direction === "up"} />}
         </span>
       </div>
 

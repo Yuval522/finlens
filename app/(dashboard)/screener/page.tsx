@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, ScanSearch, SlidersHorizontal, X } from "lucide-react";
+import { ChevronDown, ChevronUp, ScanSearch, SlidersHorizontal, X } from "lucide-react";
+import { Led } from "@/components/shared/Led";
 import { SCREENER_SECTORS, SCREENER_UNIVERSE, type ScreenerStock } from "@/lib/finance/screener-data";
 import { CompanyLogo } from "@/components/dashboard/CompanyLogo";
 import { cn } from "@/lib/utils";
@@ -97,16 +98,13 @@ export default function ScreenerPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
-          <ScanSearch className="h-4 w-4" />
-        </span>
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">Stock Screener</h1>
-          <p className="text-xs text-muted-foreground">
-            {sorted.length} of {SCREENER_UNIVERSE.length} stocks match your filters
-          </p>
-        </div>
+      {/* QA fix: reference header has no icon badge above the title, matching
+          the same no-icon treatment already applied to Strategy Builder. */}
+      <div className="flex flex-col items-center gap-1.5 text-center">
+        <h1 className="text-xl font-bold text-foreground">Stock Screener</h1>
+        <p className="text-xs text-muted-foreground">
+          {sorted.length} of {SCREENER_UNIVERSE.length} stocks match your filters
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[16rem_1fr]">
@@ -156,7 +154,6 @@ export default function ScreenerPage() {
                 onChange={(e) => setMarketCapMin(e.target.value)}
                 className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-xs text-foreground focus:border-primary focus:outline-none"
               />
-              <span className="text-xs text-muted-foreground">–</span>
               <input
                 type="number"
                 min={0}
@@ -203,9 +200,13 @@ export default function ScreenerPage() {
             </div>
           ) : (
             <div className="-mx-1 overflow-x-auto">
+              {/* QA fix: header row is uppercase/tracked-wide in the
+                  reference (NAME / PRICE / CHANGE % / MARKET CAP / P/E /
+                  DIV YIELD), matching the same treatment already applied to
+                  the Strategy Builder results table. */}
               <table className="w-full min-w-[640px] border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-slate-700/80 text-left text-muted-foreground">
+                  <tr className="border-b border-border text-left uppercase tracking-wide text-muted-foreground">
                     <th className="px-2 py-2 font-medium">
                       <button
                         type="button"
@@ -265,7 +266,7 @@ function ScreenerRow({ stock, onClick }: { stock: ScreenerStock; onClick: () => 
   return (
     <tr
       onClick={onClick}
-      className="cursor-pointer border-b border-slate-800/60 transition-colors last:border-0 hover:bg-accent/60"
+      className="cursor-pointer border-b border-border/70 transition-colors last:border-0 hover:bg-accent/60"
     >
       <td className="px-2 py-2.5">
         <div className="flex items-center gap-2">
@@ -284,7 +285,7 @@ function ScreenerRow({ stock, onClick }: { stock: ScreenerStock; onClick: () => 
             up ? "text-success" : "text-destructive"
           )}
         >
-          {up ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+          <Led up={up} />
           {Math.abs(stock.changePercent).toFixed(2)}%
         </span>
       </td>

@@ -63,6 +63,20 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// TEMP demo/prototype bypass (2026-08-14): the local dev environment has no
+// working database connection configured, so every real login/signup
+// attempt 500s ("Something went wrong on our end") and every RequireAuth-
+// gated page (Portfolio/Watchlist/Settings) was blocking on it entirely.
+// With GUEST_MODE on, a missing/failed session simply resolves to this
+// synthetic guest user instead of null, so `user != null` everywhere below
+// — RequireAuth never shows its login wall, and Topbar's account menu
+// always reads as "logged in" (so the Log In/Sign Up entries never even
+// appear). Nothing about the real multi-user system below was removed:
+// flip this back to false once a working DB connection is in place and
+// real accounts should be required again.
+const GUEST_MODE = true;
+const GUEST_USER: AuthUser = { id: "guest", username: "Guest", email: "guest@finlens.local" };
+
 type DataKey = "portfolio" | "watchlist" | "settings";
 
 async function fetchUserData(key: DataKey): Promise<unknown> {
@@ -148,6 +162,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (me) {
         await hydrateAllFromServer();
+      } else if (GUEST_MODE) {
+        // No real session (likely: no DB configured here) — fall back to
+        // the guest user instead of resetting/blocking. Whatever's already
+        // in local storage (portfolio/watchlist/settings) is left alone,
+        // same as pre-auth-feature behavior.
+        me = GUEST_USER;
       } else {
         resetAllStores();
       }
@@ -290,7 +310,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // the user clearly wants this browser to stop showing their data.
     }
     resetAllStores();
-    setUser(null);
+    // In GUEST_MODE, "logging out" clears local data (a fresh start) but
+    // still resolves back to the guest user rather than null, so the
+    // RequireAuth wall/login popup never reappears.
+    setUser(GUEST_MODE ? GUEST_USER : null);
   }, []);
 
   return (

@@ -53,7 +53,7 @@ export default function WatchlistPage() {
           showWatchlistToggle
           emptyMessage="Couldn't load quotes for your watchlist symbols right now."
           icon={Star}
-          iconClassName="bg-amber-500/15 text-amber-400"
+          iconClassName="bg-primary/15 text-primary"
           ticks={ticks}
         />
       )}

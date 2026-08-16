@@ -1,7 +1,8 @@
-import { ArrowDown, ArrowUp, Minus } from "lucide-react";
+import { Minus } from "lucide-react";
 import { formatChange, formatPercent, formatPrice, changeDirection } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
 import type { MarketQuote } from "@/lib/finance/types";
+import { Led } from "@/components/shared/Led";
 
 interface PriceHeaderBlockProps {
   quote: MarketQuote;
@@ -13,8 +14,6 @@ interface PriceHeaderBlockProps {
    */
   flash?: { direction: "up" | "down" | "flat"; key: number };
 }
-
-const DIRECTION_GLYPH = { up: ArrowUp, down: ArrowDown, flat: Minus } as const;
 
 function formatTimestamp(asOf: number | null, timezone: string | null): string | null {
   if (asOf == null) return null;
@@ -32,7 +31,6 @@ function formatTimestamp(asOf: number | null, timezone: string | null): string |
 
 export function PriceHeaderBlock({ quote, flash }: PriceHeaderBlockProps) {
   const direction = changeDirection(quote.change);
-  const DirectionIcon = DIRECTION_GLYPH[direction];
 
   const showPreMarket = quote.marketState === "PRE" && quote.preMarketPrice != null;
   const showPostMarket =
@@ -84,7 +82,11 @@ export function PriceHeaderBlock({ quote, flash }: PriceHeaderBlockProps) {
               direction === "flat" && "bg-accent text-muted-foreground"
             )}
           >
-            <DirectionIcon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            {direction === "flat" ? (
+              <Minus className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
+            ) : (
+              <Led up={direction === "up"} />
+            )}
             {formatChange(quote.change, quote.currency)} ({formatPercent(quote.changePercent)})
           </span>
           {regularTimestamp && (

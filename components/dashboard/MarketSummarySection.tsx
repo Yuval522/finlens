@@ -9,7 +9,8 @@ const SLOTS = 5;
 // 5-column track, with a 300px floor so "NASDAQ Composite" and similar
 // index names get enough room before truncating, at any viewport.
 const COLUMNS = "grid-cols-[repeat(auto-fit,minmax(300px,1fr))]";
-const ICON_CLASS = "bg-blue-500/15 text-blue-400";
+// Retro-Digital redesign: single-accent orange badge (was blue).
+const ICON_CLASS = "bg-primary/15 text-primary";
 
 /** Async Server Component — fetched inside a <Suspense> boundary on the home page. */
 export async function MarketSummarySection() {

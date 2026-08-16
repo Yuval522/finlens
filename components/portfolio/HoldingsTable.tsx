@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
+import { Led } from "@/components/shared/Led";
 import { formatPercent } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
 import { computeHolding, type HoldingComputed } from "@/lib/portfolio/derive";
@@ -90,7 +91,7 @@ function HoldingCard({
               gainUp ? "text-success" : "text-destructive"
             )}
           >
-            {gainUp ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+            <Led up={gainUp} />
             {formatPercent(h.gainLossPercent)}
           </span>
         </div>
@@ -266,7 +267,7 @@ export function HoldingsTable({ holdings, onEdit, onSell, ticks }: HoldingsTable
                         gainUp ? "text-success" : "text-destructive"
                       )}
                     >
-                      {gainUp ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                      <Led up={gainUp} />
                       {money(Math.abs(h.gainLoss))} ({formatPercent(h.gainLossPercent)})
                     </span>
                   </td>

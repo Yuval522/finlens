@@ -1,15 +1,19 @@
 import type { Metadata, Viewport } from "next";
-// Self-hosted variable fonts (Fontsource) — no external Google Fonts fetch
-// required at build time. Family names are wired to --font-sans / --font-mono
-// in globals.css and consumed via tailwind.config.ts.
-import "@fontsource-variable/open-sans";
+// QA fix: the app previously loaded Inter (next/font/google) for UI text
+// alongside JetBrains Mono for numeric/ticker data. Per explicit direction
+// the whole app should read as one sharp retro monospace face — no
+// rounded/modern sans-serif remaining anywhere, headings and sidebar nav
+// included. Inter is no longer imported; app/globals.css now aliases
+// --font-sans directly to --font-mono, so every `font-sans` class in the
+// codebase (Tailwind's default body/heading font) resolves to JetBrains
+// Mono without needing to touch each component individually.
 import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
 import { AppAuthGate } from "@/components/auth/AppAuthGate";
 import { getSiteUrl } from "@/lib/seo/site-url";
 
 const SITE_URL = getSiteUrl();
-const TITLE = "FinLens — Natural Language Stock Screener for US & TASE Markets";
+const TITLE = "FinLens - Financial Intelligence";
 const DESCRIPTION =
   "FinLens is a next-generation financial terminal: describe a screening strategy in plain English or Hebrew and get live results, plus charting, technical indicators, and unique TASE (Tel Aviv Stock Exchange) coverage alongside US equities.";
 

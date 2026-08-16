@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Loader2, Sparkles, TriangleAlert, Wand2 } from "lucide-react";
+import { Loader2, Sparkles, TriangleAlert } from "lucide-react";
+import { Led } from "@/components/shared/Led";
 import { CompanyLogo } from "@/components/dashboard/CompanyLogo";
-import { formatPrice, formatPercent, formatMarketCap, changeDirection } from "@/lib/format/currency";
+import { formatPrice, formatPercent, changeDirection } from "@/lib/format/currency";
 import { cn } from "@/lib/utils";
-import type { ParsedStrategy, StrategyMetric, StrategyResultRow } from "@/lib/strategy/types";
-import { STRATEGY_METRIC_LABELS, STRATEGY_OPERATOR_LABELS } from "@/lib/strategy/format";
+import type { ParsedStrategy, StrategyResultRow } from "@/lib/strategy/types";
 
 /**
  * Natural Language Strategy Builder — free-text input (English/Hebrew) ->
@@ -18,31 +18,21 @@ import { STRATEGY_METRIC_LABELS, STRATEGY_OPERATOR_LABELS } from "@/lib/strategy
  * understood correctly, nothing in the universe currently qualifies".
  */
 
-const EXAMPLE_QUERIES = [
-  "Large cap tech stocks with RSI under 30",
-  "Dividend yield over 3% and P/E under 20",
-  "מניות עם שווי שוק מעל 50 מיליארד דולר שעלו היום",
-];
-
 /**
- * Assisted input: one insertable natural-language snippet per supported
- * StrategyMetric (lib/strategy/types.ts), phrased to map cleanly onto the
- * closed-vocabulary parser (lib/strategy/parse.ts / mock-parse.ts) — this
- * is the "guide users toward phrasing that maps cleanly" half of the
- * Strategy Builder v2 upgrade; the filter chips shown after a run
- * (STRATEGY_METRIC_LABELS below) are the "confirm what was understood"
- * half.
+ * QA fix: replaced the old 9-chip "insert a metric snippet" row + separate
+ * "Try:" example-queries row + Hebrew example (three stacked rows, wrapping
+ * across 2-3 lines) with exactly the 5 named quick-strategy presets shown
+ * in the reference design. Each is a complete, ready-to-run natural-
+ * language query (not a fragment to append), so clicking one behaves like
+ * clicking an example query: it replaces the box's contents and runs
+ * immediately — see PRESET_PILLS / handlePresetClick below.
  */
-const METRIC_HINTS: { metric: StrategyMetric; snippet: string }[] = [
-  { metric: "marketCap", snippet: "market cap over $10 billion" },
-  { metric: "peRatio", snippet: "P/E under 20" },
-  { metric: "dividendYieldPercent", snippet: "dividend yield over 3%" },
-  { metric: "rsi14", snippet: "RSI below 30" },
-  { metric: "priceVsSma50", snippet: "above its 50-day average" },
-  { metric: "priceVsSma200", snippet: "above its 200-day average" },
-  { metric: "changePercent", snippet: "up more than 5% today" },
-  { metric: "price", snippet: "priced under $50" },
-  { metric: "volume", snippet: "volume over 5 million" },
+const PRESET_PILLS: { label: string; query: string }[] = [
+  { label: "Large Cap", query: "Large cap stocks with market cap over $10 billion" },
+  { label: "Low RSI (Oversold)", query: "Stocks with RSI below 30" },
+  { label: "Dividend Payers", query: "Stocks with dividend yield over 3%" },
+  { label: "Tech Sector", query: "Tech sector stocks" },
+  { label: "P/E < 20", query: "Stocks with P/E under 20" },
 ];
 
 interface StrategyResponse {
@@ -72,12 +62,15 @@ export default function StrategyBuilderPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<StrategyResponse | null>(null);
+  // Which PRESET_PILLS label (if any) produced the query currently in the
+  // box — drives the glowing "active" pill state. Cleared as soon as the
+  // user hand-edits the box, so the glow never lies about what's shown.
+  const [activePreset, setActivePreset] = useState<string | null>(null);
 
-  function insertHint(snippet: string) {
-    setQuery((prev) => {
-      const trimmed = prev.trim();
-      return trimmed.length === 0 ? snippet.charAt(0).toUpperCase() + snippet.slice(1) : `${trimmed} and ${snippet}`;
-    });
+  function handlePresetClick(label: string, presetQuery: string) {
+    setActivePreset(label);
+    setQuery(presetQuery);
+    runStrategy(presetQuery);
   }
 
   async function runStrategy(q: string) {
@@ -109,74 +102,83 @@ export default function StrategyBuilderPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
-          <Sparkles className="h-4 w-4" />
-        </span>
-        <div>
-          <h1 className="text-lg font-semibold text-foreground">Strategy Builder</h1>
-          <p className="text-xs text-muted-foreground">
-            Describe a screening strategy in plain English or Hebrew — we&apos;ll turn it into filters and run it live.
-          </p>
-        </div>
+      {/* QA fix: reference header has no icon badge above it, a larger bold
+          H1 reading "Describe your strategy", and a short one-line
+          subtitle — dropped the icon and the Hebrew-support callout to
+          match exactly. */}
+      <div className="flex flex-col items-center gap-2 text-center">
+        <h1 className="text-3xl font-bold text-foreground">Describe your strategy</h1>
+        <p className="text-sm text-muted-foreground">Plain English in, live market results out.</p>
       </div>
 
-      {/* Query input */}
-      <div className="glass-card space-y-3 rounded-xl p-4">
-        <textarea
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) runStrategy(query);
-          }}
-          placeholder="e.g. Tech stocks under $50 with RSI below 30, sorted by market cap"
-          dir="auto"
-          rows={3}
-          className="w-full resize-none rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-        />
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-1.5">
-            {EXAMPLE_QUERIES.map((ex) => (
-              <button
-                key={ex}
-                type="button"
-                onClick={() => {
-                  setQuery(ex);
-                  runStrategy(ex);
-                }}
-                dir="auto"
-                className="rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-              >
-                {ex}
-              </button>
-            ))}
-          </div>
+      {/* Query input — Retro-Digital redesign: single-line "$" command pill
+          (matching the reference terminal-style search bar) instead of the
+          old multi-row textarea with a separate button below it. */}
+      <div className="space-y-3">
+        {/* QA fix: both the shell and the Run button were rounded-full
+            (full stadium/pill) — corner-pixel comparison against the
+            reference showed a moderate ~16-20px rounded-rectangle instead,
+            with visible straight top/bottom edges, plus dark (not white)
+            text on the coral Run button. rounded-2xl/rounded-xl below, and
+            text-black on the button (a local override, not a change to the
+            shared --primary-foreground token, since that token is also
+            used for white-on-primary elements elsewhere like the Topbar
+            avatar badge). */}
+        <div className="flex items-center gap-3 rounded-2xl border border-primary/60 bg-card px-5 py-3.5 shadow-[0_0_28px_-6px] shadow-primary/50 transition-shadow focus-within:shadow-primary/80">
+          <span className="shrink-0 font-mono text-base text-primary">$</span>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setActivePreset(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") runStrategy(query);
+            }}
+            placeholder="e.g. Tech stocks under $50 with RSI below 30, sorted by market cap"
+            dir="auto"
+            className="min-w-0 flex-1 bg-transparent font-mono text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+          />
           <button
             type="button"
             onClick={() => runStrategy(query)}
             disabled={loading || query.trim().length === 0}
-            className="flex min-h-9 items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-opacity disabled:opacity-50"
+            className="flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 py-2 font-mono text-sm font-bold text-black transition-opacity disabled:opacity-50"
           >
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {loading ? "Running…" : "Run strategy"}
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                Run <span aria-hidden="true">↵</span>
+              </>
+            )}
           </button>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 border-t border-border pt-3">
-          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Wand2 className="h-3 w-3" />
-            Add a filter:
-          </span>
-          {METRIC_HINTS.map(({ metric, snippet }) => (
-            <button
-              key={metric}
-              type="button"
-              onClick={() => insertHint(snippet)}
-              title={`Insert: "${snippet}"`}
-              className="rounded-full border border-dashed border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-            >
-              {STRATEGY_METRIC_LABELS[metric]}
-            </button>
-          ))}
+
+        {/* Preset pills — exactly the 5 named quick-strategy presets from
+            the reference, one row, no "Try:" label or Hebrew example
+            underneath. The glowing orange border marks whichever preset
+            produced the query currently shown above. */}
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {PRESET_PILLS.map(({ label, query: presetQuery }) => {
+            const active = activePreset === label;
+            return (
+              <button
+                key={label}
+                type="button"
+                onClick={() => handlePresetClick(label, presetQuery)}
+                className={cn(
+                  "rounded-full border px-3.5 py-1.5 font-mono text-xs transition-colors",
+                  active
+                    ? "border-primary bg-primary/10 text-primary shadow-[0_0_10px_-2px] shadow-primary/70"
+                    : "border-border/80 bg-white/[0.02] text-muted-foreground hover:border-primary/60 hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -189,65 +191,29 @@ export default function StrategyBuilderPage() {
 
       {response && (
         <>
-          {/* Generated filtering logic — transparency panel, shown regardless of result count */}
-          <div className="glass-card space-y-3 rounded-xl p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                What we understood
-              </h2>
-              {response.parsed.mock && (
-                <span
-                  title="ANTHROPIC_API_KEY isn't configured — filters below were matched by a local keyword parser, not by Claude."
-                  className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-400"
-                >
-                  <Sparkles className="h-3 w-3" />
-                  Offline demo mode
-                </span>
-              )}
-            </div>
-            <p dir="auto" className="text-sm text-foreground">
-              {response.parsed.explanation || "No explanation returned."}
-            </p>
-            {response.parsed.mock && (
-              <p className="text-xs text-muted-foreground">
-                No live Anthropic API key is configured, so this ran through a simplified local keyword matcher
-                instead of Claude — good enough to try the interface, but it won&apos;t understand phrasing the
-                real model would. Add <code className="font-mono">ANTHROPIC_API_KEY</code> to enable full natural
-                language parsing.
-              </p>
-            )}
-            {response.parsed.filters.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {response.parsed.filters.map((f, i) => (
-                  <span
-                    key={i}
-                    className="rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[11px] text-muted-foreground"
-                  >
-                    {STRATEGY_METRIC_LABELS[f.metric]} {STRATEGY_OPERATOR_LABELS[f.operator]} {f.value}
-                  </span>
-                ))}
-                {response.parsed.sortBy && (
-                  <span className="rounded-full border border-border bg-card px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
-                    sort: {STRATEGY_METRIC_LABELS[response.parsed.sortBy]} {response.parsed.sortDirection}
-                  </span>
-                )}
-              </div>
-            )}
-            {response.parsed.unsupported && response.parsed.filters.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                No filters could be applied — try rephrasing with a specific metric (price, market cap, P/E,
-                dividend yield, RSI, moving averages, volume, or today&apos;s % change).
-              </p>
-            )}
-          </div>
+          {/* QA fix: removed the "What we understood" transparency panel
+              (parsed-filter chips + offline-demo-mode badge) — the
+              reference layout goes straight from the pills to the warning
+              banner/results table with nothing in between. The underlying
+              response.parsed data (explanation, filters, mock flag) is
+              still fetched and available on `response` if this needs to
+              come back later; only the render was removed here. */}
 
           {/* Relaxed/near-miss banner — shown ONLY when the strict query matched nothing and
               execute.ts fell back to closest-match scoring (see StrategyRunResult.relaxed). This
-              must read as clearly distinct from a normal result set, never blended in silently. */}
+              must read as clearly distinct from a normal result set, never blended in silently.
+              QA fix: reference shows a bold coral title ("No exact matches") with a separate
+              muted subtitle line below it, not one flat sentence — and the accent is the brand
+              primary orange-coral, not a separate amber/yellow hue. */}
           {response.relaxed && (
-            <div className="glass-card flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-400">
-              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{response.relaxedNote ?? "No exact matches — showing the closest stocks instead."}</span>
+            <div className="glass-card flex items-start gap-3 rounded-xl border border-primary/40 bg-primary/10 p-4">
+              <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div className="space-y-0.5">
+                <p className="text-sm font-semibold text-primary">No exact matches</p>
+                <p className="text-sm text-muted-foreground">
+                  {response.relaxedNote ?? "No stocks matched every condition exactly — showing the closest matches instead."}
+                </p>
+              </div>
             </div>
           )}
 
@@ -263,17 +229,24 @@ export default function StrategyBuilderPage() {
                 {response.dataAsOf != null && <span>Data as of {formatDataAge(response.dataAsOf)}</span>}
               </p>
               <div className="-mx-1 overflow-x-auto">
-                <table className="w-full min-w-[720px] border-collapse text-xs">
+                {/* QA fix: reference header row is uppercase with tracked-out
+                    letter-spacing (NAME / PRICE / CHANGE % / ...), has no
+                    Market Cap column, and separates "Why it's close" with a
+                    dotted vertical divider rather than just more spacing. */}
+                <table className="w-full min-w-[640px] border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-slate-700/80 text-left text-muted-foreground">
-                      <th className="px-2 py-2 font-medium">Name</th>
-                      <th className="px-2 py-2 text-right font-medium">Price</th>
-                      <th className="px-2 py-2 text-right font-medium">Change %</th>
-                      <th className="px-2 py-2 text-right font-medium">Market Cap</th>
-                      <th className="px-2 py-2 text-right font-medium">P/E</th>
-                      <th className="px-2 py-2 text-right font-medium">Div Yield</th>
-                      <th className="px-2 py-2 text-right font-medium">RSI-14</th>
-                      {response.relaxed && <th className="px-2 py-2 text-left font-medium">Why it&apos;s close</th>}
+                    <tr className="border-b border-border text-left uppercase tracking-wide text-muted-foreground">
+                      <th className="px-2 py-1.5 font-medium">Name</th>
+                      <th className="px-2 py-1.5 text-right font-medium">Price</th>
+                      <th className="px-2 py-1.5 text-right font-medium">Change %</th>
+                      <th className="px-2 py-1.5 text-right font-medium">P/E</th>
+                      <th className="px-2 py-1.5 text-right font-medium">Div Yield</th>
+                      <th className="px-2 py-1.5 text-right font-medium">RSI-14</th>
+                      {response.relaxed && (
+                        <th className="border-l border-dotted border-border/70 px-2 py-1.5 pl-3 text-left font-medium">
+                          Why it&apos;s close
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -318,9 +291,9 @@ function StrategyRow({
   return (
     <tr
       onClick={onClick}
-      className="cursor-pointer border-b border-slate-800/60 transition-colors last:border-0 hover:bg-accent/60"
+      className="cursor-pointer border-b border-border/70 transition-colors last:border-0 hover:bg-accent/60"
     >
-      <td className="px-2 py-2.5">
+      <td className="px-2 py-2">
         <div className="flex items-center gap-2">
           <CompanyLogo symbol={row.symbol} name={row.name} size={22} />
           <div className="min-w-0">
@@ -329,8 +302,8 @@ function StrategyRow({
           </div>
         </div>
       </td>
-      <td className="px-2 py-2.5 text-right font-mono text-foreground">{formatPrice(row.price, "USD")}</td>
-      <td className="px-2 py-2.5 text-right">
+      <td className="px-2 py-2 text-right font-mono text-foreground">{formatPrice(row.price, "USD")}</td>
+      <td className="px-2 py-2 text-right">
         <span
           className={cn(
             "inline-flex items-center gap-1 font-mono font-medium",
@@ -338,23 +311,24 @@ function StrategyRow({
             direction === "down" && "text-destructive"
           )}
         >
-          {direction === "up" && <ArrowUp className="h-3 w-3" />}
-          {direction === "down" && <ArrowDown className="h-3 w-3" />}
+          {direction !== "flat" && <Led up={direction === "up"} />}
           {formatPercent(row.changePercent)}
         </span>
       </td>
-      <td className="px-2 py-2.5 text-right font-mono text-foreground">{formatMarketCap(row.marketCap, "USD")}</td>
-      <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
+      <td className="px-2 py-2 text-right font-mono text-muted-foreground">
         {row.peRatio == null ? "—" : `${row.peRatio.toFixed(1)}x`}
       </td>
-      <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
+      <td className="px-2 py-2 text-right font-mono text-muted-foreground">
         {row.dividendYieldPercent == null ? "—" : `${row.dividendYieldPercent.toFixed(2)}%`}
       </td>
-      <td className="px-2 py-2.5 text-right font-mono text-muted-foreground">
+      <td className="px-2 py-2 text-right font-mono text-muted-foreground">
         {row.rsi14 == null ? "—" : row.rsi14.toFixed(0)}
       </td>
       {showAlmostMatchNote && (
-        <td className="max-w-[220px] px-2 py-2.5 text-left text-[11px] text-amber-400/90" title={row.almostMatchNote ?? undefined}>
+        <td
+          className="max-w-[220px] border-l border-dotted border-border/70 px-2 py-2 pl-3 text-left text-[11px] text-primary/90"
+          title={row.almostMatchNote ?? undefined}
+        >
           <span className="line-clamp-2">{row.almostMatchNote ?? "—"}</span>
         </td>
       )}

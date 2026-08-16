@@ -3,49 +3,65 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------- */
-/* FinLens Signature Theme v4 — Deep Charcoal & Platinum Glass             */
-/* Hard override: v3's "Royal Slate" carried a strong blue tint that read  */
-/* as a generic web-app dark mode rather than an institutional terminal.   */
-/* v4 keeps the exact same token/architecture (glass-card gradient, inset  */
-/* highlight, cyan-glow hover, platinum borders) and only shifts the hue   */
-/* toward neutral zinc/charcoal — background near-black matte, card       */
-/* surfaces a clear step lighter for a real "pop", borders/muted-fg tuned  */
-/* to match. Semantic colors (primary/success/destructive/ring) untouched */
-/* — they're chosen to read clearly against any neutral dark surface.     */
-/* HSL triplets (no hsl() wrapper) so Tailwind can compose                */
-/* hsl(var(--x)) / hsl(var(--x)/alpha). Gradient accents                  */
-/* (from-blue-500 to-cyan-400 / from-blue-400 to-emerald-400) stay as     */
-/* plain Tailwind utilities in components — no extra tokens needed.       */
+/* FinLens Signature Theme v5 — Retro-Digital / Hacker-Chic Terminal       */
+/* Full retint of v4's "Deep Charcoal & Platinum Glass": obsidian-black    */
+/* base, sharp 1px hairline borders in place of the old soft glass-blur    */
+/* treatment, and a single vibrant retro-futuristic orange-coral accent    */
+/* (#FF5722) replacing the old luminous-blue/cyan brand color everywhere   */
+/* --primary is consumed (active nav, buttons, links, focus ring).         */
+/* success/destructive shift to a punchier LED green/coral-red pair that   */
+/* matches the new .led-dot glow indicators (below) which replace the      */
+/* ArrowUp/ArrowDown glyphs on price-change badges site-wide.              */
+/*                                                                          */
+/* Token NAMES and every Tailwind class that consumes them (bg-background, */
+/* text-foreground, bg-card, border-border, text-primary, bg-accent,       */
+/* text-success, text-destructive, bg-muted, ...) are UNCHANGED — only the */
+/* HSL values shift, so this single block reskins every component that     */
+/* already consumes these tokens without needing a per-component edit.     */
+/* HSL triplets (no hsl() wrapper) so Tailwind can compose                 */
+/* hsl(var(--x)) / hsl(var(--x)/alpha).                                    */
 /* ---------------------------------------------------------------------- */
 :root {
-  --background: 240 6% 5%; /* near-black matte charcoal, Tailwind zinc-950 territory */
+  --background: 220 8% 4%; /* obsidian near-black, #08090A territory */
   --foreground: 0 0% 100%; /* pure white for headings/primary text */
 
-  --card: 240 5% 11%; /* Platinum Glass surface — clearly lighter than bg, zinc-900 territory */
+  --card: 220 8% 7%; /* flat obsidian panel surface, #101113 territory */
   --card-foreground: 0 0% 100%;
 
-  --primary: 217 91% 60%; /* luminous sky-blue, Tailwind blue-500 territory */
+  --primary: 14 100% 57%; /* #FF5722 — retro-futuristic orange-coral accent */
   --primary-foreground: 0 0% 100%;
 
-  --success: 160 84% 39%; /* #10B981 — vivid emerald for gains */
+  --success: 148 65% 51%; /* #33D17B — LED green for gains */
   --success-foreground: 0 0% 100%;
 
-  --destructive: 0 84% 60%; /* #EF4444 — sharp red for losses */
+  --destructive: 350 100% 66%; /* #FF5470 — LED coral-red for losses */
   --destructive-foreground: 0 0% 100%;
 
-  --border: 240 5% 20%; /* crisp neutral border, Tailwind zinc-800 territory */
-  --muted: 240 5% 15%;
-  --muted-foreground: 240 5% 65%; /* neutral zinc-400 for labels */
-  --accent: 240 5% 17%;
+  --border: 230 6% 12%; /* sharp 1px hairline, #1c1d20 territory */
+  --muted: 220 6% 10%;
+  --muted-foreground: 220 4% 58%; /* neutral gray for labels */
+  --accent: 220 6% 14%; /* neutral hover-overlay bg — NOT the brand accent, see --primary */
   --accent-foreground: 0 0% 100%;
 
-  --ring: 217 91% 60%;
-  --radius: 0.75rem;
+  --ring: 14 100% 57%;
+  --radius: 0.625rem; /* 10px — sharp hairline-terminal card radius, matches the reference design exactly */
 
-  /* Dual-font system: UI text in Open Sans, all numeric/price/ticker data
-     in JetBrains Mono for tabular alignment (self-hosted via Fontsource). */
-  --font-sans: "Open Sans Variable", system-ui, -apple-system, sans-serif;
+  /* QA fix: unified single-font system — the app previously split UI text
+     (Inter, via next/font/google) from numeric/ticker data (JetBrains
+     Mono), but per explicit direction the entire retro-terminal aesthetic
+     should read as one sharp monospace face throughout, headings and
+     sidebar nav included, with no rounded/modern sans-serif remaining
+     anywhere. --font-sans now simply aliases --font-mono (single source of
+     truth — if the mono stack ever changes, both follow automatically)
+     instead of pointing at a separately-loaded Inter variable. Inter is no
+     longer imported at all (see app/layout.tsx). */
   --font-mono: "JetBrains Mono Variable", "SF Mono", Consolas, monospace;
+  --font-sans: var(--font-mono);
+
+  /* Raw hex (not hsl(var(--x))) — feeds box-shadow glow color directly for
+     .led-dot below, see components/shared/Led.tsx. */
+  --led-up: #33d17b;
+  --led-down: #ff5470;
 }
 
 * {
@@ -57,14 +73,10 @@ html {
 }
 
 body {
-  /* Deep Charcoal Gradient (v4) — replaces the old blue-tinted "Royal
-     Slate" gradient with a true neutral matte-black gradient (fixed, so
-     it doesn't scroll/repeat per-section) for an institutional-terminal
-     feel rather than a "web app" one, while keeping the same subtle
-     depth/warmth the flat --background token alone can't provide. */
-  background-color: #0a0a0b;
-  background-image: linear-gradient(to bottom right, #050506, #141416 45%, #050506);
-  background-attachment: fixed;
+  /* Retro-Digital v5: flat obsidian black, not a soft gradient — a real
+     hacker-terminal reads as flat and high-contrast, not glassy. Replaces
+     v4's diagonal Deep Charcoal Gradient. */
+  background-color: #08090a;
   color: hsl(var(--foreground));
 }
 
@@ -93,12 +105,15 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Premium glass accents — used on chrome (Topbar, Sidebar) and elevated
-   cards to give FinLens a distinct, modern feel vs. flat competitor UIs. */
+/* Retro-Digital v5: chrome surfaces (Topbar, Sidebar) go from a heavy
+   20px glass blur to a near-opaque flat panel with a much lighter blur —
+   a hacker-terminal reads as sharp/flat, not glassy. Class name kept
+   (.glass-panel) since it's referenced from several component files;
+   only the visual treatment changes. */
 .glass-panel {
-  background-color: hsl(var(--card) / 0.82);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background-color: hsl(var(--card) / 0.96);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 /* UI/UX audit fix: search/ticker-combobox result dropdowns (Topbar search,
@@ -116,31 +131,23 @@ body {
   background-color: hsl(var(--card));
 }
 
-/* Lighter glass treatment for individual content cards — subtle gradient
-   fill + a brighter top-edge highlight so cards read as distinctly raised
-   above the page background rather than blending into it. Every card gets
-   a crisp platinum border and an interactive cyan-glow hover state baked
-   in by default, rather than left for each usage site to opt into. */
+/* Retro-Digital v5: dropped the soft gradient fill / inset highlight /
+   heavy blur entirely — a high-contrast terminal card is flat with a
+   sharp 1px hairline border, not a glassmorphism panel. Hover now glows
+   in the new orange brand accent instead of the old cyan. Class name kept
+   (.glass-card) since it's referenced from dozens of component files;
+   only the visual treatment changes. */
 .glass-card {
-  background: linear-gradient(
-    180deg,
-    hsl(var(--card) / 0.97),
-    hsl(var(--card) / 0.88)
-  );
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid hsl(var(--border) / 0.8);
-  box-shadow: inset 0 1px 0 0 hsl(0 0% 100% / 0.1);
+  background-color: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
   transition:
-    border-color 300ms ease,
-    box-shadow 300ms ease;
+    border-color 200ms ease,
+    box-shadow 200ms ease;
 }
 
 .glass-card:hover {
-  border-color: hsl(188 86% 53% / 0.5); /* cyan-400/50 */
-  box-shadow:
-    inset 0 1px 0 0 hsl(0 0% 100% / 0.1),
-    0 10px 30px -8px hsl(188 86% 53% / 0.15);
+  border-color: hsl(var(--primary) / 0.55);
+  box-shadow: 0 0 20px -6px hsl(var(--primary) / 0.35);
 }
 
 .brand-glow {
@@ -148,12 +155,10 @@ body {
     0 0 24px 0 hsl(var(--primary) / 0.4);
 }
 
-/* Luminous blue -> cyan gradient for active nav items, primary buttons,
-   and section accents — the "energetic" counterpart to the flat --primary
-   token, applied inline as Tailwind utilities (from-blue-500 to-cyan-400)
-   wherever a bespoke gradient is needed rather than baked into a class. */
+/* Retro-Digital v5: retinted from the old blue -> emerald gradient to a
+   warm orange-coral gradient matching the new --primary brand accent. */
 .brand-gradient-text {
-  background-image: linear-gradient(90deg, #60a5fa, #34d399);
+  background-image: linear-gradient(90deg, #ff8a50, #ff5722);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -258,4 +263,79 @@ input:-webkit-autofill:focus {
   -webkit-text-fill-color: hsl(var(--foreground));
   caret-color: hsl(var(--foreground));
   transition: background-color 9999s ease-in-out 0s;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Retro-Digital redesign — LED price-direction indicators                 */
+/* Replaces the old ArrowUp/ArrowDown lucide glyphs on every price-change  */
+/* badge (Home cards, Screener, Strategy Builder, Portfolio, ticker price  */
+/* header) with a small blinking/pulsing glow dot — green for a gain,      */
+/* coral-red for a loss. See components/shared/Led.tsx for the React       */
+/* wrapper that applies these classes.                                     */
+/* ---------------------------------------------------------------------- */
+@keyframes led-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.led-dot {
+  display: inline-block;
+  border-radius: 9999px;
+  animation: led-pulse 1.6s ease-in-out infinite;
+}
+.led-dot-up {
+  background-color: var(--led-up);
+  box-shadow:
+    0 0 6px var(--led-up),
+    0 0 2px var(--led-up);
+}
+.led-dot-down {
+  background-color: var(--led-down);
+  box-shadow:
+    0 0 6px var(--led-down),
+    0 0 2px var(--led-down);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Retro-Digital redesign — "Stock Bot" desktop-companion HUD               */
+/* A small pixel-art robot (see components/dashboard/DashboardMascot.tsx)  */
+/* fixed to the bottom-right corner of the viewport on the Home dashboard, */
+/* like a persistent desktop-companion widget — not pathed across the      */
+/* stock-card grid (that grid reflows by viewport width and by how many    */
+/* quotes come back from the API, so hardcoding pixel waypoints onto card  */
+/* positions would break on any other screen size or data state). Instead  */
+/* it idles in place with a small retro step-bounce, so it reads as alive  */
+/* without ever overlapping page content.                                  */
+/*                                                                          */
+/* steps() (not ease-in-out) — a real 8-bit sprite moves in snappy         */
+/* discrete frames, not a smooth tween, so this deliberately avoids the    */
+/* "generic smooth UI motion" look.                                        */
+/* ---------------------------------------------------------------------- */
+@keyframes mascot-idle-bounce {
+  0%,
+  100% {
+    transform: translateY(0) scaleY(1);
+  }
+  50% {
+    transform: translateY(-6px) scaleY(1.04);
+  }
+}
+@keyframes mascot-idle-shift {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(3px);
+  }
+}
+.mascot-idle-bounce {
+  animation: mascot-idle-bounce 1.1s steps(2, jump-end) infinite;
+}
+.mascot-idle-shift {
+  animation: mascot-idle-shift 2.2s steps(2, jump-end) infinite;
 }

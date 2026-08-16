@@ -5,7 +5,8 @@ import { getBigSeven } from "@/lib/finance/yahoo";
 import { BIG_SEVEN_SYMBOLS } from "@/lib/finance/symbols";
 import { MarketDataError } from "@/lib/finance/types";
 
-const ICON_CLASS = "bg-violet-500/15 text-violet-400";
+// Retro-Digital redesign: single-accent orange badge (was violet).
+const ICON_CLASS = "bg-primary/15 text-primary";
 const COLUMNS = "grid-cols-[repeat(auto-fit,minmax(300px,1fr))]";
 
 /**

@@ -10,7 +10,8 @@ interface LiveBigSevenGridProps {
   initialQuotes: MarketQuote[];
 }
 
-const ICON_CLASS = "bg-violet-500/15 text-violet-400";
+// Retro-Digital redesign: single-accent orange badge (was violet).
+const ICON_CLASS = "bg-primary/15 text-primary";
 // Same auto-fit/minmax treatment as Market Summary/Most Active — see
 // QuoteCardGrid's doc comment for the 300px-floor sizing rationale.
 const COLUMNS = "grid-cols-[repeat(auto-fit,minmax(300px,1fr))]";

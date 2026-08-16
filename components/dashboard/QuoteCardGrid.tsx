@@ -61,7 +61,7 @@ export function QuoteCardGrid({
         an optional rounded-square icon badge to match "Market Summary" and
         "Most Active"'s mini chart-icon treatment in the reference.
       */}
-      <div className="mb-4 flex items-center gap-2.5">
+      <div className="mb-4 flex items-center justify-center gap-2.5">
         {Icon && (
           <span
             className={cn(

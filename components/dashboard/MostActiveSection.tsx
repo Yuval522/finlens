@@ -4,7 +4,8 @@ import { getMostActive } from "@/lib/finance/yahoo";
 import { MarketDataError } from "@/lib/finance/types";
 
 const SLOTS = 12;
-const ICON_CLASS = "bg-emerald-500/15 text-emerald-400";
+// Retro-Digital redesign: single-accent orange badge (was emerald).
+const ICON_CLASS = "bg-primary/15 text-primary";
 
 /** Async Server Component — fetched inside a <Suspense> boundary on the home page. */
 export async function MostActiveSection() {

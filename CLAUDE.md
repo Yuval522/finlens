@@ -1,63 +1,61 @@
-{\rtf1\ansi\ansicpg1252\cocoartf2870
-\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
-{\colortbl;\red255\green255\blue255;}
-{\*\expandedcolortbl;;}
-\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
-\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+# CLAUDE.md
 
-\f0\fs24 \cf0 # Role & Objective\
-You are a Lead Full-Stack Software Architect and Financial Systems Engineer. Your goal is to help me build a comprehensive, automated stock analysis platform (Web Application + Mobile App) inspired by interactive charting platforms like iCharts. \
-\
-The platform must provide real-time/live market data updates, advanced interactive charting, technical indicators, stock screening capabilities, and support for both US and Israeli (TASE) markets.\
-\
-# Technical Stack & Architecture Recommendations\
-When writing code and designing the system, use modern, high-performance, and scalable technologies:\
-1. **Frontend (Web & Cross-Platform Mobile):**\
-   - **Framework:** Next.js (React / TypeScript) with Tailwind CSS for a responsive web app and Progressive Web App (PWA) capabilities, OR React Native / Capacitor for native iOS/Android deployment from the same codebase.\
-   - **Charting Library:** TradingView's `lightweight-charts` (for high-performance candlestick/line charts, volume, and responsiveness) or Recharts/Chart.js for secondary dashboards.\
-   - **UI/UX:** Dark-mode first financial terminal design, clean layout, Lucide icons, and optimized data grids.\
-\
-2. **Backend & Data Layer:**\
-   - **Framework:** Python (FastAPI) or Node.js (Express/NestJS) to handle data fetching, technical indicator calculations (e.g., using `pandas-ta` or `TA-Lib`), and API routing.\
-   - **Real-Time Data Integration:** Connect to reliable financial APIs (e.g., Yahoo Finance / `yfinance`, Finnhub, Polygon.io, Alpha Vantage, or TradingView widgets/webhooks). Implement fallback mechanisms and polling/WebSockets for automated updates.\
-   - **Caching & Database:** Redis (for caching live API responses and avoiding rate limits) + PostgreSQL / Supabase / Firebase (for user authentication, watchlists, and custom layout saving).\
-\
-# Core Features to Implement\
-1. **Interactive Financial Charts:**\
-   - Candlestick, OHLC, and Line charts with multiple timeframes (1m, 5m, 1h, Daily, Weekly, Monthly).\
-   - Built-in Technical Indicators: Simple/Exponential Moving Averages (SMA/EMA), RSI, MACD, Bollinger Bands, Volume, and Support/Resistance drawing tools.\
-2. **Automated Market Data Feeds:**\
-   - Live price tickers, daily percentage changes, volume leaders, and pre/post-market data.\
-3. **Smart Stock Screener & Scanner:**\
-   - Ability to filter stocks by market cap, sector, technical signals (e.g., RSI < 30, MACD crossover), and volume breakouts.\
-4. **Watchlists & Portfolio Tracking:**\
-   - Custom user watchlists with real-time alert capabilities.\
-\
-# Coding & Workspace Guidelines\
-1. **Step-by-Step Execution:** Do not overwhelm with all features at once. Build modularly: start with an MVP (core layout + live data integration + basic charting), then iterate to add screeners, indicators, and mobile optimization.\
-2. **Code Quality:** Write clean, production-ready, fully typed TypeScript/Python code with proper error handling and API rate-limit management.\
-3. **File System Awareness:** When proposing code changes or creating new files, always specify the exact file path relative to our local workspace root (`/Users/YUVAL/Claude/charts`).\
-4. **Terminal Commands:** Provide exact macOS CLI commands for package installation, environment variable setup, and running local development servers.}
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# ⚡ Useful Commands & Automation Rules
-When I ask you to build, test, run, or install packages, use the following standard terminal commands for this project:
+## What this is
 
-## Development Servers
-- **Start Frontend Dev Server:** `npm run dev` (Runs Next.js on http://localhost:3000)
-- **Start Backend API Server:** `uvicorn main:app --reload --port 8000` (Runs FastAPI)
-- **Run Both Servers Simultaneously:** Use `concurrently` or open two terminal tabs.
+FinLens — a Next.js (App Router) financial terminal: live quotes, interactive charts, a natural-language Strategy Builder, a stock screener, watchlists, and portfolio tracking, covering US equities and TASE (Tel Aviv Stock Exchange). Despite `ICHARTS_SYSTEM_SPECIFICATION.md`'s broader spec (which also describes a separate Python/FastAPI backend, Redis, mobile app, etc.), **the actual codebase is 100% TypeScript/Next.js** — there is no Python backend, no Redis, and no mobile app in this repo. Data fetching, the strategy parser, and all API routes live under `app/api/*` as Next.js route handlers.
 
-## Package Management & Auto-Install
-- **Frontend Install:** `npm install <package_name>`
-- **Backend Install:** `pip install <package_name>`
-- **Automation Rule:** If you write code that imports a new UI library, charting tool (e.g., `lightweight-charts`), or Python wrapper (e.g., `yfinance`), **automatically execute the installation command in the terminal** before running the code.
+## Commands
 
-## Testing & Quality Control
-- **Run Frontend Tests:** `npm test`
-- **Run Backend Tests:** `pytest`
-- **Lint Check:** `npm run lint`
+- `npm run dev` — start the dev server (http://localhost:3000)
+- `npm run build` — production build
+- `npm run start` — run a production build
+- `npm run lint` — ESLint (`next lint`, extends `next/core-web-vitals`)
+- `npx tsc --noEmit` — typecheck (not wired into `npm run build`: `next.config.ts` sets `typescript.ignoreBuildErrors: true` and `eslint.ignoreDuringBuilds: true` deliberately, so typecheck and lint must be run as their own explicit steps — always run both before considering a change done)
+- There is no test suite/runner configured in this repo (no `test` script, no `*.test.ts` files) — don't assume `npm test`/`pytest` exist.
 
-# 🤖 Automated Developer Workflow
-1. **Environment Variables Safety:** Never hardcode API keys (Finnhub, Polygon, Yahoo Finance, etc.) into the source code. Always generate/update a `.env.local` file automatically and reference variables via `process.env` or `os.getenv()`.
-2. **Zero-Breakage Guarantee:** Before modifying an existing charting component or data-fetching function, read the current file first, explain what you are changing, and ensure backwards compatibility with the interactive charts.
-3. **Git Auto-Staging (Optional):** After completing a working feature (like the RSI indicator or Stock Screener), remind me to commit the changes or offer to run `git status` and `git commit -m "feat: add ..."` for me.
+## Environment setup
+
+Copy `.env.local.example` to `.env.local` and read its inline comments — each var explains exactly what breaks without it. Summary of what's required vs optional:
+
+- `DATABASE_URL` (or `POSTGRES_URL`) — **required**. Neon Postgres; there is no local-file fallback (see Data layer below). Get it by connecting the Neon integration from the Vercel dashboard's Storage tab, then `vercel env pull .env.development.local` for local dev.
+- `ANTHROPIC_API_KEY` — required for the Strategy Builder's real NL parsing (`lib/ai/anthropic.ts` / `lib/strategy/parse.ts`); without it, `/api/strategy` transparently falls back to `lib/strategy/mock-parse.ts`, a local keyword matcher (the response carries `parsed.mock: true` so the UI can show an "offline demo mode" indicator).
+- `API_KEY_ENCRYPTION_SECRET` — required for `/api/settings/api-keys` (per-user Finnhub/Polygon/Alpha Vantage keys, AES-256-GCM encrypted at rest — see `lib/security/encryption.ts`). Changing this after keys are saved makes them permanently undecryptable.
+- `CRON_SECRET` — required for the Strategy Builder universe-refresh cron to run at all (`app/api/cron/refresh-strategy-universe`, schedule in `vercel.json`); Vercel injects the matching `Authorization: Bearer` header automatically on scheduled invocations.
+- `SEC_EDGAR_CONTACT`, `FMP_API_KEY`, `MARKET_DATA_CACHE_TTL_MS` — optional; each has a documented, non-broken fallback if unset.
+
+Missing required secrets fail loudly (a clear error/503) rather than silently degrading — this is a deliberate pattern used throughout (`dbErrorJson` in `lib/http/noStore.ts`, the strategy route, the API-keys route), not something to "fix" by adding a quiet fallback.
+
+## Architecture
+
+### Route structure
+`app/(dashboard)/*` are all the user-facing pages (Home, Watchlist, Portfolio, Screener, Strategy Builder, Macro, Settings, per-ticker Analysis), sharing one layout: `app/(dashboard)/layout.tsx` → `components/layout/DashboardShell.tsx`, which renders `Sidebar` (nav) + `Topbar` (global symbol search, live "N tickers · updated" status, account menu) around `<main>`. `app/api/*` are plain Next.js route handlers — no separate backend process.
+
+### Data layer (financial data)
+No single source of truth — `lib/finance/` fetches from multiple providers and merges/prioritizes:
+- `yahoo.ts` (via `yahoo-finance2`) is the primary/default source for quotes and recent fundamentals.
+- `providers/sec-edgar.ts` is the only source deep enough for genuine 10-year+ fundamentals history (Yahoo's free tier hard-caps at ~4 annual periods regardless of requested range); requires a declared `SEC_EDGAR_CONTACT` User-Agent or SEC will 403.
+- `providers/fmp.ts`, `finnhub.ts`, `alphaVantage.ts`, `polygon.ts` are optional secondary/backfill sources (some need a user-supplied key via Settings → API Keys, stored encrypted).
+- `aggregate.ts` merges historical statements **whole-row-per-fiscal-year** in fixed priority order (SEC EDGAR → Yahoo → FMP), never blending individual line items across sources within the same year, and tags each merged row with `dataSource` + a `dataDiscrepancy` flag when sources disagree beyond tolerance — read its doc comment before changing merge/priority logic, the reasoning is non-obvious.
+- `useLiveQuotes.ts` / `useBackgroundRefresh.ts` drive client-side polling; `cache.ts` provides the in-process TTL cache (`MARKET_DATA_CACHE_TTL_MS`) that keeps repeated requests from re-hitting upstream providers.
+
+### Database
+Single Neon Postgres instance, no ORM — raw SQL via `getDb().execute({ sql, args })` in `lib/db/client.ts` (positional `$1, $2...` params under the hood, but call sites use libsql-style `?` placeholders for historical reasons — `toPositionalPlaceholders` converts). Schema is created on demand and idempotently by `ensureSchema()` (`CREATE TABLE IF NOT EXISTS`, cached on `globalThis` so it only actually runs once per warm process) — there are no migration files to run separately. Tables: `users`, `sessions`, `user_data` (one JSON blob per `(user_id, data_key)` — this is how portfolio/watchlist/settings are persisted per-user), `api_keys` (encrypted, deliberately separate from `user_data`), `strategy_universe_metrics` (precomputed screening data, see below). The Postgres client is server-only — never import `lib/db/client.ts` from a `"use client"` component.
+
+### Auth & per-user data isolation
+Session = opaque random token in an httpOnly cookie, row in `sessions` table (`lib/auth/session.ts`) — not a JWT. `lib/auth/AuthContext.tsx` is the single bridge between three pre-existing, auth-agnostic localStorage stores (`lib/portfolio/store.ts`, `lib/watchlist/store.ts`, `lib/settings/store.ts`) and per-user server rows: on login it overwrites local state with that user's server data (`hydrateFromServer`), on signup it pushes whatever's currently local up as the new account's starting data, on logout it resets local stores to empty, and while logged in every local mutation is debounce-pushed to `/api/user-data/[key]`. None of the three stores' own mutators know auth exists — this bridging is entirely in `AuthContext`. `components/auth/RequireAuth.tsx` gates Portfolio/Watchlist/Settings behind login; `components/auth/AppAuthGate.tsx` (mounted once in `app/layout.tsx`) holds back rendering the whole app tree until the initial session check resolves, to avoid flashing stale/previous-user local data.
+
+**Note:** `lib/auth/AuthContext.tsx` currently has `GUEST_MODE = true` — a deliberate temporary bypass added because local dev had no working DB connection. With it on, a missing/failed session resolves to a synthetic guest user instead of `null`, so `RequireAuth` never blocks and the login modal never appears. Flip it back to `false` once real accounts should be enforced again; nothing else about the auth system was changed to add this.
+
+### Strategy Builder (natural-language screener)
+`app/(dashboard)/strategy/page.tsx` → `POST /api/strategy` → `lib/strategy/parse.ts` (Claude, via `lib/ai/anthropic.ts`) or `mock-parse.ts` (keyword fallback when `ANTHROPIC_API_KEY` is unset) turns free-text English/Hebrew into a structured filter spec (closed vocabulary: market cap, P/E, dividend yield, RSI-14, price vs. SMA50/SMA200, % change, price, volume, sort — notably **not** sector/industry/exchange/analyst data, which the parser is instructed to mark `unsupported` rather than invent) → `lib/strategy/execute.ts` runs it against `strategy_universe_metrics` (DB-first, not live per-request Yahoo calls) → if the strict filter set matches zero stocks, execute.ts falls back to a "relaxed" closest-match mode (`relaxed: true` + `relaxedNote` + a per-row `almostMatchNote`) rather than returning an empty result silently. The universe table itself is kept warm by a scheduled job (`app/api/cron/refresh-strategy-universe`, `lib/strategy/universe-refresh.ts`, `vercel.json` cron, protected by `CRON_SECRET`) rather than computed at request time, so a screening query returns instantly against several hundred symbols without a burst of live fetches. `query-cache.ts` additionally caches recent parse results to save tokens on repeated/similar queries.
+
+### Design system
+Dark-only "retro-digital" theme. All color/spacing tokens are CSS custom properties in `app/globals.css`'s `:root` (e.g. `--background`, `--primary`, `--success`/`--destructive` as LED green/coral-red, `--border`, `--radius`), consumed through `tailwind.config.ts`'s `theme.extend.colors`/`borderRadius` mapping (`hsl(var(--x))` pattern) — change a token's *value* in `globals.css` and every component using `bg-primary`/`text-success`/etc. picks it up without per-component edits. Price direction (up/down) is shown via a pulsing LED dot (`components/shared/Led.tsx`, `.led-dot*` classes), not arrow glyphs. Single-font system: **JetBrains Mono** (self-hosted `@fontsource-variable/jetbrains-mono`) is used throughout — `app/globals.css`'s `:root` aliases `--font-sans: var(--font-mono)`, so Tailwind's default `font-sans` class resolves to the same mono face as an explicit `font-mono` class; Inter (previously loaded via `next/font/google`) has been removed entirely, no rounded/modern sans-serif remains anywhere in the app. Sidebar nav items (`components/layout/Sidebar.tsx`) use `rounded-none`, not the `rounded-md`/pill radius used elsewhere, to read sharp/squared against the terminal aesthetic. `components/branding/FinLensLogo.tsx` / `RobotHeadMark.tsx` render the wordmark/icon as a hand-authored pixel bitmap (flat `<div>`/`<rect>` grid, zero border-radius/gradients on the sprite itself), not an image asset or smooth SVG — keep that constraint if touching branding. See `docs/design-system.md` for the full pattern reference (page-hero layout, pill/input/table conventions, color-token table) built up across the redesign — apply those patterns by default to any page not yet matched against a reference screenshot, rather than inventing a new look.
+
+## Known constraints worth knowing before editing
+
+- This sandbox's mounted filesystem intermittently refuses `rm`/`unlink` on certain files (`.git/index.lock`, some tracked files) with "Operation not permitted" — if a delete fails, overwriting the file's contents (e.g. to a deprecation stub) is the working fallback, not a sign the edit itself failed.
+- `next.config.ts` deliberately ignores TypeScript/ESLint errors during `next build` — a clean build is **not** proof the code typechecks or lints; always run `npx tsc --noEmit` and `npm run lint` separately.
+- If a change is reported as "not showing up" in the browser despite being correctly saved, suspect a stale Next.js dev server / `.next` cache or plain browser caching before assuming the edit failed or re-doing the work — verify the file's actual on-disk content (or `git diff`) first, then suggest `rm -rf .next && npm run dev` plus a hard refresh. This has been the actual root cause every time it's come up so far in this project.

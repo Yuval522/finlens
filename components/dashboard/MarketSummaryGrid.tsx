@@ -11,8 +11,8 @@ export function MarketSummaryGrid() {
   return (
     <section>
       {/* Matches QuoteCardGrid's heading/icon-badge treatment exactly so nothing reflows when live data replaces this skeleton. */}
-      <div className="mb-4 flex items-center gap-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400">
+      <div className="mb-4 flex items-center justify-center gap-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 text-primary">
           <BarChart3 className="h-4 w-4" />
         </span>
         <h2 className="text-xl font-bold text-foreground sm:text-2xl">Market Summary</h2>

@@ -85,9 +85,22 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                 onClick={onClose}
                 title={collapsed ? label : undefined}
                 className={cn(
-                  "group flex min-h-11 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  // QA fix: nav items previously used the default rounded-md
+                  // corner radius shared with every other pill-shaped
+                  // control in the app — but per explicit direction the
+                  // sidebar nav should read sharp/squared to match the
+                  // strategy builder's terminal aesthetic, not the rounded
+                  // pill/input pattern used elsewhere. rounded-none (not
+                  // rounded-sm) to match literally: zero rounded corners,
+                  // consistent with the existing "no rounded corners on
+                  // pixel-art brand elements" rule in docs/design-system.md.
+                  "group flex min-h-11 items-center gap-3 rounded-none px-3 py-2 text-sm font-medium transition-colors",
+                  // Retro-Digital redesign: active route now reads as a
+                  // glowing orange terminal state instead of a plain
+                  // neutral highlight — bg-primary/10 + a soft orange
+                  // shadow, matching the new --primary brand accent.
                   active
-                    ? "bg-accent text-foreground"
+                    ? "bg-primary/10 text-primary shadow-[0_0_16px_-4px] shadow-primary/50"
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                   collapsed && "md:justify-center md:px-0"
                 )}

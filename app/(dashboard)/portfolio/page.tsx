@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Briefcase, Pencil, Plus } from "lucide-react";
+import { Briefcase, Pencil, Plus } from "lucide-react";
+import { Led } from "@/components/shared/Led";
 import { usePortfolio } from "@/lib/portfolio/store";
 import type { PortfolioHolding } from "@/lib/portfolio/store";
 import { computePortfolioTotals, USD_TO_ILS_RATE } from "@/lib/portfolio/derive";
@@ -112,7 +113,7 @@ function PortfolioContent() {
                 gainUp ? "text-success" : "text-destructive"
               )}
             >
-              {gainUp ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+              <Led up={gainUp} />
               {totalGainDisplay} ({formatPercent(totals.totalGainLossPercent)})
             </span>
             <CurrencyToggle value={displayCurrency} onChange={setDisplayCurrency} />
