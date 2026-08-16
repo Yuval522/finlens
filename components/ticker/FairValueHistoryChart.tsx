@@ -166,7 +166,7 @@ function HistoryTooltip({ active, label, payload, currency, data }: HistoryToolt
  * GuruFocus-style "fair value history" band chart — historical price
  * plotted against the growth-adjusted, historical-multiple fair-value line
  * from lib/finance/valuation-history.ts, shaded in +-10%/+-30% bands.
- * FinLens's own approximation, not a reproduction of GuruFocus's
+ * Stox's own approximation, not a reproduction of GuruFocus's
  * proprietary GF Value chart; not affiliated with, endorsed by, or sourced
  * from GuruFocus LLC. Not investment advice.
  */
@@ -194,7 +194,7 @@ export function FairValueHistoryChart({ data }: FairValueHistoryChartProps) {
         <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
           Fair Value History
           <InfoTooltip
-            text="Historical price vs. a growth-adjusted, historical-multiple fair value line (same methodology as the Fair Value Estimate above), shaded in +-10%/+-30% bands. The dashed segment beyond the last price point is a 1-year projection using the same trailing EPS growth rate. FinLens's own approximation — not GuruFocus's proprietary GF Value chart, and not affiliated with, endorsed by, or sourced from GuruFocus LLC. Not investment advice."
+            text="Historical price vs. a growth-adjusted, historical-multiple fair value line (same methodology as the Fair Value Estimate above), shaded in +-10%/+-30% bands. The dashed segment beyond the last price point is a 1-year projection using the same trailing EPS growth rate. Stox's own approximation — not GuruFocus's proprietary GF Value chart, and not affiliated with, endorsed by, or sourced from GuruFocus LLC. Not investment advice."
           />
         </h3>
         <span

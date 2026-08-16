@@ -1,7 +1,7 @@
 /**
  * Financial Modeling Prep (FMP) — secondary data provider.
  *
- * FinLens' primary source is Yahoo Finance (lib/finance/yahoo.ts). This file
+ * Stox' primary source is Yahoo Finance (lib/finance/yahoo.ts). This file
  * is a fault-tolerant *enrichment* layer used only to backfill fields Yahoo's
  * free tier tends to omit or gut — this codebase has already hit that twice
  * (see the doc comments on toIncomeYears / toBalanceYears in yahoo.ts, both
@@ -59,7 +59,7 @@ async function fmpGet<T>(path: string, params: Record<string, string> = {}): Pro
       // layer contributes nothing — see the matching diagnostic logging in
       // providers/sec-edgar.ts for why this matters for the "range
       // selector doesn't show more history" class of report.
-      console.warn(`[FinLens] FMP request failed: ${path} — HTTP ${res.status} ${res.statusText}`);
+      console.warn(`[Stox] FMP request failed: ${path} — HTTP ${res.status} ${res.statusText}`);
       return null;
     }
     return (await res.json()) as T;
@@ -70,9 +70,9 @@ async function fmpGet<T>(path: string, params: Record<string, string> = {}): Pro
     // still worth a log line for the same reason as the res.ok branch
     // above.
     if (err instanceof Error && err.name === "AbortError") {
-      console.warn(`[FinLens] FMP request timed out: ${path}`);
+      console.warn(`[Stox] FMP request timed out: ${path}`);
     } else {
-      console.warn(`[FinLens] FMP request threw: ${path} —`, err instanceof Error ? err.message : err);
+      console.warn(`[Stox] FMP request threw: ${path} —`, err instanceof Error ? err.message : err);
     }
     return null;
   }

@@ -1,5 +1,5 @@
 /**
- * Domain types for FinLens market data. Deliberately independent of the
+ * Domain types for Stox market data. Deliberately independent of the
  * yahoo-finance2 response shapes — lib/finance/yahoo.ts is the only file
  * that should import from "yahoo-finance2" and adapt into these types, so
  * swapping/adding a data provider later doesn't ripple through the UI.

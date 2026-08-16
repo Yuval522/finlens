@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
  * SEO audit finding (seo-audit-finlens-2026-08-14.md): this was the single
  * highest-value on-page gap — every route shared one static title/
  * description from the root layout, so an Apple page and a Tesla page
- * reported identical metadata to search engines. This is FinLens's best
+ * reported identical metadata to search engines. This is Stox's best
  * source of long-tail search traffic once public (hundreds of "[ticker]
  * stock analysis" queries), so each symbol gets its own title/description
  * built from a real live quote.
@@ -52,10 +52,10 @@ export async function generateMetadata({
           }`
         : null;
 
-    const title = `${quote.name} (${quote.symbol}) Stock Price, Chart & Analysis | FinLens`;
+    const title = `${quote.name} (${quote.symbol}) Stock Price, Chart & Analysis | Stox`;
     const description = priceText
-      ? `${quote.name} (${quote.symbol}) — ${priceText} on ${quote.exchange}. Live price, RSI, moving averages, and financials on FinLens.`
-      : `${quote.name} (${quote.symbol}) stock analysis on ${quote.exchange} — live price, technical indicators, and financials on FinLens.`;
+      ? `${quote.name} (${quote.symbol}) — ${priceText} on ${quote.exchange}. Live price, RSI, moving averages, and financials on Stox.`
+      : `${quote.name} (${quote.symbol}) stock analysis on ${quote.exchange} — live price, technical indicators, and financials on Stox.`;
 
     return {
       title,
@@ -64,7 +64,7 @@ export async function generateMetadata({
       twitter: { card: "summary", title, description },
     };
   } catch {
-    const title = `${symbol} Stock Analysis | FinLens`;
+    const title = `${symbol} Stock Analysis | Stox`;
     return { title, openGraph: { title }, twitter: { card: "summary", title } };
   }
 }

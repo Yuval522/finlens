@@ -60,7 +60,7 @@ export async function fetchFinnhubQuote(symbol: string, apiKey: string): Promise
   try {
     const res = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(8_000) });
     if (!res.ok) {
-      console.warn(`[FinLens] Finnhub quote request failed for ${symbol}: HTTP ${res.status} ${res.statusText}`);
+      console.warn(`[Stox] Finnhub quote request failed for ${symbol}: HTTP ${res.status} ${res.statusText}`);
       return null;
     }
     const data = (await res.json()) as FinnhubQuoteResponse;
@@ -100,9 +100,9 @@ export async function fetchFinnhubQuote(symbol: string, apiKey: string): Promise
     };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      console.warn(`[FinLens] Finnhub quote request timed out for ${symbol}`);
+      console.warn(`[Stox] Finnhub quote request timed out for ${symbol}`);
     } else {
-      console.warn(`[FinLens] Finnhub quote request threw for ${symbol}:`, err instanceof Error ? err.message : err);
+      console.warn(`[Stox] Finnhub quote request threw for ${symbol}:`, err instanceof Error ? err.message : err);
     }
     return null;
   }

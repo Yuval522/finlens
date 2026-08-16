@@ -21,7 +21,7 @@ import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear, PricePoint, T
  * pillar below for what's used instead) and their GF Value is a
  * proprietary intrinsic-value regression against historical median
  * multiples and analyst estimates that can't be reconstructed without
- * their model. This file is FinLens's own, independently-derived
+ * their model. This file is Stox's own, independently-derived
  * approximation of the *shape* of that rating system (five 1-10 pillar
  * ranks), computed purely from data already in this app's fundamentals
  * bundle, with every threshold documented below the same way score.ts
@@ -300,7 +300,7 @@ export function computeGuruFocusRating({
     name: "Valuation",
     rank: valuationRank,
     explanation:
-      "How cheap the stock looks across five signals at once: four independent multiples/yields, each adjusted for growth (a higher sustainable growth rate justifies a higher P/E, Price/Cash-Flow, and lower FCF yield — the standard 'growth premium'), plus this app's own Fair Value Estimate discount/premium (see the band below), which now carries the single largest weight of the five so this rank can't contradict that card. GuruFocus's real GF Value line is a proprietary fair-value regression against historical median multiples and analyst estimates — not something this app can reproduce without their model; the Fair Value Estimate below is FinLens's own independently-derived approximation instead.",
+      "How cheap the stock looks across five signals at once: four independent multiples/yields, each adjusted for growth (a higher sustainable growth rate justifies a higher P/E, Price/Cash-Flow, and lower FCF yield — the standard 'growth premium'), plus this app's own Fair Value Estimate discount/premium (see the band below), which now carries the single largest weight of the five so this rank can't contradict that card. GuruFocus's real GF Value line is a proprietary fair-value regression against historical median multiples and analyst estimates — not something this app can reproduce without their model; the Fair Value Estimate below is Stox's own independently-derived approximation instead.",
     items: valuationResult.items,
   };
 

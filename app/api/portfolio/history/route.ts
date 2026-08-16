@@ -100,7 +100,7 @@ export async function POST(request: Request) {
     );
     return noStoreJson({ points });
   } catch (err) {
-    console.error("[FinLens] POST /api/portfolio/history failed:", err);
+    console.error("[Stox] POST /api/portfolio/history failed:", err);
     return noStoreJson({ error: "Couldn't compute portfolio history. Please try again in a moment." }, { status: 502 });
   }
 }

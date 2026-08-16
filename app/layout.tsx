@@ -13,9 +13,9 @@ import { AppAuthGate } from "@/components/auth/AppAuthGate";
 import { getSiteUrl } from "@/lib/seo/site-url";
 
 const SITE_URL = getSiteUrl();
-const TITLE = "FinLens - Financial Intelligence";
+const TITLE = "Stox - Financial Intelligence";
 const DESCRIPTION =
-  "FinLens is a next-generation financial terminal: describe a screening strategy in plain English or Hebrew and get live results, plus charting, technical indicators, and unique TASE (Tel Aviv Stock Exchange) coverage alongside US equities.";
+  "Stox is a next-generation financial terminal: describe a screening strategy in plain English or Hebrew and get live results, plus charting, technical indicators, and unique TASE (Tel Aviv Stock Exchange) coverage alongside US equities.";
 
 export const metadata: Metadata = {
   // Lets every relative URL in this metadata block (and any page's own
@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     title: TITLE,
     description: DESCRIPTION,
     url: SITE_URL,
-    siteName: "FinLens",
+    siteName: "Stox",
     images: [{ url: "/icons/icon-512-any.png?v=7", width: 512, height: 512 }],
     type: "website",
   },
@@ -56,11 +56,12 @@ export const metadata: Metadata = {
   // block below or the underlying files were — kept being handed that
   // stale manifest, which itself still pointed at old/pre-fix icon paths.
   // No amount of fixing the icon files themselves could ever have broken
-  // that chain; only versioning this href does. Bumped ?v=6 -> ?v=7 in
-  // lockstep with the opaque-background icon fix below — bump ?v=7 -> ?v=8
-  // (in lockstep with the `icons` block below and manifest.json's own icon
-  // srcs) the next time anything icon-related changes again.
-  manifest: "/manifest.json?v=7",
+  // that chain; only versioning this href does. Bumped ?v=7 -> ?v=8 for the
+  // Stox rebrand (manifest.json's name/short_name text changed, not just
+  // its icon srcs — same stale-response risk applies to any content change
+  // in this file) — bump ?v=8 -> ?v=9 the next time anything in
+  // manifest.json changes again.
+  manifest: "/manifest.json?v=8",
   // QA fix (live report: Chrome desktop/mobile tab and the PWA home-screen
   // shortcut kept falling back to a generic grey box with the letter "F",
   // or showed a stale/boxed-in icon, even after the underlying PNG/ICO
@@ -169,19 +170,19 @@ export default function RootLayout({
           AppAuthGate, not a child of it, so it's unconditionally present
           in that same server-rendered HTML regardless of auth/hydration
           state — real, truthful copy describing the actual product
-          (FinLens has no separate marketing site to link to instead).
+          (Stox has no separate marketing site to link to instead).
           Visually hidden (sr-only) rather than shown, since a real visitor
           already gets this same information from the app UI itself once
           it hydrates; a screen reader still announces it, which is the
           intended behavior for sr-only content, not a side effect.
         */}
         <div className="sr-only">
-          <h1>FinLens — Natural Language Stock Screener for US &amp; TASE Markets</h1>
+          <h1>Stox — Natural Language Stock Screener for US &amp; TASE Markets</h1>
           <p>
-            FinLens is a financial terminal for individual investors. Describe a screening
+            Stox is a financial terminal for individual investors. Describe a screening
             strategy in plain English or Hebrew — for example &quot;large cap tech stocks with
             RSI under 30&quot; or &quot;dividend yield over 3% and P/E under 20&quot; — and get live
-            results instead of manually configuring filters. FinLens combines that natural
+            results instead of manually configuring filters. Stox combines that natural
             language Strategy Builder with interactive charting, technical indicators (RSI,
             moving averages, MACD, Bollinger Bands), a stock screener, watchlists, and
             portfolio tracking, with coverage spanning both US equities and the Tel Aviv Stock

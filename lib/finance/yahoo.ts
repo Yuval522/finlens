@@ -193,7 +193,7 @@ export async function getPriceHistory(symbol: string, days = 120): Promise<Price
       // codebase — a technical-indicator filter simply can't evaluate this
       // one symbol rather than failing the whole screener run over it.
       console.warn(
-        `[FinLens] getPriceHistory failed for ${symbol}:`,
+        `[Stox] getPriceHistory failed for ${symbol}:`,
         err instanceof Error ? err.message : err
       );
       return [];
@@ -267,7 +267,7 @@ export async function getStrategyQuotes(symbols: string[]): Promise<StrategyQuot
         out.push(...result.value);
       } else {
         failedChunks++;
-        console.warn("[FinLens] getStrategyQuotes — one chunk failed, continuing with the rest:", result.reason);
+        console.warn("[Stox] getStrategyQuotes — one chunk failed, continuing with the rest:", result.reason);
       }
     }
 
@@ -526,7 +526,7 @@ function warnIfFiscalYearGaps(label: string, symbol: string, fiscalYears: string
   for (let i = 1; i < numericYears.length; i++) {
     if (numericYears[i] - numericYears[i - 1] > 1) {
       console.warn(
-        `[FinLens] ${label}(${symbol}): fiscal year gap detected — ${numericYears[i - 1]} to ${numericYears[i]} ` +
+        `[Stox] ${label}(${symbol}): fiscal year gap detected — ${numericYears[i - 1]} to ${numericYears[i]} ` +
           `(missing ${numericYears[i] - numericYears[i - 1] - 1} year(s)). This reflects what Yahoo returned; ` +
           `no data was fabricated to fill it.`
       );
@@ -1168,11 +1168,11 @@ function toPricePoints(chart: ChartResultArray): PricePoint[] {
  * triggers a real, fresh, cross-source-validated multi-source fetch
  * instead of serving a bundle built before the report existed.
  *
- * Honest limitation: this guarantees FinLens ASKS its upstream providers
+ * Honest limitation: this guarantees Stox ASKS its upstream providers
  * again as soon as the calendar date arrives — it can't guarantee Yahoo/
  * SEC EDGAR/FMP have already indexed the brand-new quarter at that exact
  * moment (that indexing lag lives entirely on their end, not something a
- * client-side cache policy can close). What it fixes is FinLens's *own*
+ * client-side cache policy can close). What it fixes is Stox's *own*
  * up-to-15-cache-cycle (~5 minute in current config) delay on top of
  * whatever the providers already have — the actual bug behind "we're
  * still showing last quarter's numbers days after earnings dropped."

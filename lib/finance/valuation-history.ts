@@ -5,7 +5,7 @@ import { normalizedCurrentValue, type FairValueBandResult } from "./fair-value";
 
 /**
  * Historical "fair value line" for the Valuation view's band chart —
- * companion to fair-value.ts's single-point computeFairValueBand. FinLens's
+ * companion to fair-value.ts's single-point computeFairValueBand. Stox's
  * own approximation of the *shape* of GuruFocus's GF Value history chart (a
  * smoothed fair-value line plotted against price, with percentage
  * over/undervalued bands) — not a reproduction of their proprietary

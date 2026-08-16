@@ -44,22 +44,22 @@ export async function GET(request: Request) {
   const secretConfigured = Boolean(process.env.CRON_SECRET);
   if (!secretConfigured) {
     console.error(
-      "[FinLens] GET /api/cron/refresh-strategy-universe — CRON_SECRET is not set; refusing to run an unauthenticated " +
+      "[Stox] GET /api/cron/refresh-strategy-universe — CRON_SECRET is not set; refusing to run an unauthenticated " +
         "data-refresh endpoint. Set CRON_SECRET (see .env.local.example) to enable this route."
     );
     return noStoreJson({ error: "CRON_SECRET is not configured." }, { status: 503 });
   }
   if (!isAuthorized(request)) {
-    console.warn("[FinLens] GET /api/cron/refresh-strategy-universe — rejected: missing or invalid Authorization header.");
+    console.warn("[Stox] GET /api/cron/refresh-strategy-universe — rejected: missing or invalid Authorization header.");
     return noStoreJson({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
     const result = await refreshStrategyUniverseMetrics();
-    console.log(`[FinLens] GET /api/cron/refresh-strategy-universe — completed: ${JSON.stringify(result)}`);
+    console.log(`[Stox] GET /api/cron/refresh-strategy-universe — completed: ${JSON.stringify(result)}`);
     return noStoreJson(result);
   } catch (err) {
-    console.error("[FinLens] GET /api/cron/refresh-strategy-universe — failed:", err);
+    console.error("[Stox] GET /api/cron/refresh-strategy-universe — failed:", err);
     return noStoreJson({ error: "Universe refresh failed. See server logs for details." }, { status: 500 });
   }
 }

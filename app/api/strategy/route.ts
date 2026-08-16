@@ -60,13 +60,13 @@ export async function POST(request: Request) {
     // for the specific technical-lookup case). This makes every run's
     // funnel counts visible regardless of outcome.
     console.log(
-      `[FinLens] POST /api/strategy — ${run.results.length}/${run.universeSize} matched ` +
+      `[Stox] POST /api/strategy — ${run.results.length}/${run.universeSize} matched ` +
         `(filters=${JSON.stringify(parsed.filters)}, sortBy=${parsed.sortBy}, mock=${parsed.mock})`
     );
     return noStoreJson(run);
   } catch (err) {
     if (err instanceof StrategyParseError) {
-      console.error("[FinLens] POST /api/strategy — strategy parsing failed:", err, err.cause);
+      console.error("[Stox] POST /api/strategy — strategy parsing failed:", err, err.cause);
       const misconfigured = !process.env.ANTHROPIC_API_KEY;
       return noStoreJson(
         {
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
       );
     }
     if (err instanceof MarketDataError) {
-      console.error("[FinLens] POST /api/strategy — market data fetch failed:", err, err.cause);
+      console.error("[Stox] POST /api/strategy — market data fetch failed:", err, err.cause);
       return noStoreJson({ error: "Couldn't fetch live market data. Please try again in a moment." }, { status: 502 });
     }
     return dbErrorJson(err, "POST /api/strategy");

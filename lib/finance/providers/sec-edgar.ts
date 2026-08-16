@@ -85,12 +85,12 @@ import type { BalanceSheetYear, CashFlowYear, IncomeStatementYear } from "../typ
 // real monitored inbox — see the module doc comment above for why this
 // exists (a working built-in default) versus what SEC actually wants (a
 // real SEC_EDGAR_CONTACT).
-const DEFAULT_USER_AGENT = "FinLens contact@finlens.app";
+const DEFAULT_USER_AGENT = "Stox contact@finlens.app";
 const USER_AGENT = process.env.SEC_EDGAR_CONTACT || DEFAULT_USER_AGENT;
 
 if (!process.env.SEC_EDGAR_CONTACT) {
   console.warn(
-    "[FinLens] SEC_EDGAR_CONTACT is not set — SEC EDGAR requests are using a built-in " +
+    "[Stox] SEC_EDGAR_CONTACT is not set — SEC EDGAR requests are using a built-in " +
       `placeholder User-Agent ("${DEFAULT_USER_AGENT}"), shaped like the sample SEC's ` +
       "Developer FAQ documents (\"Company Name AdminContact@domain.com\") so requests " +
       "shouldn't be rejected outright, but it is not a real, monitored contact — which is " +
@@ -140,7 +140,7 @@ async function getTickerMap(): Promise<Map<string, { cik: number; name: string }
         });
         if (!res.ok) {
           console.warn(
-            `[FinLens] SEC EDGAR ticker map fetch failed: HTTP ${res.status} ${res.statusText}. ` +
+            `[Stox] SEC EDGAR ticker map fetch failed: HTTP ${res.status} ${res.statusText}. ` +
               (res.status === 403
                 ? "This is almost always a rejected/undeclared User-Agent — see SEC_EDGAR_CONTACT in .env.local.example."
                 : "Every symbol will fall back to Yahoo-only history until this resolves.")
@@ -159,10 +159,10 @@ async function getTickerMap(): Promise<Map<string, { cik: number; name: string }
       } catch (err) {
         if (isAbortError(err)) {
           console.warn(
-            `[FinLens] SEC EDGAR ticker map fetch timed out after ${FETCH_TIMEOUT_MS}ms — falling back to Yahoo-only history for every symbol this request.`
+            `[Stox] SEC EDGAR ticker map fetch timed out after ${FETCH_TIMEOUT_MS}ms — falling back to Yahoo-only history for every symbol this request.`
           );
         } else {
-          console.warn("[FinLens] SEC EDGAR ticker map fetch threw:", err instanceof Error ? err.message : err);
+          console.warn("[Stox] SEC EDGAR ticker map fetch threw:", err instanceof Error ? err.message : err);
         }
         return null;
       }
@@ -234,7 +234,7 @@ export async function fetchRecentFilings(symbol: string, limit = 12): Promise<Fi
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
-      console.warn(`[FinLens] SEC EDGAR submissions fetch failed for ${symbol} (CIK ${match.cik}): HTTP ${res.status} ${res.statusText}`);
+      console.warn(`[Stox] SEC EDGAR submissions fetch failed for ${symbol} (CIK ${match.cik}): HTTP ${res.status} ${res.statusText}`);
       return { status: "unavailable" };
     }
     const data = await res.json();
@@ -269,9 +269,9 @@ export async function fetchRecentFilings(symbol: string, limit = 12): Promise<Fi
     return { status: "ok", cik: match.cik, companyName: match.name, filings };
   } catch (err) {
     if (isAbortError(err)) {
-      console.warn(`[FinLens] SEC EDGAR submissions fetch timed out after ${FETCH_TIMEOUT_MS}ms for ${symbol} (CIK ${match.cik}).`);
+      console.warn(`[Stox] SEC EDGAR submissions fetch timed out after ${FETCH_TIMEOUT_MS}ms for ${symbol} (CIK ${match.cik}).`);
     } else {
-      console.warn(`[FinLens] SEC EDGAR submissions fetch threw for ${symbol}:`, err instanceof Error ? err.message : err);
+      console.warn(`[Stox] SEC EDGAR submissions fetch threw for ${symbol}:`, err instanceof Error ? err.message : err);
     }
     return { status: "unavailable" };
   }
@@ -1455,8 +1455,8 @@ export interface SecFinancials {
  * "true 10-year history" source in the multi-source aggregation pipeline.
  * See lib/finance/aggregate.ts for how this is merged with Yahoo/FMP data.
  */
-// Historical-depth note (checked against an iCharts-vs-FinLens audit that
-// flagged FinLens' SEC-sourced history for a filer stopping around 2009 vs.
+// Historical-depth note (checked against an iCharts-vs-Stox audit that
+// flagged Stox' SEC-sourced history for a filer stopping around 2009 vs.
 // iCharts reaching back to 1997): this file has no hardcoded start-year
 // cutoff anywhere — annualSeries/quarterlySeries (and their Detailed
 // siblings) all walk whatever fiscal years exist in the companyfacts
@@ -1505,7 +1505,7 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
       // downstream silently fell back to Yahoo's ~4-year-capped data. See
       // the USER_AGENT doc comment above for the likely cause of a 403.
       console.warn(
-        `[FinLens] SEC EDGAR company-facts fetch failed for ${symbol} (CIK ${match.cik}): ` +
+        `[Stox] SEC EDGAR company-facts fetch failed for ${symbol} (CIK ${match.cik}): ` +
           `HTTP ${res.status} ${res.statusText}. Falling back to Yahoo/FMP for this ticker's ` +
           `history (Yahoo alone typically caps out around 4 fiscal years).`
       );
@@ -1515,7 +1515,7 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
     const data = (await res.json()) as XbrlCompanyFacts;
     const facts = data.facts?.["us-gaap"];
     if (!facts) {
-      console.warn(`[FinLens] SEC EDGAR company-facts response for ${symbol} (CIK ${match.cik}) had no us-gaap facts.`);
+      console.warn(`[Stox] SEC EDGAR company-facts response for ${symbol} (CIK ${match.cik}) had no us-gaap facts.`);
       return { status: "unavailable", ...empty };
     }
 
@@ -1561,7 +1561,7 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
     // just doesn't have annual data" from the outside.
     if (result.income.length === 0 && result.balance.length === 0 && result.cashFlow.length === 0) {
       console.warn(
-        `[FinLens] SEC EDGAR company-facts for ${symbol} (CIK ${match.cik}) fetched OK but yielded ` +
+        `[Stox] SEC EDGAR company-facts for ${symbol} (CIK ${match.cik}) fetched OK but yielded ` +
           `0 fiscal years — likely an XBRL tag mismatch (see toSecIncomeRows/toSecBalanceRows tag lists).`
       );
     }
@@ -1569,10 +1569,10 @@ export async function fetchSecFinancials(symbol: string): Promise<SecFinancials>
   } catch (err) {
     if (isAbortError(err)) {
       console.warn(
-        `[FinLens] SEC EDGAR company-facts fetch timed out after ${FETCH_TIMEOUT_MS}ms for ${symbol} (CIK ${match.cik}) — falling back to Yahoo/FMP for this ticker's history.`
+        `[Stox] SEC EDGAR company-facts fetch timed out after ${FETCH_TIMEOUT_MS}ms for ${symbol} (CIK ${match.cik}) — falling back to Yahoo/FMP for this ticker's history.`
       );
     } else {
-      console.warn(`[FinLens] SEC EDGAR company-facts fetch threw for ${symbol}:`, err instanceof Error ? err.message : err);
+      console.warn(`[Stox] SEC EDGAR company-facts fetch threw for ${symbol}:`, err instanceof Error ? err.message : err);
     }
     return { status: "unavailable", ...empty };
   }

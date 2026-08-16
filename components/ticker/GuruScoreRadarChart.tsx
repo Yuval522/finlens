@@ -69,7 +69,7 @@ function RadarTooltip({ active, payload }: RadarTooltipProps) {
  * GuruFocus-style 5-pillar radar/pentagon chart for the Multi-Factor
  * Rating — supplements (doesn't replace) the detailed pillar cards below
  * it, which still carry the per-metric breakdown a polygon chart can't
- * show. FinLens's own approximation of the *shape* of GuruFocus's public
+ * show. Stox's own approximation of the *shape* of GuruFocus's public
  * GF Score pentagon; not affiliated with, endorsed by, or sourced from
  * GuruFocus LLC. Not investment advice.
  */

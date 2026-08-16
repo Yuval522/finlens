@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { LogIn, LogOut, Menu, User, UserPlus } from "lucide-react";
-import { FinLensLogo } from "@/components/branding/FinLensLogo";
+import { StoxLogo } from "@/components/branding/StoxLogo";
 import { SymbolSearchInput } from "@/components/search/SymbolSearchInput";
 import { SCREENER_UNIVERSE } from "@/lib/finance/screener-data";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -88,7 +88,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       >
         <Menu className="h-5 w-5" />
       </button>
-      <FinLensLogo size={24} showWordmark className="shrink-0 md:hidden" />
+      <StoxLogo size={24} showWordmark className="shrink-0 md:hidden" />
       <SymbolSearchInput />
 
       {/* QA fix: the status readout used to sit directly after the search

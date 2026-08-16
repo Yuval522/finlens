@@ -6,7 +6,7 @@ import { useSyncExternalStore } from "react";
  * Client-only settings store, persisted to localStorage — same
  * module-level-store + useSyncExternalStore pattern as
  * lib/watchlist/store.ts (see that file's doc comment for the rationale:
- * FinLens has no backend/accounts, so "settings" means "remembered on this
+ * Stox has no backend/accounts, so "settings" means "remembered on this
  * browser"). Kept as a single settings object rather than one entry per
  * field, since the whole point of the Settings page is editing several of
  * these together.
@@ -30,7 +30,7 @@ import { useSyncExternalStore } from "react";
 
 export type AccentColor = "blue" | "emerald" | "amber" | "rose" | "violet";
 
-export interface FinLensSettings {
+export interface StoxSettings {
   displayName: string;
   accentColor: AccentColor;
   defaultCurrency: "USD" | "ILS";
@@ -40,7 +40,7 @@ export interface FinLensSettings {
   weeklyDigest: boolean;
 }
 
-export const DEFAULT_SETTINGS: FinLensSettings = {
+export const DEFAULT_SETTINGS: StoxSettings = {
   displayName: "Yuval",
   accentColor: "blue",
   defaultCurrency: "USD",
@@ -52,11 +52,11 @@ export const DEFAULT_SETTINGS: FinLensSettings = {
 
 const STORAGE_KEY = "finlens:settings";
 
-let settings: FinLensSettings = DEFAULT_SETTINGS;
+let settings: StoxSettings = DEFAULT_SETTINGS;
 let hydrated = false;
 const listeners = new Set<() => void>();
 
-function readFromStorage(): FinLensSettings {
+function readFromStorage(): StoxSettings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -65,7 +65,7 @@ function readFromStorage(): FinLensSettings {
     // Shallow-merge over defaults so adding a new setting later doesn't
     // break existing users' saved (older-shape) JSON. Any stale
     // `dataSourceKeys` field from before the Secure API Keys Migration
-    // simply isn't part of FinLensSettings anymore, so spreading `parsed`
+    // simply isn't part of StoxSettings anymore, so spreading `parsed`
     // over DEFAULT_SETTINGS harmlessly carries it as an inert extra
     // property that nothing reads.
     return { ...DEFAULT_SETTINGS, ...parsed };
@@ -112,16 +112,16 @@ export function subscribe(listener: () => void): () => void {
   };
 }
 
-function getSnapshot(): FinLensSettings {
+function getSnapshot(): StoxSettings {
   ensureHydrated();
   return settings;
 }
 
-function getServerSnapshot(): FinLensSettings {
+function getServerSnapshot(): StoxSettings {
   return DEFAULT_SETTINGS;
 }
 
-export function updateSettings(patch: Partial<FinLensSettings>): void {
+export function updateSettings(patch: Partial<StoxSettings>): void {
   ensureHydrated();
   settings = { ...settings, ...patch };
   persist();
@@ -137,7 +137,7 @@ export function resetSettings(): void {
 
 /** Current in-memory settings, for the auth layer to read at signup-
  * migration time or before a debounced server push. */
-export function getRawSnapshot(): FinLensSettings {
+export function getRawSnapshot(): StoxSettings {
   ensureHydrated();
   return settings;
 }
@@ -148,7 +148,7 @@ export function getRawSnapshot(): FinLensSettings {
  * partial saved shape doesn't crash on a missing field), or the defaults
  * if they've never saved any. Called right after a successful login. */
 export function hydrateFromServer(next: unknown): void {
-  const candidate = next && typeof next === "object" ? (next as Partial<FinLensSettings>) : null;
+  const candidate = next && typeof next === "object" ? (next as Partial<StoxSettings>) : null;
   settings = candidate ? { ...DEFAULT_SETTINGS, ...candidate } : DEFAULT_SETTINGS;
   hydrated = true;
   persist();

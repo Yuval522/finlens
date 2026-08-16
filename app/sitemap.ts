@@ -12,7 +12,7 @@ import { STRATEGY_UNIVERSE_SYMBOLS } from "@/lib/finance/symbols";
  *  - one entry per symbol in STRATEGY_UNIVERSE_SYMBOLS (lib/finance/
  *    symbols.ts), each now with its own real title/description via
  *    analysis/[symbol]'s generateMetadata — this is what actually invites
- *    a crawl of FinLens's single best source of long-tail search traffic
+ *    a crawl of Stox's single best source of long-tail search traffic
  *    (hundreds of "[ticker] stock analysis" queries) rather than just
  *    making those pages theoretically indexable and hoping they're found.
  *

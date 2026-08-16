@@ -44,7 +44,7 @@ export function dbErrorJson(err: unknown, context: string) {
   const missingDb = !process.env.DATABASE_URL && !process.env.POSTGRES_URL;
   if (missingDb) {
     console.error(
-      `[FinLens] ${context} failed — no Postgres connection string is configured: ` +
+      `[Stox] ${context} failed — no Postgres connection string is configured: ` +
         "neither DATABASE_URL nor POSTGRES_URL is set. In Vercel, connect the Neon " +
         "integration from your project's Storage tab (Add Integration -> Neon) — it " +
         "auto-creates a database and auto-injects these env vars into Production, " +
@@ -54,7 +54,7 @@ export function dbErrorJson(err: unknown, context: string) {
       err
     );
   } else {
-    console.error(`[FinLens] ${context} failed:`, err);
+    console.error(`[Stox] ${context} failed:`, err);
   }
   return noStoreJson({ error: "Something went wrong on our end. Please try again in a moment." }, { status: 500 });
 }

@@ -178,7 +178,7 @@ export function mergeYearsBySource<T extends YearRow>(
       }
       if (dataDiscrepancy && process.env.NODE_ENV !== "production") {
         console.warn(
-          `[FinLens] ${label}(${symbol}) ${fiscalYear}: sources disagree on "${anchorField}" beyond ` +
+          `[Stox] ${label}(${symbol}) ${fiscalYear}: sources disagree on "${anchorField}" beyond ` +
             `tolerance — ${candidates.map((c) => `${c.source}=${Number(c.row[anchorField]).toLocaleString("en-US")}`).join(", ")}.`
         );
       }
@@ -200,7 +200,7 @@ export function mergeYearsBySource<T extends YearRow>(
           winner = others[0]; // the higher-priority of the two agreeing, corroborating sources
           if (process.env.NODE_ENV !== "production") {
             console.warn(
-              `[FinLens] ${label}(${symbol}) ${fiscalYear}: "${anchorField}" from ${demoted.source} ` +
+              `[Stox] ${label}(${symbol}) ${fiscalYear}: "${anchorField}" from ${demoted.source} ` +
                 `(${Number(demoted.row[anchorField]).toLocaleString("en-US")}) is an outlier vs. ` +
                 `${others[0].source} and ${others[1].source}, which agree with each other ` +
                 `(${others[0].value.toLocaleString("en-US")} vs. ${others[1].value.toLocaleString("en-US")}) — ` +
@@ -225,7 +225,7 @@ export function mergeYearsBySource<T extends YearRow>(
         patchedRow = { ...(patchedRow ?? winner.row), [field]: donor.row[field] };
         if (process.env.NODE_ENV !== "production") {
           console.warn(
-            `[FinLens] ${label}(${symbol}) ${fiscalYear}: "${field}" from ${winner.source} was 0 — ` +
+            `[Stox] ${label}(${symbol}) ${fiscalYear}: "${field}" from ${winner.source} was 0 — ` +
               `backfilled from ${donor.source}'s value (${Number(donor.row[field]).toLocaleString("en-US")}) ` +
               `for this field only. Every other field still comes from ${winner.source}.`
           );
@@ -303,11 +303,11 @@ export function formatSourceSummary(runs: SourceRun[]): string {
  */
 function logSourceBreakdown<T extends YearRow>(label: string, symbol: string, rows: T[]): void {
   if (rows.length === 0) {
-    console.info(`[FinLens] ${label}(${symbol}): no data from any source`);
+    console.info(`[Stox] ${label}(${symbol}): no data from any source`);
     return;
   }
   const summary = formatSourceSummary(summarizeYearSources(rows));
-  console.info(`[FinLens] ${label}(${symbol}): ${rows.length} year(s) — ${summary}`);
+  console.info(`[Stox] ${label}(${symbol}): ${rows.length} year(s) — ${summary}`);
 }
 
 /**
@@ -353,7 +353,7 @@ function warnIfYearsLookStale<T extends YearRow>(label: string, symbol: string, 
   // that's the threshold flagged here rather than anything tighter.
   if (currentYear - newest >= 2) {
     console.warn(
-      `[FinLens] ${label}(${symbol}): newest fiscal year label is ${newest}, ` +
+      `[Stox] ${label}(${symbol}): newest fiscal year label is ${newest}, ` +
         `${currentYear - newest} years behind the current calendar year (${currentYear}). ` +
         `Could be a genuinely slow/incomplete data source, or a labeling bug — verify ` +
         `against a raw provider payload (SEC EDGAR's companyfacts API, or Yahoo's ` +
@@ -405,7 +405,7 @@ function warnIfDuplicateValuesAcrossYears<T extends YearRow>(label: string, symb
       const relDiff = Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b));
       if (relDiff < 0.001) {
         console.warn(
-          `[FinLens] ${label}(${symbol}): "${String(key)}" is nearly identical in ` +
+          `[Stox] ${label}(${symbol}): "${String(key)}" is nearly identical in ` +
             `${prev.fiscalYear} (${a.toLocaleString("en-US")}) and ${cur.fiscalYear} ` +
             `(${b.toLocaleString("en-US")}) — possible fiscal-year label/merge collision ` +
             `rather than a genuine flat year-over-year figure. Verify against a raw ` +
@@ -458,7 +458,7 @@ export function warnIfTrailingRowImplausible<T extends YearRow>(
   const relDiff = Math.abs(trailingVal - lastVal) / Math.max(Math.abs(lastVal), Math.abs(trailingVal));
   if (relDiff > threshold) {
     console.warn(
-      `[FinLens] ${label}(${symbol}): "${anchorField}" moved from ${lastVal.toLocaleString("en-US")} ` +
+      `[Stox] ${label}(${symbol}): "${anchorField}" moved from ${lastVal.toLocaleString("en-US")} ` +
         `(${last.fiscalYear}) to ${trailingVal.toLocaleString("en-US")} (${trailing.fiscalYear}) — a ` +
         `${(relDiff * 100).toFixed(0)}% change in one period. Could be real (acquisition, major debt ` +
         `issuance) or a tag-mapping/dimensional-data artifact — verify against a raw SEC EDGAR/Yahoo ` +
@@ -498,7 +498,7 @@ export function warnIfShareCountDiscontinuity<T extends YearRow & { sharesOutsta
     const ratio = cur / prev;
     if (ratio > maxRatio || ratio < 1 / maxRatio) {
       console.warn(
-        `[FinLens] ${label}(${symbol}): sharesOutstandingDiluted moved from ` +
+        `[Stox] ${label}(${symbol}): sharesOutstandingDiluted moved from ` +
           `${prev.toLocaleString("en-US")} (${rows[i - 1].fiscalYear}) to ${cur.toLocaleString("en-US")} ` +
           `(${rows[i].fiscalYear}) — a ${ratio.toFixed(1)}x change in one period, outside the range an ` +
           `organic buyback/issuance program ever produces. Likely an undetected/mistimed stock split or a ` +

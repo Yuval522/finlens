@@ -14,7 +14,7 @@ import {
 /**
  * Client-only portfolio store, persisted to localStorage — same rationale
  * and same module-level-store + useSyncExternalStore pattern as
- * lib/watchlist/store.ts (see that file's doc comment): FinLens has no
+ * lib/watchlist/store.ts (see that file's doc comment): Stox has no
  * user accounts/backend database, so "your portfolio" means "remembered on
  * this browser." Seeded on first-ever visit with a realistic sample
  * portfolio (see SEED_DATA below) so the page shows real charts/tables
@@ -87,7 +87,7 @@ const CURRENT_SEED_VERSION = "2026-07-28-real-positions";
 /**
  * User's real portfolio, entered from their own trade-blotter screenshot
  * (Instrument / Qty / Trade Price) rather than a live brokerage
- * integration — FinLens has no such integration, so this is the most
+ * integration — Stox has no such integration, so this is the most
  * direct way to get real positions into the tracker. Replaces the old
  * illustrative AAPL/NVDA/MSFT demo seed.
  *

@@ -62,7 +62,7 @@ export async function fetchPolygonQuote(symbol: string, apiKey: string): Promise
   try {
     const res = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(8_000) });
     if (!res.ok) {
-      console.warn(`[FinLens] Polygon quote request failed for ${symbol}: HTTP ${res.status} ${res.statusText}`);
+      console.warn(`[Stox] Polygon quote request failed for ${symbol}: HTTP ${res.status} ${res.statusText}`);
       return null;
     }
     const data = (await res.json()) as PolygonPrevCloseResponse;
@@ -107,9 +107,9 @@ export async function fetchPolygonQuote(symbol: string, apiKey: string): Promise
     };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      console.warn(`[FinLens] Polygon quote request timed out for ${symbol}`);
+      console.warn(`[Stox] Polygon quote request timed out for ${symbol}`);
     } else {
-      console.warn(`[FinLens] Polygon quote request threw for ${symbol}:`, err instanceof Error ? err.message : err);
+      console.warn(`[Stox] Polygon quote request threw for ${symbol}:`, err instanceof Error ? err.message : err);
     }
     return null;
   }

@@ -1,4 +1,4 @@
-# FinLens "Retro-Digital" Design System
+# Stox "Retro-Digital" Design System
 
 **Scope:** the visual language adopted across an ongoing, page-by-page redesign (Home, Strategy Builder, Screener done as of 2026-08-16; other pages — Watchlist, Portfolio, Macro, Settings, per-ticker Analysis — not yet audited against a reference). Each page so far was matched to a user-supplied reference screenshot through several rounds of iteration, so treat the patterns below as the established convention to apply *by default* to any new/untouched page, rather than re-deriving a look from scratch or waiting for a new screenshot.
 
@@ -32,7 +32,7 @@ Do **not** introduce ad-hoc Tailwind colors (`slate-500`, `amber-500`, `indigo-5
 ## 3. Core primitives
 
 - **`components/shared/Led.tsx`** — the only way to indicate up/down direction. A small pulsing dot (`.led-dot` + `.led-dot-up`/`.led-dot-down`, `led-pulse` keyframe: opacity 1 → 0.35 → 1), never an arrow glyph (`ArrowUp`/`ArrowDown` from lucide are deliberately not used for price direction anywhere in this app).
-- **`components/branding/RobotHeadMark.tsx`** / **`FinLensLogo.tsx`** — the brand mark is a hand-authored pixel bitmap (a grid of flat `<rect>`/`<div>` cells, `shape-rendering: crispEdges`, zero border-radius, zero gradients on the sprite itself), not a smooth SVG icon or raster image. The wordmark next to it is plain bold monospace `FINLENS`, uppercase, single flat color (`text-foreground`) — not a gradient split treatment. Keep this pixel-art constraint for any future branding/mascot work.
+- **`components/branding/RobotHeadMark.tsx`** / **`StoxLogo.tsx`** — the brand mark is a hand-authored pixel bitmap (a grid of flat `<rect>`/`<div>` cells, `shape-rendering: crispEdges`, zero border-radius, zero gradients on the sprite itself), not a smooth SVG icon or raster image. The wordmark next to it is plain bold monospace `STOX`, uppercase, single flat color (`text-foreground`) — not a gradient split treatment. Keep this pixel-art constraint for any future branding/mascot work.
 
 ## 4. Page hero pattern
 

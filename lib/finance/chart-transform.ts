@@ -63,7 +63,7 @@ export function filterByRange<T extends { fiscalYear: string }>(
  * QA fix ("Select Range does nothing" report — traced to a real cause, but
  * not a wiring bug): filterByRange/the range state were already correctly
  * wired (verified again, function by function, before writing this). The
- * actual problem is upstream — every FinLens dataset only ever has ~5
+ * actual problem is upstream — every Stox dataset only ever has ~5
  * fiscal periods (mock-data.ts's illustrative fixtures are hand-authored
  * with exactly 4 years + TTM per ticker; live Yahoo data was previously
  * fetched with only a 6-year lookback window, see the bumped period1 in

@@ -8,7 +8,7 @@ import type { IncomeStatementYear, PricePoint } from "./types";
  * Rating (Valuation pillar). Same disclaimer as score-gurufocus.ts (which
  * deliberately left this exact calculation out, reporting relative
  * cheapness instead — see that file's Valuation pillar doc comment): this
- * is FinLens's own, independently-derived approximation of the *shape* of
+ * is Stox's own, independently-derived approximation of the *shape* of
  * GuruFocus's published GF Value indicator (a historical-multiple-based
  * fair value line with over/undervalued bands), not a reproduction of
  * their proprietary regression, which additionally weighs analyst

@@ -202,7 +202,7 @@ function SettingsContent() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-sm text-foreground">Theme</p>
-            <p className="text-xs text-muted-foreground">FinLens is a dark-mode-first terminal</p>
+            <p className="text-xs text-muted-foreground">Stox is a dark-mode-first terminal</p>
           </div>
           <span className="rounded-full bg-accent px-2.5 py-1 text-xs font-medium text-foreground">Dark (default)</span>
         </div>
@@ -246,7 +246,7 @@ function SettingsContent() {
       <ApiKeysSection />
 
       {/* Notifications */}
-      <SectionCard icon={Bell} iconClassName="bg-sky-500/15 text-sky-400" title="Notifications & Alerts" description="Choose what FinLens should notify you about">
+      <SectionCard icon={Bell} iconClassName="bg-sky-500/15 text-sky-400" title="Notifications & Alerts" description="Choose what Stox should notify you about">
         <ToggleRow
           title="Price alerts"
           description="Notify when a watchlist symbol crosses a threshold"

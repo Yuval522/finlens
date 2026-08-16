@@ -174,7 +174,7 @@ export async function parseStrategy(query: string): Promise<ParsedStrategy> {
   // ANTHROPIC_API_KEY becomes configured mid-process-lifetime).
   const cached = getCachedParsedStrategy(trimmed);
   if (cached) {
-    console.log("[FinLens] parseStrategy — query cache hit, skipping Anthropic call");
+    console.log("[Stox] parseStrategy — query cache hit, skipping Anthropic call");
     return cached;
   }
 

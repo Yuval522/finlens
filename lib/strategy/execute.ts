@@ -87,7 +87,7 @@ async function fetchLiveSnapshot(missingSymbols: string[]): Promise<Map<string, 
 
   if (missingSymbols.length > 20) {
     console.warn(
-      `[FinLens] executeStrategy — ${missingSymbols.length}/${STRATEGY_UNIVERSE_SYMBOLS.length} symbols had no ` +
+      `[Stox] executeStrategy — ${missingSymbols.length}/${STRATEGY_UNIVERSE_SYMBOLS.length} symbols had no ` +
         "precomputed data (strategy_universe_metrics not yet warmed by the refresh cron?) — falling back to a " +
         `live fetch for up to ${MAX_LIVE_FALLBACK_LOOKUPS} of them. This should self-resolve once ` +
         "app/api/cron/refresh-strategy-universe has run at least once."
@@ -95,7 +95,7 @@ async function fetchLiveSnapshot(missingSymbols: string[]): Promise<Map<string, 
   }
   if (prioritized.length > 0 && failedCount / prioritized.length > 0.5) {
     console.warn(
-      `[FinLens] executeStrategy — ${failedCount}/${prioritized.length} live-fallback technical lookups came back ` +
+      `[Stox] executeStrategy — ${failedCount}/${prioritized.length} live-fallback technical lookups came back ` +
         "with no data, likely Yahoo rate-limiting this batch."
     );
   }

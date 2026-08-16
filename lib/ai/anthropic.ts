@@ -7,7 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
  * re-validate the API key) on every edit. Never import this from a "use
  * client" component: it reads a server-only secret.
  *
- * ANTHROPIC_API_KEY is FinLens's own app-level credential (billed to this
+ * ANTHROPIC_API_KEY is Stox's own app-level credential (billed to this
  * app, not the signed-in user) — distinct from the per-user Finnhub/
  * Polygon/Alpha Vantage keys in lib/db/apiKeys.ts, which are for fetching
  * a *user's own* market data. There is no per-user LLM key: every user's

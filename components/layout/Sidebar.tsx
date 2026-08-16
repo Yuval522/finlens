@@ -15,7 +15,7 @@ import {
   ChevronRight,
   X,
 } from "lucide-react";
-import { FinLensLogo } from "@/components/branding/FinLensLogo";
+import { StoxLogo } from "@/components/branding/StoxLogo";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -58,7 +58,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
       >
         {/* Wordmark */}
         <div className="flex h-16 items-center gap-2 border-b border-border px-4">
-          <FinLensLogo size={28} showWordmark={!collapsed} className="min-w-0" />
+          <StoxLogo size={28} showWordmark={!collapsed} className="min-w-0" />
           {/* Mobile UX audit fix: h-8 w-8 (32px) is under the ~44px minimum
               recommended touch target — this is the mobile-only close
               control for the nav drawer, so a comfortably-sized tap area
@@ -126,7 +126,7 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
           only user-avatar badge ("YR") lives in Topbar.tsx, top-right, not
           here. That strongly points to a browser extension's own injected
           UI (many note-taking/clipper-style extensions anchor a small badge
-          to the bottom-left viewport corner) rather than anything FinLens
+          to the bottom-left viewport corner) rather than anything Stox
           renders. Still widened the hit area and made the icon a fixed,
           non-shrinking flex item with its own background so the control
           reads cleanly regardless of what else might be drawn nearby.

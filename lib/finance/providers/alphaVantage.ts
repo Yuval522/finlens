@@ -76,13 +76,13 @@ export async function fetchAlphaVantageQuote(symbol: string, apiKey: string): Pr
   try {
     const res = await fetch(url.toString(), { cache: "no-store", signal: AbortSignal.timeout(8_000) });
     if (!res.ok) {
-      console.warn(`[FinLens] Alpha Vantage quote request failed for ${symbol}: HTTP ${res.status} ${res.statusText}`);
+      console.warn(`[Stox] Alpha Vantage quote request failed for ${symbol}: HTTP ${res.status} ${res.statusText}`);
       return null;
     }
     const data = (await res.json()) as AlphaVantageGlobalQuoteResponse;
     if (data.Note || data.Information || data["Error Message"]) {
       console.warn(
-        `[FinLens] Alpha Vantage quote for ${symbol} returned an error/rate-limit payload: ` +
+        `[Stox] Alpha Vantage quote for ${symbol} returned an error/rate-limit payload: ` +
           (data.Note || data.Information || data["Error Message"])
       );
       return null;
@@ -122,10 +122,10 @@ export async function fetchAlphaVantageQuote(symbol: string, apiKey: string): Pr
     };
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      console.warn(`[FinLens] Alpha Vantage quote request timed out for ${symbol}`);
+      console.warn(`[Stox] Alpha Vantage quote request timed out for ${symbol}`);
     } else {
       console.warn(
-        `[FinLens] Alpha Vantage quote request threw for ${symbol}:`,
+        `[Stox] Alpha Vantage quote request threw for ${symbol}:`,
         err instanceof Error ? err.message : err
       );
     }

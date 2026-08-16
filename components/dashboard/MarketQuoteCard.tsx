@@ -42,7 +42,7 @@ export function MarketQuoteCard({ quote, showWatchlistToggle = false, flash }: M
     <Link
       href={`/analysis/${encodeURIComponent(quote.symbol)}`}
       // Design-audit fix: reference cards lift + scale slightly on hover;
-      // FinLens's had no hover micro-interaction at all. .glass-card's own
+      // Stox's had no hover micro-interaction at all. .glass-card's own
       // CSS already declares a `transition: border-color, box-shadow`
       // shorthand for its built-in cyan-glow hover — re-declaring the full
       // property list here (rather than adding a separate `transition-

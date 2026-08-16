@@ -152,7 +152,7 @@ function FairValueBand({ fv }: { fv: FairValueBandResult }) {
               fv.medianHistoricalPS != null ? `${fv.medianHistoricalPS.toFixed(1)}x` : "—"
             }) multiples over the trailing ${fv.yearsUsed} fiscal year(s) with matching price data, adjusted ${fv.growthAdjustmentFactor.toFixed(
               2
-            )}x by trailing EPS CAGR, applied to current EPS/revenue-per-share. FinLens's own approximation of a GuruFocus-style fair-value band — not GuruFocus's proprietary GF Value formula, and not affiliated with, endorsed by, or sourced from GuruFocus LLC. Not investment advice.`}
+            )}x by trailing EPS CAGR, applied to current EPS/revenue-per-share. Stox's own approximation of a GuruFocus-style fair-value band — not GuruFocus's proprietary GF Value formula, and not affiliated with, endorsed by, or sourced from GuruFocus LLC. Not investment advice.`}
           />
         </h4>
         <span className={cn("font-mono text-xs font-semibold", TONE_TEXT[tone])}>{fv.label}</span>
@@ -333,7 +333,7 @@ export function ScorePanel({
               <>
                 A second, independent rating lens modeled after the five rating pillars GuruFocus.com publicly shows
                 on its own GF Score radar chart (Financial Strength, Profitability, Growth, a valuation indicator,
-                and Momentum), each shown here as a 1-10 rank. This is FinLens&apos;s own approximation computed from
+                and Momentum), each shown here as a 1-10 rank. This is Stox&apos;s own approximation computed from
                 this company&apos;s reported fundamentals — not a reproduction of GuruFocus&apos;s proprietary algorithm, and not
                 affiliated with, endorsed by, or sourced from GuruFocus LLC. Not investment advice.
               </>

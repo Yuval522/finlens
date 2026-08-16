@@ -1,4 +1,4 @@
-# FinLens Data Pipeline Architecture Review
+# Stox Data Pipeline Architecture Review
 
 **Scope:** institutional-grade redesign of `lib/finance/` — provider benchmark, root cause of the pre-2009 historical-depth wall, TTM/MRQ calculation engine, and a concrete implementation blueprint.
 

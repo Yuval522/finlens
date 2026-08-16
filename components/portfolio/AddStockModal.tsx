@@ -21,7 +21,7 @@ interface AddStockModalProps {
 /**
  * Live ticker-search combobox, reusing the same /api/search endpoint (and
  * debounced-fetch pattern) as SymbolSearchInput/ComparePanel's
- * AddTickerSearch elsewhere in FinLens — rebuilt here rather than imported
+ * AddTickerSearch elsewhere in Stox — rebuilt here rather than imported
  * because both of those drive different selection behavior (route
  * navigation / append-to-comparison), while this one needs to hold the
  * selected result in local state and show a confirmation card, per the

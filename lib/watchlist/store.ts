@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * Client-only watchlist store, persisted to localStorage. FinLens has no
+ * Client-only watchlist store, persisted to localStorage. Stox has no
  * user accounts/backend database (see project notes — auth/persistence
  * beyond the browser was never part of this build's scope), so "add to
  * watchlist" means "remembered on this browser" rather than synced to a

@@ -80,7 +80,7 @@ const SECTOR_BY_SYMBOL = new Map(SCREENER_UNIVERSE.map((s) => [s.symbol.toUpperC
 /**
  * Best-effort symbol -> sector lookup, reusing this file's own screener
  * universe (Portfolio's Asset Allocation "By Sector" view — see
- * AssetAllocationChart.tsx). FinLens has no live company-profile fetch
+ * AssetAllocationChart.tsx). Stox has no live company-profile fetch
  * wired into the portfolio store itself (holdings only carry
  * symbol/name/currency/shares/price, see lib/portfolio/store.ts), so this
  * is the same honest-fallback approach as the rest of this file: a real,

@@ -1,7 +1,7 @@
 import type { PortfolioCash, PortfolioHolding } from "./store";
 
 /**
- * Fixed, approximate display-only conversion rate — FinLens has no live FX
+ * Fixed, approximate display-only conversion rate — Stox has no live FX
  * feed wired up (see project notes on network access), so the USD/ILS
  * toggle on the portfolio header converts using this constant rather than
  * a real-time rate. Good enough for a display toggle; not to be relied on
