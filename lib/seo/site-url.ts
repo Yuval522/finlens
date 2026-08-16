@@ -13,10 +13,15 @@
  *    every preview deploy claim to be a different "canonical" site).
  * 3. A hardcoded fallback (the current production domain) — so local dev
  *    and any environment missing both vars above still produces valid,
- *    absolute URLs instead of throwing or emitting relative ones.
+ *    absolute URLs instead of throwing or emitting relative ones. Updated
+ *    to stox-intellegens.vercel.app for the Stox rebrand (was
+ *    finlens-nu.vercel.app) — VERCEL_PROJECT_PRODUCTION_URL will normally
+ *    take precedence over this in the actual deployed environment, but
+ *    this fallback should still track the real domain in case that var is
+ *    ever unset.
  */
 export function getSiteUrl(): string {
   if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
   if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
-  return "https://finlens-nu.vercel.app";
+  return "https://stox-intellegens.vercel.app";
 }
