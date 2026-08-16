@@ -37,6 +37,20 @@
   --destructive: 350 100% 66%; /* #FF5470 — LED coral-red for losses */
   --destructive-foreground: 0 0% 100%;
 
+  /* QA fix: "Why it's close" annotation text (Strategy Builder relaxed-
+     match column) was reusing --primary — correct for a header that needs
+     to visually separate from the app's ONE bright brand accent, but the
+     live report is right that the full-saturation coral-orange reads too
+     neon for a secondary annotation column, competing with --primary's
+     "this is the one thing to look at" role (Run button, active nav,
+     focus ring) instead of sitting quietly underneath it. --warning is a
+     deliberately less saturated, slightly more yellow burnt-amber — same
+     hue family as --primary so it still reads as "this app's orange," but
+     desaturated/darkened enough to recede against the dark background
+     rather than compete with the true brand accent. */
+  --warning: 32 62% 52%; /* muted burnt-amber — annotation/secondary accent, NOT the brand primary */
+  --warning-foreground: 0 0% 100%;
+
   --border: 230 6% 12%; /* sharp 1px hairline, #1c1d20 territory */
   --muted: 220 6% 10%;
   --muted-foreground: 220 4% 58%; /* neutral gray for labels */

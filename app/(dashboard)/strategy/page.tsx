@@ -245,12 +245,23 @@ export default function StrategyBuilderPage() {
                       {response.relaxed && (
                         // QA fix: this header inherited text-muted-foreground
                         // from the parent <tr> like every other column, but
-                        // the reference design shows it in the brand primary
-                        // orange — distinct from the gray NAME/PRICE/etc.
-                        // headers, signaling it's a different kind of column
-                        // (an explanation, not a data field). text-primary
-                        // overrides the inherited muted color for just this <th>.
-                        <th className="border-l border-dotted border-border/70 px-2 py-1.5 pl-3 text-left font-medium text-primary">
+                        // the reference design shows it colored — distinct
+                        // from the gray NAME/PRICE/etc. headers, signaling
+                        // it's a different kind of column (an explanation,
+                        // not a data field). Originally used text-primary,
+                        // but a live report correctly flagged that as too
+                        // neon/competing with the app's one true brand
+                        // accent — switched to --warning, a deliberately
+                        // softer, more muted burnt-amber in the same hue
+                        // family (see globals.css doc comment on that
+                        // token). border-b-2 border-dotted border-warning
+                        // gives this cell its own dotted underline in place
+                        // of the row's shared solid border-b, at the same
+                        // vertical position as every other header's
+                        // underline (border-collapse: the more specific/
+                        // heavier per-cell border wins over the tr's), same
+                        // technique as the Portfolio table's fork header.
+                        <th className="border-b-2 border-l border-dotted border-border/70 border-b-warning px-2 py-1.5 pl-3 text-left font-medium text-warning">
                           Why it&apos;s close
                         </th>
                       )}
@@ -332,8 +343,12 @@ function StrategyRow({
         {row.rsi14 == null ? "—" : row.rsi14.toFixed(0)}
       </td>
       {showAlmostMatchNote && (
+        // QA fix: matches the header's text-primary -> text-warning switch
+        // (see the "Why it's close" <th> doc comment above) — same softer
+        // burnt-amber for the row text, not just the header, per the
+        // report that the full-brightness coral read too neon here.
         <td
-          className="max-w-[220px] border-l border-dotted border-border/70 px-2 py-2 pl-3 text-left text-[11px] text-primary/90"
+          className="max-w-[220px] border-l border-dotted border-border/70 px-2 py-2 pl-3 text-left text-[11px] text-warning/90"
           title={row.almostMatchNote ?? undefined}
         >
           <span className="line-clamp-2">{row.almostMatchNote ?? "—"}</span>
