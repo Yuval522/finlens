@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Minus } from "lucide-react";
 import type { MarketQuote } from "@/lib/finance/types";
 import { changeDirection, formatPercent, toDisplayUnit } from "@/lib/format/currency";
@@ -18,9 +19,7 @@ interface IndexSummaryCardProps {
  * reference this was built against) — label, large mono value, a
  * green/red % pill, and a trend sparkline below it. Deliberately a
  * distinct, simpler shape from MarketQuoteCard (still used for Most
- * Active/Watchlist): no logo/avatar, and not a link — indices aren't a
- * tradeable ticker the way individual stocks are, so there's no
- * per-index analysis page to send it to.
+ * Active/Watchlist): no logo/avatar.
  *
  * Index "values" are levels, not currency amounts you'd trade at, so
  * unlike MarketQuoteCard this intentionally does NOT prefix the value with
@@ -35,6 +34,16 @@ interface IndexSummaryCardProps {
  * MarketQuoteCard already uses for Most Active/Watchlist — same Led
  * component, same flat/up/down badge logic — so "live-looking" status
  * indicators read consistently across every card type on the dashboard.
+ *
+ * QA fix: clicking a card previously did nothing — indices had no
+ * per-symbol destination. Now a Link to /analysis/[symbol], same as
+ * MarketQuoteCard, reusing the already-built Analysis page rather than a
+ * new modal: it already renders price + chart for any symbol and already
+ * has an explicit graceful path for index-type quotes specifically (see
+ * NonFundamentalNotice, shown in place of the fundamentals tabs for
+ * indices/ETFs/crypto/etc.), so this "just works" without new UI. `block`
+ * is required here — an <a> is inline by default, which would otherwise
+ * break this card's explicit width/padding/shrink-0 sizing.
  */
 export function IndexSummaryCard({ quote, label, history }: IndexSummaryCardProps) {
   const direction = changeDirection(quote.change);
@@ -47,7 +56,10 @@ export function IndexSummaryCard({ quote, label, history }: IndexSummaryCardProp
         });
 
   return (
-    <div className="hig-card hig-card-interactive relative w-[190px] shrink-0 snap-start px-[18px] py-4 sm:w-[210px]">
+    <Link
+      href={`/analysis/${encodeURIComponent(quote.symbol)}`}
+      className="hig-card hig-card-interactive relative block w-[190px] shrink-0 snap-start px-[18px] py-4 sm:w-[210px]"
+    >
       <span
         className={cn(
           "absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full",
@@ -78,6 +90,6 @@ export function IndexSummaryCard({ quote, label, history }: IndexSummaryCardProp
           <Sparkline values={history} direction={direction} />
         </div>
       )}
-    </div>
+    </Link>
   );
 }

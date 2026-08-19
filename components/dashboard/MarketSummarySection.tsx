@@ -51,7 +51,21 @@ export async function MarketSummarySection() {
     return (
       <section>
         <SectionHeading />
-        <div className="tab-scroll flex snap-x snap-mandatory gap-3.5 overflow-x-auto scroll-smooth pb-1">
+        {/*
+          QA fix: the hover glow (.hig-card-interactive:hover's box-shadow,
+          see app/globals.css) was getting clipped flat at the row's top/
+          bottom/left edges. Root cause: `overflow-x-auto` on its own
+          computes overflow-y to `auto` too per the CSS spec (you can't
+          have one axis scrollable and the other genuinely `visible`), so
+          this row was clipping in EVERY direction, not just the
+          horizontal one it actually needs to scroll — a card's own glow
+          bleeding a few px above/below/left of its box had nowhere to
+          go. Fix: give the row real padding on every side so the glow has
+          room to render before it ever reaches a clipped edge, offset by
+          a matching negative margin so the extra padding doesn't add a
+          visible gap around the section itself.
+        */}
+        <div className="tab-scroll -mx-2 -my-3 flex snap-x snap-mandatory flex-nowrap gap-3.5 overflow-x-auto scroll-smooth px-2 py-3">
           {quotes.map((q) => (
             <IndexSummaryCard
               key={q.symbol}

@@ -9,15 +9,25 @@
 // dropped in an earlier pass (it's a crypto asset, not an index) but
 // brought back per follow-up feedback — the section is now a horizontally
 // scrollable row (see MarketSummarySection.tsx) rather than a fixed grid,
-// so there's no fixed slot count forcing a choice between the two. This
+// so there's no fixed slot count forcing a choice between the two. Widened
+// further per follow-up feedback (2026-08-19) to cover more of the globe's
+// major markets, not just US + TASE — Russell 2000 (US small-cap), FTSE
+// 100 (UK), Nikkei 225 (Japan), and Ethereum alongside Bitcoin. This
 // constant has exactly one call site (getMarketSummary() below), so
-// editing it here doesn't affect any other section.
+// editing it here doesn't affect any other section — keep
+// MARKET_SUMMARY_SLOTS in MarketSummaryGrid.tsx (the loading skeleton) in
+// sync with this list's length so the skeleton-to-loaded swap doesn't
+// reflow.
 export const MARKET_SUMMARY_SYMBOLS: { symbol: string; label: string }[] = [
   { symbol: "^GSPC", label: "S&P 500" },
   { symbol: "^IXIC", label: "NASDAQ" },
   { symbol: "^DJI", label: "Dow Jones" },
+  { symbol: "^RUT", label: "Russell 2000" },
   { symbol: "^TA125.TA", label: "TA-125" },
+  { symbol: "^FTSE", label: "FTSE 100" },
+  { symbol: "^N225", label: "Nikkei 225" },
   { symbol: "BTC-USD", label: "Bitcoin" },
+  { symbol: "ETH-USD", label: "Ethereum" },
 ];
 
 /** Seed list blended with the live US "most actives" screener. */
