@@ -150,7 +150,47 @@ async function pushUserData(key: DataKey, value: unknown): Promise<void> {
   }
 }
 
-async function hydrateAllFromServer(): Promise<void> {
+function hasLocalPortfolioData(): boolean {
+  const snap = getPortfolioSnapshot();
+  return snap.holdings.length > 0 || snap.cash.usd !== 0 || snap.cash.ils !== 0;
+}
+
+function hasLocalWatchlistData(): boolean {
+  return getWatchlistSnapshot().length > 0;
+}
+
+/**
+ * CRITICAL FIX (2026-08-19, round 3): even with the ok/failed distinction
+ * above, a *confirmed* `data: null` response (server genuinely has nothing
+ * saved for this key) still unconditionally wiped local Portfolio/
+ * Watchlist — correct for the one moment that's actually supposed to
+ * happen (a deliberate account switch: "Friend B logs in on Friend A's
+ * browser," see this file's top doc comment), but wrong for the far more
+ * common case of just reconfirming an *already-established* session on
+ * mount/focus/pageshow. If this browser already has real local holdings
+ * and the server says empty — which can legitimately happen for reasons
+ * having nothing to do with "this account has never had data" (a stale
+ * server-side row from before these fixes, a not-yet-completed first
+ * sync, etc.) — blowing away real local data on every such check is
+ * exactly the bug being fixed here across the last few rounds.
+ *
+ * `strict` (only ever passed `true` from the explicit login() action)
+ * preserves the original, deliberate overwrite-on-login semantics: typing
+ * in different credentials on a shared browser must always show that
+ * account's real data, even if that means empty. Every other caller
+ * (initial mount, pageshow/focus/visibilitychange re-checks) uses the
+ * default lenient mode: a confirmed-empty response only clears local data
+ * if there wasn't anything meaningful there to begin with.
+ *
+ * Tradeoff worth knowing: lenient mode means if you intentionally clear
+ * your entire portfolio on one device, a second device with stale local
+ * holdings won't pick up that "now genuinely empty" state until its own
+ * local cache is cleared some other way (e.g. an explicit logout/login).
+ * Accepted deliberately — silently losing real holdings to a flaky fetch
+ * was the worse failure mode in practice.
+ */
+async function hydrateAllFromServer(options: { strict?: boolean } = {}): Promise<void> {
+  const strict = options.strict ?? false;
   const [portfolio, watchlist, settings] = await Promise.all([
     fetchUserData("portfolio"),
     fetchUserData("watchlist"),
@@ -161,8 +201,12 @@ async function hydrateAllFromServer(): Promise<void> {
   // treated the same as "the server confirmed you have no saved data,"
   // or it silently wipes + re-persists real local (and eventually
   // server-side) data as empty.
-  if (portfolio.ok) hydratePortfolioFromServer(portfolio.data);
-  if (watchlist.ok) hydrateWatchlistFromServer(watchlist.data);
+  if (portfolio.ok && (strict || portfolio.data != null || !hasLocalPortfolioData())) {
+    hydratePortfolioFromServer(portfolio.data);
+  }
+  if (watchlist.ok && (strict || watchlist.data != null || !hasLocalWatchlistData())) {
+    hydrateWatchlistFromServer(watchlist.data);
+  }
   if (settings.ok) hydrateSettingsFromServer(settings.data);
 }
 
@@ -361,8 +405,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Overwrite whatever's currently local with THIS user's own
     // server-saved data — the core of strict data isolation between
-    // friends sharing one browser/device.
-    await hydrateAllFromServer();
+    // friends sharing one browser/device. `strict: true` is what makes
+    // this always overwrite even to empty (see hydrateAllFromServer's doc
+    // comment) — an explicit login is exactly the one moment that
+    // guarantee must hold, unlike the lenient re-checks elsewhere.
+    await hydrateAllFromServer({ strict: true });
     setUser(body.user);
     return { ok: true };
   }, []);

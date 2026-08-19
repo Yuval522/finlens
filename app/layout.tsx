@@ -158,7 +158,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className="font-sans antialiased bg-background text-foreground">
+      {/*
+        Follow-up feedback (2026-08-19): the warm ambient orange glow
+        (.app-ambient-glow, see app/globals.css) previously lived on
+        DashboardShell's own wrapper div — visible on every
+        app/(dashboard)/* route, but still technically a layout one level
+        down, not the true app root. Moved here, onto <body> itself — the
+        one element literally every page in the app renders inside,
+        dashboard routes or otherwise — so it's genuinely a root-layout
+        concern, not something each shell/layout has to remember to opt
+        into. DashboardShell's own wrapper div dropped its redundant
+        bg-background + app-ambient-glow (see that file) so it's fully
+        transparent and lets this show straight through in the main
+        content area instead of being painted over by an opaque duplicate.
+      */}
+      <body className="app-ambient-glow font-sans antialiased bg-background text-foreground">
         {/*
           SEO audit finding (seo-audit-finlens-2026-08-14.md): AppAuthGate
           (see components/auth/AppAuthGate.tsx) is a client component that

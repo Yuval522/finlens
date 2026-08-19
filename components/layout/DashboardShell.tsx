@@ -26,12 +26,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     // container — confirmed live: sticky content now stays pinned while
     // scrolling instead of disappearing.
     //
-    // .app-ambient-glow (see app/globals.css): a subtle warm-orange radial
-    // wash applied here, at the one root element every route in
-    // app/(dashboard)/* renders into, so every page gets the ambient glow
-    // rather than only the two pages that separately opt into the
-    // stronger .hig-bg on their own content wrapper.
-    <div className="app-ambient-glow flex h-screen bg-background">
+    // Ambient glow: previously lived here (.app-ambient-glow + bg-background
+    // on this exact div). Moved to <body> in app/layout.tsx so it's a true
+    // root-layout concern instead of something specific to this one shell
+    // — see that file's doc comment. This div is now deliberately
+    // transparent (no bg-background of its own) so <body>'s background
+    // shows straight through the main content area rather than being
+    // painted over by an opaque duplicate sitting on top of it.
+    <div className="flex h-screen">
       <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenuClick={() => setMobileNavOpen(true)} />
