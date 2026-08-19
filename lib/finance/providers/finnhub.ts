@@ -95,6 +95,8 @@ export async function fetchFinnhubQuote(symbol: string, apiKey: string): Promise
       dayHigh: num(data.h),
       dayLow: num(data.l),
       previousClose: num(data.pc),
+      weekHigh52: null, // not returned by Finnhub's /quote endpoint
+      weekLow52: null,
       firstTradeDateEpochMs: null,
       source: "finnhub",
     };

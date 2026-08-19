@@ -123,6 +123,8 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       dayHigh: 197.1,
       dayLow: 194.2,
       previousClose: 194.57,
+      weekHigh52: 237.49,
+      weekLow52: 164.08,
       firstTradeDateEpochMs: null,
     },
     profile: {
@@ -235,6 +237,8 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       dayHigh: 141.3,
       dayLow: 137.9,
       previousClose: 140.86,
+      weekHigh52: 153.13,
+      weekLow52: 86.62,
       firstTradeDateEpochMs: null,
     },
     profile: {
@@ -367,6 +371,8 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       dayHigh: 6855,
       dayLow: 6765,
       previousClose: 6775,
+      weekHigh52: 7210,
+      weekLow52: 5680,
       firstTradeDateEpochMs: null,
     },
     profile: {
@@ -499,6 +505,8 @@ const MOCK_FUNDAMENTALS: Record<string, FundamentalsBundle> = {
       dayHigh: 2_145_900,
       dayLow: 2_134_100,
       previousClose: 2_134_120,
+      weekHigh52: 2_198_400,
+      weekLow52: 1_842_600,
       firstTradeDateEpochMs: null,
     },
     profile: {

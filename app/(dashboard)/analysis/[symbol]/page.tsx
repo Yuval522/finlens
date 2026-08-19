@@ -8,7 +8,6 @@ import { CompanyMetricsAccordions } from "@/components/ticker/CompanyMetricsAcco
 import { MobileTickerHeader } from "@/components/ticker/MobileTickerHeader";
 import { TickerPriceAndChart } from "@/components/ticker/TickerPriceAndChart";
 import { DataExplorerTabs } from "@/components/ticker/DataExplorerTabs";
-import { NonFundamentalNotice } from "@/components/ticker/NonFundamentalNotice";
 
 // Live upstream data — never let Next statically cache this route.
 export const dynamic = "force-dynamic";
@@ -123,9 +122,17 @@ export default async function AnalysisPage({
   // of these asset classes. Rather than render a tab strip full of empty/
   // broken panels, hide the fundamentals-shaped UI (tabs + the
   // P/E-and-margins metrics accordions, equally meaningless here) and show
-  // only the header card and price chart — plus an explicit
-  // NonFundamentalNotice explaining why, below, so this reads as
-  // intentional rather than as a chunk of the page failing to load.
+  // only the header card and price chart.
+  //
+  // QA fix (live report): this used to render an explicit
+  // NonFundamentalNotice card below the chart explaining the absence of
+  // financials. Feedback was that the card added nothing actionable and
+  // just took up space — removed outright rather than replaced. The left
+  // profile panel's CompanyMetricsAccordions is skipped the same way it
+  // always was; CompanyProfileHeader now gets `isNonFundamental` instead,
+  // so it can show a Market Data stats block (previous close/open/day's
+  // range/52-week range) in the space that would otherwise sit empty for
+  // this category (no sector/industry/CEO/website to show either).
   const isNonFundamental = isNonFundamentalQuote(quote.symbol, quote.quoteType);
 
   return (
@@ -163,7 +170,7 @@ export default async function AnalysisPage({
       <div className="analysis-grid flex flex-col gap-6 lg:flex-row">
         <div className="order-2 w-full lg:order-1 lg:w-[22rem] lg:shrink-0">
           <div className="area-profile space-y-4 lg:sticky lg:top-6">
-            <CompanyProfileHeader quote={quote} profile={profile} />
+            <CompanyProfileHeader quote={quote} profile={profile} isNonFundamental={isNonFundamental} />
             {!isNonFundamental && (
               <CompanyMetricsAccordions metrics={metrics} reportingCurrency={reportingCurrency} />
             )}
@@ -173,9 +180,7 @@ export default async function AnalysisPage({
         <div className="order-1 min-w-0 flex-1 space-y-6 lg:order-2">
           <TickerPriceAndChart initialQuote={quote} history={history} exchange={quote.exchange} />
 
-          {isNonFundamental ? (
-            <NonFundamentalNotice symbol={quote.symbol} quoteType={quote.quoteType} />
-          ) : (
+          {!isNonFundamental && (
             <DataExplorerTabs
               income={income}
               balance={balance}

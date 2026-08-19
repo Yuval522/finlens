@@ -66,6 +66,17 @@ export interface MarketQuote {
   dayLow: number | null;
   previousClose: number | null;
   /**
+   * 52-week high/low (Yahoo's fiftyTwoWeekHigh/fiftyTwoWeekLow, see
+   * toMarketQuote() in yahoo.ts) — used by the Analysis page's index/ETF/
+   * crypto "Market Data" stats block (CompanyProfileHeader) to fill the
+   * space that would otherwise show sector/industry/CEO for a normal
+   * equity. Null for providers that don't return it (Finnhub's /quote,
+   * Polygon's prev-day aggregate, Alpha Vantage's GLOBAL_QUOTE — none of
+   * these free-tier endpoints carry a 52-week range).
+   */
+  weekHigh52: number | null;
+  weekLow52: number | null;
+  /**
    * Epoch ms of the CURRENT company's first trade date under this symbol
    * (Yahoo's `firstTradeDateMilliseconds`), null when Yahoo doesn't report
    * one. Ticker-recycling / ghost-data fix: Yahoo (and SEC EDGAR) key

@@ -117,6 +117,8 @@ export async function fetchAlphaVantageQuote(symbol: string, apiKey: string): Pr
       dayHigh: parseNum(quote["03. high"]),
       dayLow: parseNum(quote["04. low"]),
       previousClose: parseNum(quote["08. previous close"]),
+      weekHigh52: null, // not returned by Alpha Vantage's GLOBAL_QUOTE endpoint
+      weekLow52: null,
       firstTradeDateEpochMs: null,
       source: "alphaVantage",
     };

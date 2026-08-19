@@ -128,6 +128,8 @@ function toMarketQuote(q: Record<string, unknown>): MarketQuote {
     dayHigh: num(q.regularMarketDayHigh),
     dayLow: num(q.regularMarketDayLow),
     previousClose: num(q.regularMarketPreviousClose),
+    weekHigh52: num(q.fiftyTwoWeekHigh),
+    weekLow52: num(q.fiftyTwoWeekLow),
     // Ticker-recycling / ghost-data fix — see MarketQuote.firstTradeDateEpochMs's
     // doc comment (types.ts). toEpochMs already handles both shapes this
     // field has been observed in (a `Date` per the library's own DateInMs
