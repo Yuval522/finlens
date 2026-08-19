@@ -270,6 +270,31 @@ body {
   display: none;
 }
 
+/* Market Summary's horizontal scroll row: unlike .tab-scroll above, this
+   one is deliberately VISIBLE — a thin on-brand orange thumb/track sitting
+   right under the cards, so the row reads as obviously scrollable at a
+   glance instead of relying on a half-cut-off next card as the only hint.
+   scrollbar-color covers Firefox; the ::-webkit-scrollbar-* rules cover
+   Chrome/Safari/Edge (no standard property covers both, hence both). */
+.orange-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--primary) / 0.7) hsl(var(--foreground) / 0.08);
+}
+.orange-scrollbar::-webkit-scrollbar {
+  height: 6px;
+}
+.orange-scrollbar::-webkit-scrollbar-track {
+  background: hsl(var(--foreground) / 0.08);
+  border-radius: 9999px;
+}
+.orange-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 0.7);
+  border-radius: 9999px;
+}
+.orange-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary));
+}
+
 /* Auth modal polish: Chrome/Safari force a bright yellow background (plus
    black text) on any input the browser autofills, completely ignoring the
    element's own background-color — jarring against this app's dark theme
@@ -395,13 +420,21 @@ input:-webkit-autofill:focus {
    exposed background for two corner-only washes to be visible against.
    Bumped opacity and added a third stop on the opposite side (right-
    middle) for more even coverage across a full-width page, not just the
-   very top/bottom edges — still capped well under .hig-bg's own strength
-   so it reads as ambient atmosphere, not a spotlight. */
+   very top/bottom edges.
+   Round 3 (same day, follow-up feedback: still "too faint"): moved past
+   "ambient hint" into genuinely rich territory — roughly doubled every
+   stop's opacity and widened each spread so the tint reaches further
+   into the middle of the page rather than staying corner-locked. This
+   now intentionally exceeds .hig-bg's original strength (this is the
+   base every page gets; .hig-bg on Home/Stock Detail still layers a
+   bit more on top). Still pure hsl(var(--primary)) fading to
+   transparent — no hard edges, no white/light wash — so it stays a
+   dark, warm atmosphere rather than tipping into a literal spotlight. */
 .app-ambient-glow {
   background-image:
-    radial-gradient(circle at 50% -12%, hsl(var(--primary) / 0.075), transparent 48%),
-    radial-gradient(circle at -8% 100%, hsl(var(--primary) / 0.055), transparent 44%),
-    radial-gradient(circle at 106% 50%, hsl(var(--primary) / 0.04), transparent 46%);
+    radial-gradient(circle at 50% -14%, hsl(var(--primary) / 0.16), transparent 58%),
+    radial-gradient(circle at -10% 104%, hsl(var(--primary) / 0.12), transparent 55%),
+    radial-gradient(circle at 108% 55%, hsl(var(--primary) / 0.09), transparent 56%);
 }
 
 .hig-card {

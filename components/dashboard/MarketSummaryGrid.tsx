@@ -16,7 +16,7 @@ export function MarketSummaryGrid() {
         </span>
         <h2 className="font-display text-xl font-semibold text-foreground sm:text-2xl">Market Summary</h2>
       </div>
-      <div className="tab-scroll -mx-2 -my-3 flex flex-nowrap gap-3.5 overflow-x-auto px-2 py-3">
+      <div className="orange-scrollbar -mx-2 -mt-3 flex flex-nowrap gap-3.5 overflow-x-auto px-2 pb-4 pt-3">
         {Array.from({ length: MARKET_SUMMARY_SLOTS }).map((_, i) => (
           <IndexSummarySkeleton key={i} />
         ))}

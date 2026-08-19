@@ -62,10 +62,14 @@ export async function MarketSummarySection() {
           bleeding a few px above/below/left of its box had nowhere to
           go. Fix: give the row real padding on every side so the glow has
           room to render before it ever reaches a clipped edge, offset by
-          a matching negative margin so the extra padding doesn't add a
-          visible gap around the section itself.
+          a matching negative margin on the top/sides so that padding
+          doesn't add a visible gap around the section. Bottom padding is
+          deliberately NOT offset — .orange-scrollbar (see app/globals.css)
+          renders a visible scrollbar track/thumb right under the cards
+          now instead of .tab-scroll's hidden one, and that extra bit of
+          breathing room before the next section is exactly what it needs.
         */}
-        <div className="tab-scroll -mx-2 -my-3 flex snap-x snap-mandatory flex-nowrap gap-3.5 overflow-x-auto scroll-smooth px-2 py-3">
+        <div className="orange-scrollbar -mx-2 -mt-3 flex snap-x snap-mandatory flex-nowrap gap-3.5 overflow-x-auto scroll-smooth px-2 pb-4 pt-3">
           {quotes.map((q) => (
             <IndexSummaryCard
               key={q.symbol}
