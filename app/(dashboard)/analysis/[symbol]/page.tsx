@@ -90,9 +90,9 @@ export default async function AnalysisPage({
 
   if (error || !bundle) {
     return (
-      <div className="glass-card flex flex-col items-center justify-center gap-3 rounded-2xl !border-dashed py-24 text-center">
+      <div className="hig-card flex flex-col items-center justify-center gap-3 !border-dashed py-24 text-center">
         <AlertTriangle className="h-8 w-8 text-muted-foreground" />
-        <h1 className="font-mono text-lg font-semibold">{symbol}</h1>
+        <h1 className="font-display text-lg font-semibold">{symbol}</h1>
         <p className="max-w-sm text-sm text-muted-foreground">
           {error ?? "No data found for this symbol."}
         </p>
@@ -153,7 +153,12 @@ export default async function AnalysisPage({
     // now gets `flex-1` — flexbox's default `align-items: stretch` gives it
     // the exact same full-row-height box the sticky fix above depends on,
     // so nothing about that fix needed to change.
-    <>
+    // Apple-HIG concept redesign: same .hig-bg radial wash + shell-padding
+    // cancel-out trick as the Home page (see that page's own doc comment).
+    // Swapping the outer Fragment for a real div here is purely cosmetic —
+    // it does not touch the .analysis-grid flex/order/sticky structure
+    // documented below, which must stay exactly as-is.
+    <div className="hig-bg -m-4 p-4 md:-m-6 md:p-6">
       <MobileTickerHeader quote={quote} />
       <div className="analysis-grid flex flex-col gap-6 lg:flex-row">
         <div className="order-2 w-full lg:order-1 lg:w-[22rem] lg:shrink-0">
@@ -188,6 +193,6 @@ export default async function AnalysisPage({
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }

@@ -23,7 +23,7 @@ export function NonFundamentalNotice({ symbol, quoteType }: NonFundamentalNotice
   const label = nonFundamentalAssetLabel(symbol, quoteType);
 
   return (
-    <div className="glass-card flex flex-col items-center gap-3 rounded-2xl !border-dashed px-6 py-14 text-center">
+    <div className="hig-card flex flex-col items-center gap-3 !border-dashed px-6 py-14 text-center">
       <Info className="h-7 w-7 text-muted-foreground" />
       <div className="space-y-1.5">
         <h3 className="text-sm font-semibold text-foreground">Fundamentals Not Available</h3>

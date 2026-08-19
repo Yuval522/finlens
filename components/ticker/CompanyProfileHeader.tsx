@@ -12,7 +12,7 @@ export function CompanyProfileHeader({ quote, profile }: CompanyProfileHeaderPro
   const websiteLabel = profile.website?.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
 
   return (
-    <div className="glass-card rounded-2xl p-4 sm:p-5">
+    <div className="hig-card p-4 sm:p-5">
       <div className="flex items-start gap-3">
         {/*
           QA fix: this used to always fall back to a generic letter-avatar,
@@ -24,11 +24,9 @@ export function CompanyProfileHeader({ quote, profile }: CompanyProfileHeaderPro
         */}
         <CompanyLogo symbol={quote.symbol} name={quote.name} size={48} />
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-base font-semibold text-foreground">{quote.name}</h1>
+          <h1 className="truncate font-display text-base font-semibold text-foreground">{quote.name}</h1>
           <div className="mt-1 flex items-center gap-1.5">
-            <span className="rounded-md bg-accent px-1.5 py-0.5 font-mono text-xs font-medium text-foreground">
-              {quote.symbol}
-            </span>
+            <span className="hig-badge">{quote.symbol}</span>
             <span className="text-xs text-muted-foreground">{quote.exchange}</span>
           </div>
         </div>

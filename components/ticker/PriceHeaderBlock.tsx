@@ -51,7 +51,7 @@ export function PriceHeaderBlock({ quote, flash }: PriceHeaderBlockProps) {
   ];
 
   return (
-    <div className="glass-card rounded-2xl p-4 sm:p-5">
+    <div className="hig-card p-4 sm:p-5">
       {/*
         QA fix (round 2): the previous single-row flex-wrap layout still let
         the price and the change/percent chip crowd together at narrower
@@ -96,7 +96,7 @@ export function PriceHeaderBlock({ quote, flash }: PriceHeaderBlockProps) {
       </div>
 
       {showPreMarket && (
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-slate-800/80 pt-2 text-xs">
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-foreground/8 pt-2 text-xs">
           <span className="text-muted-foreground">Pre-Market:</span>
           <span className="font-mono font-medium text-foreground">
             {formatPrice(quote.preMarketPrice, quote.currency)}
@@ -130,7 +130,7 @@ export function PriceHeaderBlock({ quote, flash }: PriceHeaderBlockProps) {
       )}
 
       {showPostMarket && (
-        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-slate-800/80 pt-2 text-xs">
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-foreground/8 pt-2 text-xs">
           <span className="text-muted-foreground">After Hours:</span>
           <span className="font-mono font-medium text-foreground">
             {formatPrice(quote.postMarketPrice, quote.currency)}
@@ -159,7 +159,7 @@ export function PriceHeaderBlock({ quote, flash }: PriceHeaderBlockProps) {
       )}
 
       {showDayRange && (
-        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-slate-800/80 pt-2 text-xs sm:grid-cols-4">
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-foreground/8 pt-2 text-xs sm:grid-cols-4">
           {DAY_RANGE_FIELDS.map((field) => (
             <div key={field.label} className="flex items-baseline justify-between gap-2 sm:flex-col sm:items-start sm:gap-0.5">
               <span className="text-muted-foreground">{field.label}</span>

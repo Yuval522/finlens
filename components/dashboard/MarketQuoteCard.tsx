@@ -49,7 +49,7 @@ export function MarketQuoteCard({ quote, showWatchlistToggle = false, flash }: M
       // transform` utility) keeps all three animating together instead of
       // a bare `transition-property` override silently dropping the other
       // two mid-cascade.
-      className="glass-card relative flex items-center gap-3 rounded-lg p-5 transition-[transform,border-color,box-shadow] duration-200 hover:scale-[1.02] hover:shadow-lg"
+      className="hig-card hig-card-interactive relative flex items-center gap-3 p-5"
     >
       {/*
         QA fix (screenshot report: watchlist star and the trend-direction
@@ -81,7 +81,7 @@ export function MarketQuoteCard({ quote, showWatchlistToggle = false, flash }: M
 
       <CompanyLogo symbol={quote.symbol} name={quote.name} size={40} />
       <div className="min-w-0 flex-1 pr-7">
-        <p className="truncate text-sm font-medium text-foreground">
+        <p className="truncate font-display text-sm font-medium text-foreground">
           {quote.name}
         </p>
         <p className="font-mono text-xs text-muted-foreground">

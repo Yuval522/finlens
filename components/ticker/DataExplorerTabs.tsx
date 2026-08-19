@@ -189,7 +189,7 @@ export function DataExplorerTabs({
   const edgeFadeMask = buildEdgeFadeMask(canScrollLeft, canScrollRight);
 
   return (
-    <div className="glass-card rounded-2xl p-4 sm:p-5">
+    <div className="hig-card p-4 sm:p-5">
       {/*
         QA hotfix (UI/UX audit pass): the tab strip overflowed at normal
         desktop widths (~1400px), not just mobile, and the previous
@@ -218,7 +218,7 @@ export function DataExplorerTabs({
       */}
       <div
         ref={tabStripRef}
-        className="tab-scroll flex gap-1 border-b border-slate-800/80 pb-2"
+        className="tab-scroll flex gap-1 border-b border-foreground/8 pb-2"
         style={{
           maskImage: edgeFadeMask,
           WebkitMaskImage: edgeFadeMask,

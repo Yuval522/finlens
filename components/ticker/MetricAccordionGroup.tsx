@@ -22,12 +22,12 @@ export function MetricAccordionGroup({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <div className="border-b border-slate-800/80 last:border-b-0">
+    <div className="border-b border-foreground/8 last:border-b-0">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex min-h-11 w-full items-center justify-between py-3 text-left text-sm font-semibold text-foreground transition-colors hover:text-primary"
+        className="flex min-h-11 w-full items-center justify-between py-3 text-left font-display text-sm font-semibold text-foreground transition-colors hover:text-primary"
       >
         {title}
         <ChevronDown

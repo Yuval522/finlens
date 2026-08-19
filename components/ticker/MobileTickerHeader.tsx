@@ -33,18 +33,16 @@ export function MobileTickerHeader({ quote }: MobileTickerHeaderProps) {
           than most controls in the app. */}
       <Link
         href="/"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-accent/60 text-foreground transition-colors hover:bg-accent"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-foreground/10 bg-foreground/5 text-foreground backdrop-blur-xl transition-colors hover:bg-foreground/10"
         aria-label="Back to dashboard"
       >
         <ArrowLeft className="h-4 w-4" />
       </Link>
       <CompanyLogo symbol={quote.symbol} name={quote.name} size={36} />
       <div className="min-w-0 flex-1">
-        <h1 className="truncate text-sm font-semibold text-foreground">{quote.name}</h1>
+        <h1 className="truncate font-display text-sm font-semibold text-foreground">{quote.name}</h1>
         <div className="mt-0.5 flex items-center gap-1.5">
-          <span className="rounded-md bg-accent px-1.5 py-0.5 font-mono text-[11px] font-medium text-foreground">
-            {quote.symbol}
-          </span>
+          <span className="hig-badge text-[11px]">{quote.symbol}</span>
           <span className="text-[11px] text-muted-foreground">{quote.exchange}</span>
         </div>
       </div>

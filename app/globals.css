@@ -76,6 +76,18 @@
      .led-dot below, see components/shared/Led.tsx. */
   --led-up: #33d17b;
   --led-down: #ff5470;
+
+  /* Apple-HIG concept redesign (Home dashboard + Stock Detail page only):
+     a system-UI sans stack for headings/labels on those two screens,
+     distinct from --font-sans (which stays aliased to --font-mono
+     app-wide per the earlier explicit "single monospace face everywhere"
+     direction — this does NOT change that global rule or any other page).
+     Numeric/ticker data on the redesigned screens still uses --font-mono
+     for tabular-nums alignment, matching the existing site-wide
+     convention and how Apple's own Stocks app pairs a sans display face
+     with monospaced figures. */
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    "SF Pro Text", "Inter", "Helvetica Neue", var(--font-sans);
 }
 
 * {
@@ -352,4 +364,71 @@ input:-webkit-autofill:focus {
 }
 .mascot-idle-shift {
   animation: mascot-idle-shift 2.2s steps(2, jump-end) infinite;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Apple-HIG concept redesign — Home dashboard + Stock Detail page only.   */
+/* New, additively-named classes (.hig-*) rather than redefining           */
+/* .glass-card/.glass-panel, which dozens of OTHER pages/components still  */
+/* use for the flat Retro-Digital look above — this reintroduces           */
+/* translucency/blur deliberately, but only on the two screens that opt    */
+/* into these classes, not as a global reversal of the v5 flat-card        */
+/* decision documented above.                                              */
+/* ---------------------------------------------------------------------- */
+.hig-bg {
+  background-image:
+    radial-gradient(circle at 15% 0%, hsl(var(--primary) / 0.07), transparent 45%),
+    radial-gradient(circle at 85% 8%, hsl(var(--primary) / 0.045), transparent 40%);
+}
+
+.hig-card {
+  background-color: hsl(var(--card) / 0.55);
+  border: 1px solid hsl(var(--foreground) / 0.08);
+  border-radius: 22px;
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  transition: border-color 200ms ease, transform 200ms ease;
+}
+.hig-card-interactive:hover {
+  border-color: hsl(var(--foreground) / 0.16);
+  transform: translateY(-2px);
+}
+
+.hig-pill-group {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background-color: hsl(var(--foreground) / 0.05);
+  border: 1px solid hsl(var(--foreground) / 0.06);
+  border-radius: 9999px;
+}
+.hig-pill-btn {
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.hig-pill-btn:hover:not(.hig-pill-btn-active) {
+  color: hsl(var(--foreground));
+}
+.hig-pill-btn-active {
+  color: hsl(var(--primary-foreground));
+  background-color: hsl(var(--primary));
+  box-shadow: 0 3px 10px hsl(var(--primary) / 0.35);
+}
+
+.hig-badge {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--foreground) / 0.1);
+  padding: 1px 7px;
+  border-radius: 5px;
 }

@@ -52,7 +52,7 @@ export function CompanyMetricsAccordions({
   ];
 
   return (
-    <div className="glass-card rounded-2xl px-4 sm:px-5">
+    <div className="hig-card px-4 sm:px-5">
       {/* QA fix (audit finding): reference terminal keeps every fundamentals
           group expanded by default so the page reads information-dense on
           first load; Stox previously only defaulted Financials open,

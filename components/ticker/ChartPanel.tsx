@@ -116,7 +116,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
   }, [history, range, currency]);
 
   return (
-    <div className="glass-card rounded-2xl p-4 sm:p-5">
+    <div className="hig-card p-4 sm:p-5">
       {/* Top-left ticker + live price header, matching institutional
           terminal charts (e.g. "T 400.04") — sits above the toolbar, its
           own line, per the reference layout. currentPrice is the raw
@@ -124,7 +124,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
           already uses, so formatPrice's own currency divisor applies once
           here rather than double-converting. */}
       <div className="mb-3 flex items-baseline gap-2">
-        <span className="text-sm font-bold uppercase tracking-wide text-foreground">{symbol}</span>
+        <span className="font-display text-sm font-bold uppercase tracking-wide text-foreground">{symbol}</span>
         {currentPrice != null && (
           <span className="font-mono text-lg font-bold text-foreground">{formatPrice(currentPrice, currency)}</span>
         )}
@@ -235,7 +235,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
               aria-haspopup="true"
               aria-label="Chart color"
               title="Chart color"
-              className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg border border-slate-800/80 px-3 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg border border-foreground/10 px-3 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <span
                 className="h-3.5 w-3.5 shrink-0 rounded-full"
@@ -291,7 +291,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
             )}
           </div>
 
-          <div className="flex items-center rounded-lg border border-slate-800/80 p-0.5">
+          <div className="flex items-center rounded-lg border border-foreground/10 p-0.5">
             <button
               type="button"
               aria-pressed={mode === "area"}

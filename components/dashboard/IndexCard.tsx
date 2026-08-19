@@ -11,8 +11,11 @@ export function IndexCard({ className }: { className?: string }) {
     <div
       className={cn(
         // Matches MarketQuoteCard's density-pass sizing (p-5 padding, 40px
-        // avatar) so the skeleton-to-loaded swap doesn't reflow/jump.
-        "glass-card relative flex items-center gap-3 rounded-lg p-5",
+        // avatar) so the skeleton-to-loaded swap doesn't reflow/jump. Same
+        // .hig-card treatment as the loaded card (Apple-HIG concept
+        // redesign) so the skeleton-to-loaded swap doesn't visibly pop
+        // from a flat card to a glass one either.
+        "hig-card relative flex items-center gap-3 p-5",
         className
       )}
     >

@@ -12,6 +12,11 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "SF Mono", "Consolas", "monospace"],
+        // Apple-HIG concept redesign (Home dashboard + Stock Detail page
+        // only) — see --font-display's doc comment in globals.css. Opt-in
+        // via an explicit `font-display` class; every other page keeps
+        // resolving `font-sans` to the site-wide monospace face.
+        display: ["var(--font-display)"],
       },
       colors: {
         background: "hsl(var(--background))",

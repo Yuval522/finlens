@@ -61,22 +61,22 @@ export function QuoteCardGrid({
         an optional rounded-square icon badge to match "Market Summary" and
         "Most Active"'s mini chart-icon treatment in the reference.
       */}
-      <div className="mb-4 flex items-center justify-center gap-2.5">
+      <div className="mb-4 flex items-center gap-2.5">
         {Icon && (
           <span
             className={cn(
-              "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+              "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
               iconClassName ?? "bg-accent text-muted-foreground"
             )}
           >
             <Icon className="h-4 w-4" />
           </span>
         )}
-        <h2 className="text-xl font-bold text-foreground sm:text-2xl">{title}</h2>
+        <h2 className="font-display text-xl font-semibold text-foreground sm:text-2xl">{title}</h2>
       </div>
 
       {error && (
-        <p className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <p className="hig-card mb-3 px-3 py-2 text-xs text-destructive">
           {error}
         </p>
       )}
