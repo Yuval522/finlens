@@ -3,43 +3,41 @@ import type { PricePoint } from "@/lib/finance/types";
 import { USD_TO_ILS_RATE } from "./derive";
 
 /**
- * Transaction-aware historical portfolio valuation.
+ * Historical portfolio valuation: current holdings, real historical prices.
  *
- * QA fix (live report: the "Portfolio Value" chart showed an artificial
- * straight diagonal ramp from cost basis to today's value — see the old
- * lib/portfolio/mock-history.ts, now retired/renamed to .bak). That
- * generator had no real data to work with: lib/portfolio/store.ts only ever
- * tracked *current* aggregate state (blended shares/cost-basis per symbol,
- * a single cash number) with no record of *when* anything happened, so a
- * straight-line interpolation between two numbers was the only thing
- * possible. This file replaces that with a real day-by-day reconstruction:
- * an append-only transaction ledger (see PortfolioTransaction below, now
- * populated by addHolding/sellHolding/updateHolding/updateCash in store.ts)
- * replayed against real historical closing prices (lib/finance/yahoo.ts's
- * getPriceHistory) to compute what the portfolio was actually worth on each
- * past date.
+ * QA fix history: this file originally replaced an even older straight-line
+ * ramp generator (lib/portfolio/mock-history.ts.bak) with a transaction-
+ * ledger replay — shares-held-as-of-date, computed strictly from dated
+ * buy/sell/adjustment entries, times that date's real closing price. That
+ * was more "honest" in principle, but it produced its own bad artifact in
+ * practice: a holding bought through the UI logs a real transaction dated
+ * *today* (see makeBuyTransaction's `date = todayIso()` default), so
+ * sharesHeldAsOf() correctly returns 0 for every date before today — the
+ * chart showed a flat line at the position's pre-purchase (i.e. zero)
+ * contribution, then a sudden vertical spike on today's date the moment the
+ * real transaction became "in effect". Live report + screenshot confirmed
+ * exactly this: flat line for the whole 1Y range, spike at the very end.
  *
- * Bootstrap/legacy-data handling: a holding added before this feature
- * shipped (or a browser's pre-existing localStorage state) has no dated
- * purchase transaction behind it — store.ts's SEED_DATA and any
- * previously-saved portfolio only ever recorded a blended `shares`/
- * `purchasePrice`, never a date. Rather than fabricate a fake purchase
- * date (which would just be a different flavor of made-up history),
- * reconstructPortfolioHistory() reconciles the ledger against the
- * portfolio's real current totals: whatever share count / cash isn't
- * already accounted for by real, dated transactions is treated as having
- * been fully in place at the START of whatever range is currently being
- * charted (see buildBootstrapTransactions below). This means: (a) a
- * brand-new position bought through the UI today reconstructs with 100%
- * real transaction dates and is identical across every range, (b) a
- * legacy/undated holding still gets a REAL, price-driven curve for the
- * requested window (cost-basis-ish starting point -> today, moving with
- * actual market closes in between) instead of a synthetic ramp+noise, it
- * just can't claim to know what happened *before* the window starts, and
- * (c) switching between 1W/1M/1Y/ALL for a legacy holding can show a
- * different starting composition, which is the honest consequence of not
- * knowing the true purchase date beyond "at or before this range began" —
- * exactly how a brokerage with partial history would present it.
+ * Fix: reconstructPortfolioHistory() now prices CURRENT holdings'
+ * quantities (straight from `holdings`/`cash`, always the accurate "as of
+ * today" snapshot the rest of the Portfolio page reads from) against real
+ * historical closes across the ENTIRE selected window — i.e. "what would
+ * this exact portfolio be worth if you'd held these exact quantities the
+ * whole time" — rather than gating each day's contribution on whether a
+ * real transaction had technically been logged by that date yet. This is
+ * the standard "current position, historical price" curve every brokerage
+ * app shows, and it's what the user explicitly asked for: a realistic,
+ * fluctuating performance line driven by actual market history, not a
+ * flat-to-spike artifact of transaction bookkeeping. Cash is held at its
+ * current balance for every plotted date for the same reason — the chart
+ * is answering "how has today's portfolio composition performed," not
+ * replaying historical cash movements.
+ *
+ * The transaction ledger (PortfolioTransaction, sharesHeldAsOf, cashAsOf)
+ * is kept as-is below — store.ts still logs every buy/sell/adjustment/cash
+ * edit through it, and it remains the right data source for a future
+ * "transaction history" list UI — it's just no longer what drives this
+ * chart's value curve.
  */
 
 export type PortfolioRange = "1W" | "1M" | "1Y" | "ALL";
@@ -134,63 +132,6 @@ export function cashAsOf(transactions: PortfolioTransaction[], pool: "usd" | "il
   return total;
 }
 
-/**
- * Reconciles the real ledger against the portfolio's current true totals
- * (`holdings`/`cash` — always accurate "as of today" regardless of ledger
- * completeness, since those are what every other card on the Portfolio page
- * already reads from). Whatever gap exists between what the REAL ledger
- * alone would produce for today and the actual current totals gets filled
- * by one synthetic entry per symbol/pool, dated at `sinceDate` (the start
- * of whichever range is currently being charted — see reconstructPortfolioHistory).
- * A fully up-to-date ledger (every current share/cash figure already
- * explained by real transactions) produces zero bootstrap entries here.
- */
-function buildBootstrapTransactions(
-  realTransactions: PortfolioTransaction[],
-  holdings: PortfolioHolding[],
-  cash: PortfolioCash,
-  sinceDate: string
-): PortfolioTransaction[] {
-  const bootstrap: PortfolioTransaction[] = [];
-  const today = todayIso();
-
-  for (const h of holdings) {
-    const symbol = h.symbol.toUpperCase();
-    const ledgerShares = sharesHeldAsOf(realTransactions, symbol, today);
-    const gap = h.shares - ledgerShares;
-    if (Math.abs(gap) > 1e-9) {
-      bootstrap.push({
-        id: `bootstrap-${symbol}`,
-        date: sinceDate,
-        symbol,
-        sharesDelta: gap,
-        price: h.purchasePrice,
-        pool: poolForCurrency(h.currency),
-        cashDelta: 0,
-        kind: "adjustment",
-      });
-    }
-  }
-
-  for (const pool of ["usd", "ils"] as const) {
-    const ledgerCash = cashAsOf(realTransactions, pool, today);
-    const gap = cash[pool] - ledgerCash;
-    if (Math.abs(gap) > 1e-9) {
-      bootstrap.push({ id: `bootstrap-cash-${pool}`, date: sinceDate, symbol: null, sharesDelta: 0, price: 0, pool, cashDelta: gap, kind: "cash" });
-    }
-  }
-
-  return bootstrap;
-}
-
-/** Every distinct symbol that ever appears in the ledger or current holdings — including a position that was fully sold within the charted window, so its (now-zero) contribution is still computed correctly for the days it WAS held rather than silently omitted. */
-function collectSymbols(transactions: PortfolioTransaction[], holdings: PortfolioHolding[]): string[] {
-  const set = new Set<string>();
-  for (const h of holdings) set.add(h.symbol.toUpperCase());
-  for (const t of transactions) if (t.symbol) set.add(t.symbol);
-  return [...set];
-}
-
 /** Builds a `date -> close` lookup with forward-fill: markets are closed on weekends/holidays, so a plotted calendar date that isn't itself a trading day resolves to the most recent trading day's close at or before it. Returns null for a date entirely before the earliest fetched bar (e.g. requesting a value before the symbol had any price history). */
 function buildCloseLookup(points: PricePoint[]): (date: string) => number | null {
   const sorted = [...points].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -219,11 +160,21 @@ function datesForRange(range: PortfolioRange): string[] {
 }
 
 /**
- * Reconstructs true day-by-day portfolio value: for each plotted date,
- * shares-held-as-of-that-date (per symbol, from the ledger) times that
- * date's real historical closing price, summed across every symbol, plus
- * cash-as-of-that-date (both pools, ILS converted to USD at the same fixed
- * display rate the rest of the app uses — see derive.ts's USD_TO_ILS_RATE).
+ * Reconstructs day-by-day portfolio value: for each plotted date, EVERY
+ * currently-held symbol's CURRENT share count (from `holdings`, not a
+ * ledger replay) times that date's real historical closing price, summed
+ * across all holdings, plus the CURRENT cash balance (both pools, ILS
+ * converted to USD at the same fixed display rate the rest of the app uses
+ * — see derive.ts's USD_TO_ILS_RATE) held constant across the whole range.
+ * See the module doc comment above for why this replaced an earlier
+ * ledger-replay approach that produced a flat-line-then-spike artifact for
+ * any holding with a real, dated (i.e. "today") transaction behind it.
+ *
+ * `transactions` is still accepted (the client already has it in memory
+ * and the API route already validates it) but is intentionally unused by
+ * this calculation now — kept for signature/route stability and in case a
+ * future feature (e.g. per-transaction markers on the chart) wants it.
+ *
  * `fetchHistory` is injected (rather than importing lib/finance/yahoo.ts's
  * getPriceHistory directly) so this stays a pure, framework-agnostic module
  * callable from a standalone test with synthetic price fixtures — the real
@@ -238,13 +189,10 @@ export async function reconstructPortfolioHistory(
   range: PortfolioRange,
   fetchHistory: (symbol: string, days: number) => Promise<PricePoint[]>
 ): Promise<PortfolioValuePoint[]> {
+  void transactions;
+
   const { days } = RANGE_CONFIG[range];
   const dates = datesForRange(range);
-  const sinceDate = dates[0];
-
-  const bootstrap = buildBootstrapTransactions(transactions, holdings, cash, sinceDate);
-  const combined = [...transactions, ...bootstrap];
-  const symbols = collectSymbols(combined, holdings);
 
   // Extra lookback buffer past `days` so the very first plotted date can
   // still forward-fill from the last trading day before it (e.g. plotting
@@ -253,21 +201,27 @@ export async function reconstructPortfolioHistory(
   const fetchDays = days + 14;
   const historyBySymbol = new Map<string, (date: string) => number | null>();
   await Promise.all(
-    symbols.map(async (symbol) => {
+    holdings.map(async (h) => {
+      const symbol = h.symbol.toUpperCase();
       const points = await fetchHistory(symbol, fetchDays);
       historyBySymbol.set(symbol, buildCloseLookup(points));
     })
   );
 
+  const cashUsd = cash.usd + cash.ils / USD_TO_ILS_RATE;
+
   const points: PortfolioValuePoint[] = dates.map((date) => {
     let positionsValue = 0;
-    for (const symbol of symbols) {
-      const shares = sharesHeldAsOf(combined, symbol, date);
-      if (Math.abs(shares) < 1e-9) continue;
+    for (const h of holdings) {
+      const symbol = h.symbol.toUpperCase();
       const close = historyBySymbol.get(symbol)?.(date);
-      if (close != null) positionsValue += shares * close;
+      // If real history doesn't reach this far back (e.g. a symbol newer
+      // than the charted range, or a fetch that came back empty), fall
+      // back to the holding's last-known price rather than silently
+      // dropping the position's contribution for that date.
+      const price = close ?? h.currentPrice;
+      positionsValue += h.shares * price;
     }
-    const cashUsd = cashAsOf(combined, "usd", date) + cashAsOf(combined, "ils", date) / USD_TO_ILS_RATE;
     return { date, value: Number((positionsValue + cashUsd).toFixed(2)) };
   });
 
