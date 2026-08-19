@@ -173,9 +173,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // in local storage (portfolio/watchlist/settings) is left alone,
         // same as pre-auth-feature behavior.
         me = GUEST_USER;
-      } else {
-        resetAllStores();
       }
+      // CRITICAL FIX (2026-08-19): this branch used to call
+      // resetAllStores() here whenever `me` came back null — but this
+      // function runs on every mount AND on every pageshow/visibilitychange/
+      // focus (see the listeners below), not just at logout. That meant
+      // ANY anonymous visitor (never logged in), or any logged-in user
+      // whose session cookie simply hadn't loaded yet / expired / had one
+      // transient `/api/auth/me` fetch failure (caught above as `me =
+      // null`), got their local portfolio/watchlist/settings silently
+      // wiped — and resetToEmpty() persists that empty state straight to
+      // localStorage (see lib/portfolio/store.ts / lib/watchlist/store.ts's
+      // resetToEmpty -> persist()), so it wasn't just an in-memory blip,
+      // it overwrote the actual saved data. This is what the "Watchlist
+      // and Portfolio data disappeared" report was — introduced when
+      // GUEST_MODE was flipped off (d9fd3fb / earlier this project), since
+      // GUEST_MODE=true's branch used to be the only thing standing
+      // between "no session" and this reset.
+      //
+      // The reset-on-logout behavior described in this file's own top
+      // comment ("next viewer of this browser... never sees the previous
+      // user's data") is still correct and still happens — but only from
+      // the explicit logout() action below, which is the one place a
+      // wipe is actually intended. A recurring "no session found" check
+      // is not a logout event and must never wipe local data on its own.
       if (!cancelled) {
         setUser(me);
         setReady(true);
