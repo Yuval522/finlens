@@ -84,7 +84,41 @@ const GUEST_USER: AuthUser = { id: "guest", username: "Guest", email: "guest@sto
 
 type DataKey = "portfolio" | "watchlist" | "settings";
 
-async function fetchUserData(key: DataKey): Promise<unknown> {
+/**
+ * CRITICAL FIX (2026-08-19, round 2): `fetchUserData` used to return plain
+ * `unknown` and collapse two very different situations into the exact same
+ * `null` value — (a) the server confirming "this account genuinely has
+ * nothing saved for this key yet" (`GET /api/user-data/[key]` responds
+ * `200 { data: null }` for a brand-new key — see that route) and (b) the
+ * request just failing (offline blip, a momentary 401 while the session
+ * cookie is still settling, a transient 503 from dbErrorJson). Both looked
+ * identical to hydrateAllFromServer() below, which called e.g.
+ * hydratePortfolioFromServer(null) either way — and that unconditionally
+ * wipes the store to empty AND persists that empty state to localStorage
+ * (see resetToEmpty()-style behavior in lib/portfolio/store.ts's
+ * hydrateFromServer). Since hydrateAllFromServer() runs on every mount AND
+ * every pageshow/visibilitychange/focus for any logged-in user (see the
+ * effect below), a single flaky GET — on a phone locking/unlocking, a
+ * spotty connection, anything — could silently blank a real saved
+ * portfolio/watchlist, and (because the "push local mutations to server"
+ * effect is subscribed the whole time a user is logged in) the debounced
+ * sync would then re-upload that emptiness, overwriting the real
+ * server-side row too. This is what the "$0.00 / empty holdings" reports
+ * were, and it's a recurring trigger, not a one-time flip — much more
+ * likely than the earlier resetAllStores() fix (still correct, but a
+ * narrower/rarer path) to be the actual ongoing cause.
+ *
+ * Fix: return `{ ok, data }` so a failed fetch is distinguishable from a
+ * confirmed-empty one, and only hydrate (i.e. only ever overwrite local
+ * state) when `ok` is true. A failed fetch now just leaves that store
+ * exactly as it was — the next successful check will hydrate it properly.
+ */
+interface UserDataFetchResult {
+  ok: boolean;
+  data: unknown;
+}
+
+async function fetchUserData(key: DataKey): Promise<UserDataFetchResult> {
   try {
     // Mobile state-sync fix: `cache: "no-store"` on top of the route's own
     // no-store response header — belt-and-suspenders so this GET is never
@@ -93,11 +127,11 @@ async function fetchUserData(key: DataKey): Promise<unknown> {
     // due to how often it backgrounds/foregrounds and re-requests this)
     // data that's gone stale since it changed on another device.
     const res = await fetch(`/api/user-data/${key}`, { cache: "no-store" });
-    if (!res.ok) return null;
+    if (!res.ok) return { ok: false, data: null };
     const body = await res.json();
-    return body.data ?? null;
+    return { ok: true, data: body.data ?? null };
   } catch {
-    return null;
+    return { ok: false, data: null };
   }
 }
 
@@ -122,9 +156,14 @@ async function hydrateAllFromServer(): Promise<void> {
     fetchUserData("watchlist"),
     fetchUserData("settings"),
   ]);
-  hydratePortfolioFromServer(portfolio);
-  hydrateWatchlistFromServer(watchlist);
-  hydrateSettingsFromServer(settings);
+  // Only hydrate keys whose fetch genuinely succeeded — see
+  // fetchUserData's doc comment above. A failed fetch must never be
+  // treated the same as "the server confirmed you have no saved data,"
+  // or it silently wipes + re-persists real local (and eventually
+  // server-side) data as empty.
+  if (portfolio.ok) hydratePortfolioFromServer(portfolio.data);
+  if (watchlist.ok) hydrateWatchlistFromServer(watchlist.data);
+  if (settings.ok) hydrateSettingsFromServer(settings.data);
 }
 
 function resetAllStores(): void {
