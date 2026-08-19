@@ -387,10 +387,17 @@ input:-webkit-autofill:focus {
   border-radius: 22px;
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
-  transition: border-color 200ms ease, transform 200ms ease;
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
 }
+/* QA fix: this used a neutral foreground/16 border on hover, which read as
+   a plain "lighter gray" highlight — inconsistent with .glass-card:hover
+   just above (the flat, non-hig cards used everywhere else in the app),
+   which already glows in the brand's orange accent. Matched to the same
+   treatment so every interactive card in the app — hig-card or
+   glass-card — glows orange on hover, not just some of them. */
 .hig-card-interactive:hover {
-  border-color: hsl(var(--foreground) / 0.16);
+  border-color: hsl(var(--primary) / 0.55);
+  box-shadow: 0 0 20px -6px hsl(var(--primary) / 0.35);
   transform: translateY(-2px);
 }
 

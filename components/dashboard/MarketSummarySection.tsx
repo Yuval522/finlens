@@ -1,6 +1,6 @@
 import { BarChart3 } from "lucide-react";
 import { IndexSummaryCard } from "@/components/dashboard/IndexSummaryCard";
-import { getMarketSummary } from "@/lib/finance/yahoo";
+import { getMarketSummary, getPriceHistory } from "@/lib/finance/yahoo";
 import { MARKET_SUMMARY_SYMBOLS } from "@/lib/finance/symbols";
 import { MarketDataError } from "@/lib/finance/types";
 
@@ -18,23 +18,47 @@ function SectionHeading() {
 }
 
 /**
- * Apple-HIG concept redesign: Market Summary is now a dedicated 4-card
- * grid of major indices (S&P 500, NASDAQ, Dow Jones, TA-125) using
- * IndexSummaryCard's compact label/value/pill layout, rather than sharing
- * QuoteCardGrid's logo-based MarketQuoteCard layout with Most
+ * Apple-HIG concept redesign: Market Summary is a horizontally scrollable
+ * row (`.tab-scroll` — same no-visible-scrollbar utility the ticker tab
+ * strip uses, plus scroll-snap so cards land cleanly on swipe/scroll) of
+ * IndexSummaryCard's compact label/value/pill/sparkline layout, rather
+ * than sharing QuoteCardGrid's logo-based MarketQuoteCard layout with Most
  * Active/Watchlist — see IndexSummaryCard's doc comment for why indices
- * get their own simpler treatment. Async Server Component — fetched
- * inside a <Suspense> boundary on the home page.
+ * get their own simpler treatment. A row instead of a wrapping grid means
+ * adding more symbols later never re-crowds existing cards.
+ *
+ * Sparkline history is fetched in parallel with the quotes themselves
+ * (outer Promise.all) rather than after. getPriceHistory() already
+ * swallows its own per-symbol errors and resolves to `[]` (see its doc
+ * comment in lib/finance/yahoo.ts) rather than throwing, so one symbol's
+ * history failing just means that card renders without a sparkline — it
+ * never blocks the numbers, which come from the separate getMarketSummary()
+ * call.
+ *
+ * Async Server Component — fetched inside a <Suspense> boundary on the
+ * home page.
  */
 export async function MarketSummarySection() {
   try {
-    const quotes = await getMarketSummary();
+    const [quotes, histories] = await Promise.all([
+      getMarketSummary(),
+      Promise.all(MARKET_SUMMARY_SYMBOLS.map((s) => getPriceHistory(s.symbol, 30))),
+    ]);
+    const historyBySymbol = new Map(
+      MARKET_SUMMARY_SYMBOLS.map((s, i) => [s.symbol, histories[i].map((p) => p.close)])
+    );
+
     return (
       <section>
         <SectionHeading />
-        <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+        <div className="tab-scroll flex snap-x snap-mandatory gap-3.5 overflow-x-auto scroll-smooth pb-1">
           {quotes.map((q) => (
-            <IndexSummaryCard key={q.symbol} quote={q} label={labelBySymbol.get(q.symbol) ?? q.name} />
+            <IndexSummaryCard
+              key={q.symbol}
+              quote={q}
+              label={labelBySymbol.get(q.symbol) ?? q.name}
+              history={historyBySymbol.get(q.symbol)}
+            />
           ))}
         </div>
       </section>

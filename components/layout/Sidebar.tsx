@@ -100,17 +100,25 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                   // neutral highlight — bg-primary/10 + a soft orange
                   // shadow, matching the new --primary brand accent.
                   //
-                  // QA fix: hovering an INACTIVE tab used --accent (a
-                  // neutral gray overlay), which read as a plain
-                  // white/gray highlight that didn't match the active
-                  // tab's warm orange glow at all. Hover now reuses the
-                  // exact same primary-tinted treatment as the active
-                  // state (just without the persistent glow shadow until
-                  // the pointer is actually over it), so hovering any
-                  // inactive item previews the same accent language.
+                  // QA fix (round 1): hovering an INACTIVE tab used
+                  // --accent (a neutral gray overlay), which didn't match
+                  // the active tab's warm orange glow at all.
+                  //
+                  // QA fix (round 2): round 1's fix made inactive-hover
+                  // reuse the *exact* same bg-primary/10 + text-primary +
+                  // glow-shadow combo as the active state, which then read
+                  // as confusingly similar to active — a screenshot showed
+                  // hovered "Watchlist" nearly indistinguishable from
+                  // active "Home". Hover now stays in the same orange
+                  // family (so it still previews "this is where the
+                  // accent would go") but pulled way back: a faint
+                  // bg-primary/5 wash with no shadow/glow at all, and text
+                  // stays foreground (white) rather than switching to
+                  // full primary orange — only the active tab gets the
+                  // saturated orange text + icon + glow treatment.
                   active
                     ? "bg-primary/10 text-primary shadow-[0_0_16px_-4px] shadow-primary/50"
-                    : "text-muted-foreground hover:bg-primary/10 hover:text-primary hover:shadow-[0_0_16px_-4px] hover:shadow-primary/50",
+                    : "text-muted-foreground hover:bg-primary/5 hover:text-foreground",
                   collapsed && "md:justify-center md:px-0"
                 )}
               >

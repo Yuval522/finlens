@@ -1,11 +1,12 @@
 import { BarChart3 } from "lucide-react";
 import { IndexSummarySkeleton } from "@/components/dashboard/IndexSummarySkeleton";
 
-// S&P 500, NASDAQ, Dow Jones, TA-125 (see lib/finance/symbols.ts — kept in
-// sync so the loading skeleton doesn't reflow once live data arrives).
-const MARKET_SUMMARY_SLOTS = 4;
+// S&P 500, NASDAQ, Dow Jones, TA-125, Bitcoin (see lib/finance/symbols.ts —
+// kept in sync so the loading skeleton doesn't reflow once live data
+// arrives).
+const MARKET_SUMMARY_SLOTS = 5;
 
-/** Loading-state skeleton — shown as the Suspense fallback for MarketSummarySection. Mirrors its heading/grid exactly so nothing reflows when live data replaces this. */
+/** Loading-state skeleton — shown as the Suspense fallback for MarketSummarySection. Mirrors its heading/scroll-row exactly so nothing reflows when live data replaces this. */
 export function MarketSummaryGrid() {
   return (
     <section>
@@ -15,7 +16,7 @@ export function MarketSummaryGrid() {
         </span>
         <h2 className="font-display text-xl font-semibold text-foreground sm:text-2xl">Market Summary</h2>
       </div>
-      <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+      <div className="tab-scroll flex gap-3.5 overflow-x-auto pb-1">
         {Array.from({ length: MARKET_SUMMARY_SLOTS }).map((_, i) => (
           <IndexSummarySkeleton key={i} />
         ))}
