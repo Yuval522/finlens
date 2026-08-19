@@ -381,6 +381,23 @@ input:-webkit-autofill:focus {
     radial-gradient(circle at 85% 8%, hsl(var(--primary) / 0.045), transparent 40%);
 }
 
+/* Follow-up feedback (2026-08-19): the warm ambient glow above was only
+   ever opted into by Home and Stock Detail (via .hig-bg on their own
+   page-level wrapper). Applied here at the DashboardShell root instead —
+   the one element every route in app/(dashboard)/* renders into — so
+   every page gets a soft ambient wash, not just those two. Deliberately
+   its own smaller-magnitude class (not just reusing .hig-bg at the shell
+   level) so Home/Stock Detail's own .hig-bg stacks with this as a subtle
+   *extra* touch on top rather than doubling the exact same two corners at
+   the exact same strength. Different corners (top-center + bottom-left)
+   for the same reason — reads as one coherent ambient light source rather
+   than two overlapping copies of one. */
+.app-ambient-glow {
+  background-image:
+    radial-gradient(circle at 50% -10%, hsl(var(--primary) / 0.05), transparent 42%),
+    radial-gradient(circle at -6% 100%, hsl(var(--primary) / 0.035), transparent 38%);
+}
+
 .hig-card {
   background-color: hsl(var(--card) / 0.55);
   border: 1px solid hsl(var(--foreground) / 0.08);

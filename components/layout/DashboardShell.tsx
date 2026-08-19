@@ -25,7 +25,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     // overflow-y-auto genuinely engages as the true internal scroll
     // container — confirmed live: sticky content now stays pinned while
     // scrolling instead of disappearing.
-    <div className="flex h-screen bg-background">
+    //
+    // .app-ambient-glow (see app/globals.css): a subtle warm-orange radial
+    // wash applied here, at the one root element every route in
+    // app/(dashboard)/* renders into, so every page gets the ambient glow
+    // rather than only the two pages that separately opt into the
+    // stronger .hig-bg on their own content wrapper.
+    <div className="app-ambient-glow flex h-screen bg-background">
       <Sidebar mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenuClick={() => setMobileNavOpen(true)} />

@@ -1,6 +1,8 @@
+import { Minus } from "lucide-react";
 import type { MarketQuote } from "@/lib/finance/types";
 import { changeDirection, formatPercent, toDisplayUnit } from "@/lib/format/currency";
 import { Sparkline } from "@/components/dashboard/Sparkline";
+import { Led } from "@/components/shared/Led";
 import { cn } from "@/lib/utils";
 
 interface IndexSummaryCardProps {
@@ -28,6 +30,11 @@ interface IndexSummaryCardProps {
  * Fixed width (rather than the old auto-fit grid cell) — MarketSummarySection
  * now lays these out in a horizontally scrollable row instead of a
  * wrapping grid, so every card needs a stable, non-shrinking size.
+ *
+ * Top-right pulsing LED status dot matches the exact treatment
+ * MarketQuoteCard already uses for Most Active/Watchlist — same Led
+ * component, same flat/up/down badge logic — so "live-looking" status
+ * indicators read consistently across every card type on the dashboard.
  */
 export function IndexSummaryCard({ quote, label, history }: IndexSummaryCardProps) {
   const direction = changeDirection(quote.change);
@@ -40,8 +47,19 @@ export function IndexSummaryCard({ quote, label, history }: IndexSummaryCardProp
         });
 
   return (
-    <div className="hig-card hig-card-interactive w-[190px] shrink-0 snap-start px-[18px] py-4 sm:w-[210px]">
-      <p className="mb-2 truncate text-xs font-medium text-muted-foreground">{label}</p>
+    <div className="hig-card hig-card-interactive relative w-[190px] shrink-0 snap-start px-[18px] py-4 sm:w-[210px]">
+      <span
+        className={cn(
+          "absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full",
+          direction === "up" && "bg-success/10",
+          direction === "down" && "bg-destructive/10",
+          direction === "flat" && "bg-accent text-muted-foreground"
+        )}
+        aria-hidden="true"
+      >
+        {direction === "flat" ? <Minus className="h-3.5 w-3.5" /> : <Led up={direction === "up"} />}
+      </span>
+      <p className="mb-2 truncate pr-7 text-xs font-medium text-muted-foreground">{label}</p>
       <p className="mb-1.5 font-mono text-[19px] font-semibold tracking-[-0.01em] text-foreground">{value}</p>
       <span
         className={cn(
