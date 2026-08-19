@@ -4,12 +4,18 @@
  * list of liquid, well-known large caps rather than a live screener.
  */
 
+// Apple-HIG concept redesign (see stox-redesign-concept.html's INDICES
+// list): Home dashboard's Market Summary is now scoped to exactly these 4
+// major indices, matching the compact index-card grid it renders into —
+// Bitcoin USD was dropped from this specific list (it's a crypto asset,
+// not an index, and wasn't part of the reference design's 4-card layout).
+// This constant has exactly one call site (getMarketSummary() below), so
+// trimming it here doesn't affect any other section.
 export const MARKET_SUMMARY_SYMBOLS: { symbol: string; label: string }[] = [
-  { symbol: "^TA125.TA", label: "TA-125" },
   { symbol: "^GSPC", label: "S&P 500" },
-  { symbol: "^IXIC", label: "NASDAQ Composite" },
+  { symbol: "^IXIC", label: "NASDAQ" },
   { symbol: "^DJI", label: "Dow Jones" },
-  { symbol: "BTC-USD", label: "Bitcoin USD" },
+  { symbol: "^TA125.TA", label: "TA-125" },
 ];
 
 /** Seed list blended with the live US "most actives" screener. */

@@ -99,9 +99,18 @@ export function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                   // glowing orange terminal state instead of a plain
                   // neutral highlight — bg-primary/10 + a soft orange
                   // shadow, matching the new --primary brand accent.
+                  //
+                  // QA fix: hovering an INACTIVE tab used --accent (a
+                  // neutral gray overlay), which read as a plain
+                  // white/gray highlight that didn't match the active
+                  // tab's warm orange glow at all. Hover now reuses the
+                  // exact same primary-tinted treatment as the active
+                  // state (just without the persistent glow shadow until
+                  // the pointer is actually over it), so hovering any
+                  // inactive item previews the same accent language.
                   active
                     ? "bg-primary/10 text-primary shadow-[0_0_16px_-4px] shadow-primary/50"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                    : "text-muted-foreground hover:bg-primary/10 hover:text-primary hover:shadow-[0_0_16px_-4px] hover:shadow-primary/50",
                   collapsed && "md:justify-center md:px-0"
                 )}
               >
