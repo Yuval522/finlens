@@ -34,6 +34,24 @@ export type DrawTool = "trendline" | "fibonacci" | "horizontal";
 interface PriceChartProps {
   /** Already converted to display units (e.g. agorot -> shekels) and sliced to the selected range. */
   data: PricePoint[];
+  /**
+   * The FULL converted (but NOT range-sliced) history — same display-unit
+   * conversion as `data`, just not cut down to the selected timeframe.
+   * Indicators (SMA/EMA/Bollinger/RSI/MACD) are computed against this
+   * instead of `data` and then filtered down to `data`'s date range before
+   * being plotted — see the indicator effects below for why: a moving
+   * average computed only from the visible slice has no "before the
+   * window" bars to warm up from, so e.g. EMA-200 on a 1-month view used
+   * to only start plotting ~200 bars into a ~22-bar slice (i.e. never),
+   * or would only appear near the right edge on slightly longer ranges —
+   * a stub, not a real line. Computing from the full history first gives
+   * every indicator as much real lookback as actually exists, so it can
+   * render smoothly across the ENTIRE visible window like a real charting
+   * platform, not just whatever happens to fit inside the current slice.
+   * Falls back to `data` if omitted, for callers that don't have a longer
+   * history available.
+   */
+  fullHistory?: PricePoint[];
   mode: ChartMode;
   showSma?: boolean;
   smaPeriod?: number;
@@ -193,8 +211,15 @@ function computeSma(data: PricePoint[], period: number) {
 /** Standard Fibonacci retracement ratios, drawn from the higher clicked price down to the lower one. */
 const FIB_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
+/** Trims an indicator series (computed from the full history) down to just the dates visible in the currently-selected range, so a long-lookback indicator like EMA-200 can use real prior history for its MATH without also being plotted before the chart's actual visible window. */
+function visibleSlice<T extends { time: string }>(points: T[], visibleStartDate: string | undefined): T[] {
+  if (!visibleStartDate) return points;
+  return points.filter((p) => p.time >= visibleStartDate);
+}
+
 export function PriceChart({
   data,
+  fullHistory,
   mode,
   showSma = false,
   smaPeriod = 20,
@@ -211,6 +236,12 @@ export function PriceChart({
   overrideColor = null,
   fullHeight = false,
 }: PriceChartProps) {
+  // See fullHistory's doc comment above — indicators compute against this
+  // (falls back to `data` if no longer history was supplied) and then get
+  // trimmed to `visibleStartDate` before being plotted.
+  const indicatorSource = fullHistory ?? data;
+  const visibleStartDate = data[0]?.date;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const mainSeriesRef = useRef<
@@ -229,6 +260,12 @@ export function PriceChart({
   const drawnSeriesRef = useRef<ISeriesApi<SeriesType>[]>([]);
   const drawnPriceLinesRef = useRef<IPriceLine[]>([]);
   const drawStartRef = useRef<{ time: Time; price: number } | null>(null);
+  // Rubber-band preview: a dashed, ghost-colored 2-point line that tracks
+  // the cursor between the first and second click of a trendline/
+  // fibonacci drawing, so the user can see what they're about to draw
+  // instead of clicking twice blind. Lives entirely in the crosshair-move
+  // handler below; removed on finalize, on tool change, and on unmount.
+  const previewSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   // Mirrors of the latest drawTool/onDrawComplete props — the click handler
   // is registered once (creation effect depends only on `locale`) but must
   // always see the CURRENT armed tool, not the one active when the chart
@@ -249,8 +286,37 @@ export function PriceChart({
     onDrawCompleteRef.current = onDrawComplete;
   }, [onDrawComplete]);
 
+  /** Removes the live rubber-band preview line (if one exists) and clears its ref. Safe to call even when there's nothing to remove. */
+  function removePreviewSeries() {
+    const chart = chartRef.current;
+    if (chart && previewSeriesRef.current) {
+      try {
+        chart.removeSeries(previewSeriesRef.current);
+      } catch {
+        // already gone (e.g. whole chart torn down first) — safe to ignore.
+      }
+    }
+    previewSeriesRef.current = null;
+  }
+
+  // Bug fix: switching or cancelling the armed tool (including via Escape,
+  // which only ever touches the `drawTool` PROP up in ChartPanel) used to
+  // leave a stale drawStartRef behind — click once to set a trendline's
+  // start point, hit Escape, re-arm the tool later, and the next click
+  // would silently resume from that old, unrelated first point instead of
+  // starting fresh. Resetting whenever the armed tool itself changes (to
+  // anything, including null) closes that gap, and also cleans up any
+  // in-progress rubber-band preview so it can't outlive the tool it
+  // belonged to.
+  useEffect(() => {
+    drawStartRef.current = null;
+    removePreviewSeries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawTool]);
+
   /** Removes every user-drawn trendline series + fib/horizontal price lines from the chart and empties the tracking refs. Used by both the "Clear Drawings" toolbar action and internally whenever the underlying data set changes (a drawing anchored to old range's dates/prices stops making sense once the range/mode changes). */
   function clearAllDrawings() {
+    removePreviewSeries();
     const chart = chartRef.current;
     if (chart) {
       for (const series of drawnSeriesRef.current) {
@@ -335,6 +401,52 @@ export function PriceChart({
     chart.subscribeCrosshairMove(handleCrosshairMove);
 
     /**
+     * Rubber-band drawing preview (live report: "user shouldn't have to
+     * double-click blindly"). Once the FIRST click of a trendline/
+     * fibonacci drawing has set drawStartRef, every subsequent mouse move
+     * updates (or creates, on the very first move) a dashed 2-point ghost
+     * line from that start point to wherever the cursor currently is, so
+     * the shape is visible in real time before the second click locks it
+     * in. Registered as its own subscribeCrosshairMove handler (rather
+     * than folded into handleCrosshairMove above) so the tooltip and the
+     * preview line stay independent concerns — one purely reads state to
+     * render a floating label, the other mutates a chart series.
+     */
+    function handlePreviewMove(param: MouseEventParams<Time>) {
+      const tool = drawToolRef.current;
+      const start = drawStartRef.current;
+      const main = mainSeriesRef.current;
+      const inProgress = start && (tool === "trendline" || tool === "fibonacci");
+      if (!inProgress || !main || !param.point || param.time == null || param.paneIndex !== 0) {
+        removePreviewSeries();
+        return;
+      }
+      const price = main.coordinateToPrice(param.point.y);
+      if (price == null) {
+        removePreviewSeries();
+        return;
+      }
+      const points = [
+        { time: start.time, value: start.price },
+        { time: param.time, value: price },
+      ].sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+      if (points[0].time === points[1].time) return; // same bar as the start point — nothing sensible to preview yet
+
+      if (!previewSeriesRef.current) {
+        previewSeriesRef.current = chart.addSeries(LineSeries, {
+          color: hexToRgba(DRAW_COLOR, 0.65),
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+      }
+      previewSeriesRef.current.setData(points);
+    }
+    chart.subscribeCrosshairMove(handlePreviewMove);
+
+    /**
      * Chart Tools drawer, drawing tools (ChartPanel.tsx): click-to-draw for
      * trendline/fibonacci (2 clicks: anchor, then target) and horizontal
      * line (1 click). Reads drawToolRef/onDrawCompleteRef rather than the
@@ -383,6 +495,7 @@ export function PriceChart({
         return;
       }
       drawStartRef.current = null;
+      removePreviewSeries();
 
       if (tool === "trendline") {
         const points = [
@@ -473,6 +586,7 @@ export function PriceChart({
 
     return () => {
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
+      chart.unsubscribeCrosshairMove(handlePreviewMove);
       chart.unsubscribeClick(handleClick);
       ro.disconnect();
       chart.remove();
@@ -486,6 +600,7 @@ export function PriceChart({
       drawnSeriesRef.current = [];
       drawnPriceLinesRef.current = [];
       drawStartRef.current = null;
+      previewSeriesRef.current = null;
       setTooltip(null);
     };
     // showGrid is intentionally read only as this effect's *initial* value —
@@ -575,16 +690,19 @@ export function PriceChart({
       smaSeriesRef.current = null;
     }
 
-    if (showSma && data.length > smaPeriod) {
-      const series = chart.addSeries(LineSeries, {
-        color: SMA_COLOR,
-        lineWidth: 2,
-        crosshairMarkerVisible: false,
-      });
-      series.setData(computeSma(data, smaPeriod));
-      smaSeriesRef.current = series;
+    if (showSma && indicatorSource.length > smaPeriod) {
+      const points = visibleSlice(computeSma(indicatorSource, smaPeriod), visibleStartDate);
+      if (points.length > 0) {
+        const series = chart.addSeries(LineSeries, {
+          color: SMA_COLOR,
+          lineWidth: 2,
+          crosshairMarkerVisible: false,
+        });
+        series.setData(points);
+        smaSeriesRef.current = series;
+      }
     }
-  }, [showSma, smaPeriod, data]);
+  }, [showSma, smaPeriod, indicatorSource, visibleStartDate]);
 
   // EMA overlay toggles (50/100/150/200, any subset) — same pane as the
   // main series, alongside SMA. Rebuilt from scratch on every toggle/data
@@ -599,7 +717,7 @@ export function PriceChart({
     emaSeriesRef.current = new Map();
 
     for (const period of emaPeriods) {
-      const points = computeEmaSeries(data, period);
+      const points = visibleSlice(computeEmaSeries(indicatorSource, period), visibleStartDate);
       if (points.length === 0) continue;
       const series = chart.addSeries(LineSeries, {
         color: EMA_COLORS[period] ?? EMA_COLORS[50],
@@ -614,7 +732,7 @@ export function PriceChart({
     // avoids tearing down and rebuilding every EMA series on every
     // unrelated re-render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emaPeriods.slice().sort().join(","), data]);
+  }, [emaPeriods.slice().sort().join(","), indicatorSource, visibleStartDate]);
 
   // Bollinger Bands overlay toggle — three lines (upper/middle/lower), same pane as the main series.
   useEffect(() => {
@@ -625,7 +743,7 @@ export function PriceChart({
     bollingerSeriesRef.current = [];
 
     if (showBollinger) {
-      const bands = computeBollingerBands(data, 20, 2);
+      const bands = visibleSlice(computeBollingerBands(indicatorSource, 20, 2), visibleStartDate);
       if (bands.length > 0) {
         const upper = chart.addSeries(LineSeries, {
           color: BOLLINGER_COLOR,
@@ -653,7 +771,7 @@ export function PriceChart({
         bollingerSeriesRef.current = [upper, middle, lower];
       }
     }
-  }, [showBollinger, data]);
+  }, [showBollinger, indicatorSource, visibleStartDate]);
 
   // RSI + MACD sub-panes, managed together so pane indices stay consistent
   // (RSI gets pane 1 if active; MACD gets whichever of pane 1/2 is free —
@@ -674,7 +792,7 @@ export function PriceChart({
     let nextPane = 1;
 
     if (showRsi) {
-      const points = computeRsiSeries(data, 14);
+      const points = visibleSlice(computeRsiSeries(indicatorSource, 14), visibleStartDate);
       if (points.length > 0) {
         const rsiPane = nextPane++;
         const series = chart.addSeries(
@@ -691,7 +809,10 @@ export function PriceChart({
     }
 
     if (showMacd) {
-      const { macd, signal, histogram } = computeMacd(data, 12, 26, 9);
+      const macdResult = computeMacd(indicatorSource, 12, 26, 9);
+      const macd = visibleSlice(macdResult.macd, visibleStartDate);
+      const signal = visibleSlice(macdResult.signal, visibleStartDate);
+      const histogram = visibleSlice(macdResult.histogram, visibleStartDate);
       if (macd.length > 0) {
         const macdPane = nextPane++;
         const histSeries = chart.addSeries(
@@ -716,7 +837,7 @@ export function PriceChart({
         macdSeriesRef.current = [histSeries, macdSeries, signalSeries];
       }
     }
-  }, [showRsi, showMacd, data]);
+  }, [showRsi, showMacd, indicatorSource, visibleStartDate]);
 
   // "Clear Drawings" toolbar action — bump clearDrawingsToken to trigger.
   useEffect(() => {

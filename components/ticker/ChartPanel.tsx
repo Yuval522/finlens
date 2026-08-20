@@ -4,12 +4,15 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AreaChart,
   CandlestickChart,
+  ChevronDown,
   Eraser,
   Grid3x3,
   Maximize2,
   Minimize2,
   Minus,
   Palette,
+  PenLine,
+  SlidersHorizontal,
   TrendingUp,
   Waypoints,
 } from "lucide-react";
@@ -72,15 +75,14 @@ function sliceByRange(history: PricePoint[], range: TimeRange): PricePoint[] {
 }
 
 /**
- * Apple-style pill toggle — shared by the range buttons, indicator toggles
- * (SMA/EMA/Bollinger/RSI/MACD), and the drawing-tool chips (trendline/
- * fibonacci/h-line) in the single-row toolbar. Solid glowing primary-color
- * fill when active/armed, translucent glass otherwise — same active-state
- * language (bg-primary + soft primary shadow) already used for the
- * sidebar's active nav item, so this reads as one consistent "on" state
- * across the whole app rather than a one-off style. `shrink-0` always on,
- * since every one of these lives inside the toolbar's horizontally
- * scrolling row and must never wrap or compress.
+ * Apple-style pill toggle — shared by the range buttons and indicator
+ * toggles (SMA/EMA/Bollinger/RSI/MACD) inside the Strategy popover, and the
+ * drawing-tool chips (trendline/fibonacci/h-line) inside the Edit popover.
+ * Solid glowing primary-color fill when active/armed, translucent glass
+ * otherwise — same active-state language (bg-primary + soft primary
+ * shadow) already used for the sidebar's active nav item, so this reads as
+ * one consistent "on" state across the whole app rather than a one-off
+ * style.
  */
 function PillToggle({
   label,
@@ -114,7 +116,7 @@ function PillToggle({
   );
 }
 
-/** Thin vertical separator between logical control groups in the single-row toolbar. */
+/** Thin vertical separator between logical control groups in the toolbar. */
 function ToolbarDivider() {
   return <div className="mx-0.5 h-6 w-px shrink-0 bg-white/10" aria-hidden="true" />;
 }
@@ -133,6 +135,25 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const [drawTool, setDrawTool] = useState<DrawTool | null>(null);
   const [clearDrawingsToken, setClearDrawingsToken] = useState(0);
+
+  // Ultra-clean toolbar redesign (live report): the timeframe selector,
+  // every indicator toggle, and every drawing tool used to sit directly on
+  // the toolbar (first as a two-row drawer, then as one long scrolling
+  // row) — both crowded the chart. Now only two dropdown triggers live on
+  // the toolbar itself; everything else is tucked into a floating popover
+  // underneath. `editMenuOpen`/`strategyMenuOpen` + refs follow the exact
+  // same click-outside pattern the color picker already established below.
+  const [editMenuOpen, setEditMenuOpen] = useState(false);
+  const [strategyMenuOpen, setStrategyMenuOpen] = useState(false);
+  const editMenuRef = useRef<HTMLDivElement>(null);
+  const strategyMenuRef = useRef<HTMLDivElement>(null);
+
+  /** Opens one popover and closes the other two — only one floating menu should ever be open at a time. */
+  function openOnly(which: "edit" | "strategy" | "color") {
+    setEditMenuOpen(which === "edit" ? (v) => !v : false);
+    setStrategyMenuOpen(which === "strategy" ? (v) => !v : false);
+    setColorPickerOpen(which === "color" ? (v) => !v : false);
+  }
 
   function toggleEma(period: number) {
     setEmaPeriods((prev) => (prev.includes(period) ? prev.filter((p) => p !== period) : [...prev, period]));
@@ -154,19 +175,25 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
     };
   }, [fullscreen]);
 
-  // Escape cancels whichever "modal-ish" state is active — an armed
-  // drawing tool first (so a stray Escape while sketching a trendline
-  // doesn't also blow away fullscreen), otherwise fullscreen itself.
+  // Escape cancels whichever "modal-ish" state is active, most-transient
+  // first: an open popover, then an armed drawing tool (so a stray Escape
+  // while sketching a trendline doesn't also blow away fullscreen),
+  // otherwise fullscreen itself.
   useEffect(() => {
-    if (!drawTool && !fullscreen) return;
+    const anyMenuOpen = editMenuOpen || strategyMenuOpen || colorPickerOpen;
+    if (!anyMenuOpen && !drawTool && !fullscreen) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      if (drawTool) setDrawTool(null);
+      if (anyMenuOpen) {
+        setEditMenuOpen(false);
+        setStrategyMenuOpen(false);
+        setColorPickerOpen(false);
+      } else if (drawTool) setDrawTool(null);
       else if (fullscreen) setFullscreen(false);
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [drawTool, fullscreen]);
+  }, [editMenuOpen, strategyMenuOpen, colorPickerOpen, drawTool, fullscreen]);
 
   // Mobile UX audit fix: the color picker used to be a permanently-open
   // row of five 14px swatch buttons crammed next to the SMA/grid toggles
@@ -187,6 +214,30 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [colorPickerOpen]);
 
+  // Same click-outside pattern as the color picker above, for the two new
+  // dropdown popovers.
+  useEffect(() => {
+    if (!editMenuOpen) return;
+    function onClickOutside(event: MouseEvent) {
+      if (editMenuRef.current && !editMenuRef.current.contains(event.target as Node)) {
+        setEditMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [editMenuOpen]);
+
+  useEffect(() => {
+    if (!strategyMenuOpen) return;
+    function onClickOutside(event: MouseEvent) {
+      if (strategyMenuRef.current && !strategyMenuRef.current.contains(event.target as Node)) {
+        setStrategyMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [strategyMenuOpen]);
+
   // QA hotfix (Phase 4): date-axis locale is market-aware now — Hebrew only
   // for TASE listings, English everywhere else (was previously left unset,
   // so it silently inherited the browser's own locale for every symbol).
@@ -199,23 +250,33 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
   // `slicedData`. `first`/`last` are already display-unit-converted here
   // (toDisplayUnit applied below), so periodChange.abs must NOT be run
   // through toDisplayUnit again when rendering — see the render section.
-  const { slicedData, positive, periodChange } = useMemo(() => {
-    const sliced = sliceByRange(history, range);
-    const converted: PricePoint[] = sliced.map((point) => ({
+  //
+  // `convertedHistory` (the FULL history, display-unit-converted but NOT
+  // range-sliced) is passed to PriceChart as `fullHistory` — see that
+  // prop's doc comment for why indicators need it: a moving average
+  // computed only from `slicedData` has no bars before the visible window
+  // to warm up from, so e.g. EMA-200 on a short range used to render as a
+  // truncated stub instead of a real, fully-correlated line across the
+  // whole selected timeframe.
+  const { convertedHistory, slicedData, positive, periodChange } = useMemo(() => {
+    const converted: PricePoint[] = history.map((point) => ({
       date: point.date,
       open: toDisplayUnit(point.open, currency),
       high: toDisplayUnit(point.high, currency),
       low: toDisplayUnit(point.low, currency),
       close: toDisplayUnit(point.close, currency),
     }));
-    const first = converted[0]?.close ?? 0;
-    const last = converted[converted.length - 1]?.close ?? 0;
+    const sliced = sliceByRange(converted, range);
+    const first = sliced[0]?.close ?? 0;
+    const last = sliced[sliced.length - 1]?.close ?? 0;
     const change =
-      converted.length >= 2 && Number.isFinite(first) && first !== 0
+      sliced.length >= 2 && Number.isFinite(first) && first !== 0
         ? { abs: last - first, pct: ((last - first) / Math.abs(first)) * 100 }
         : null;
-    return { slicedData: converted, positive: last >= first, periodChange: change };
+    return { convertedHistory: converted, slicedData: sliced, positive: last >= first, periodChange: change };
   }, [history, range, currency]);
+
+  const activeIndicatorCount = (showSma ? 1 : 0) + emaPeriods.length + (showBollinger ? 1 : 0) + (showRsi ? 1 : 0) + (showMacd ? 1 : 0);
 
   return (
     <>
@@ -237,13 +298,11 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
         {/* Top-left ticker + live price header, matching institutional
             terminal charts (e.g. "T 400.04"). Also carries the selected
             timeframe's performance readout and the fullscreen toggle on the
-            right — live report: these used to sit on the toolbar's own row,
-            competing for space with the timeframe buttons; moving them up
-            here freed that whole row for controls only (see the single-row
-            toolbar below). currentPrice is the raw (un-divided) live quote
-            price, same convention PriceHeaderBlock already uses, so
-            formatPrice's own currency divisor applies once here rather than
-            double-converting. */}
+            right — this row is unrelated to the toolbar's own controls, so
+            it stays separate from the minimal toolbar below. currentPrice
+            is the raw (un-divided) live quote price, same convention
+            PriceHeaderBlock already uses, so formatPrice's own currency
+            divisor applies once here rather than double-converting. */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-baseline gap-2">
             <span className="font-display text-sm font-bold uppercase tracking-wide text-foreground">{symbol}</span>
@@ -280,40 +339,15 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
         </div>
 
         {/*
-          Single-row compact toolbar (live report): every control — the
-          timeframe selector, every indicator toggle, grid/color/mode, and
-          every drawing tool — now lives in ONE horizontally scrollable
-          strip instead of stacking across a header row, a controls row,
-          and an expandable drawer. `orange-scrollbar` is the same visible-
-          scrollbar utility the Home dashboard's Market Summary row already
-          uses (app/globals.css), so a scrollable toolbar reads as an
-          established app pattern rather than a one-off. Every child is
-          `shrink-0` so nothing wraps or compresses — the row scrolls
-          instead, which is exactly what keeps the chart canvas below at
-          its full height regardless of how many tools are toggled on.
+          Ultra-clean minimalist toolbar (live report): only the core
+          always-visible controls (Grid, color, view mode) plus two dropdown
+          triggers — "Strategy" (timeframe + every indicator toggle) and
+          "Edit" (every drawing tool) — stay on the toolbar itself.
+          Everything else lives in a floating popover underneath its
+          trigger, closed by default, so the bar directly above the chart
+          canvas stays short and the canvas gets the vertical space.
         */}
-        <div className="orange-scrollbar mt-3 flex items-center gap-1.5 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1.5 backdrop-blur-md">
-          {TIME_RANGES.map((r) => (
-            <PillToggle key={r} label={r} active={range === r} onClick={() => setRange(r)} />
-          ))}
-
-          <ToolbarDivider />
-
-          <PillToggle label="SMA 20" active={showSma} onClick={() => setShowSma((v) => !v)} />
-          {EMA_PERIODS.map((period) => (
-            <PillToggle
-              key={period}
-              label={`EMA ${period}`}
-              active={emaPeriods.includes(period)}
-              onClick={() => toggleEma(period)}
-            />
-          ))}
-          <PillToggle label="Bollinger Bands" active={showBollinger} onClick={() => setShowBollinger((v) => !v)} />
-          <PillToggle label="RSI" active={showRsi} onClick={() => setShowRsi((v) => !v)} />
-          <PillToggle label="MACD" active={showMacd} onClick={() => setShowMacd((v) => !v)} />
-
-          <ToolbarDivider />
-
+        <div className="mt-3 flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-1.5 backdrop-blur-md">
           <PillToggle
             label="Grid"
             icon={<Grid3x3 className="h-3.5 w-3.5" />}
@@ -328,7 +362,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
           <div ref={colorPickerRef} className="relative shrink-0">
             <button
               type="button"
-              onClick={() => setColorPickerOpen((v) => !v)}
+              onClick={() => openOnly("color")}
               aria-expanded={colorPickerOpen}
               aria-haspopup="true"
               aria-label="Chart color"
@@ -349,7 +383,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
               <div
                 role="group"
                 aria-label="Chart color options"
-                className="search-dropdown-panel absolute left-0 top-[calc(100%+4px)] z-50 flex items-center gap-1 rounded-lg border border-border p-1 shadow-xl"
+                className="search-dropdown-panel absolute left-0 top-[calc(100%+8px)] z-50 flex items-center gap-1 rounded-lg border border-border p-1 shadow-xl"
               >
                 <button
                   type="button"
@@ -420,44 +454,162 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
 
           <ToolbarDivider />
 
-          {/* Drawing tools — single-select "arm one tool, draw once,
-              auto-disarm" group. See PriceChart.tsx's chart.subscribeClick
-              handler for what each tool actually does on click. */}
-          <PillToggle
-            label="Trendline"
-            icon={<TrendingUp className="h-3.5 w-3.5" />}
-            active={drawTool === "trendline"}
-            onClick={() => setDrawTool((t) => (t === "trendline" ? null : "trendline"))}
-            title="Click a start point, then an end point, to draw a trendline"
-          />
-          <PillToggle
-            label="Fibonacci"
-            icon={<Waypoints className="h-3.5 w-3.5" />}
-            active={drawTool === "fibonacci"}
-            onClick={() => setDrawTool((t) => (t === "fibonacci" ? null : "fibonacci"))}
-            title="Click a swing high and a swing low (either order) to draw a Fibonacci retracement"
-          />
-          <PillToggle
-            label="H-Line"
-            icon={<Minus className="h-3.5 w-3.5" />}
-            active={drawTool === "horizontal"}
-            onClick={() => setDrawTool((t) => (t === "horizontal" ? null : "horizontal"))}
-            title="Click once to place a horizontal price line"
-          />
-          <button
-            type="button"
-            onClick={() => setClearDrawingsToken((t) => t + 1)}
-            title="Clear all drawings"
-            className="flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-white/[0.04] px-3 text-xs font-medium text-muted-foreground transition-all duration-200 hover:bg-destructive/15 hover:text-destructive"
-          >
-            <Eraser className="h-3.5 w-3.5" />
-            Clear
-          </button>
+          {/* "Edit" dropdown — draw tools popover (Trendline/Fibonacci/
+              H-Line/Clear). Selecting a tool arms it AND closes the menu
+              (the user's next move is on the canvas, not this popover);
+              "Clear" also closes it after wiping every drawing. The
+              trigger itself goes solid/glowing whenever a tool is
+              currently armed, so it stays visibly "active" even with the
+              popover closed while the user is off drawing on the chart. */}
+          <div ref={editMenuRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => openOnly("edit")}
+              aria-expanded={editMenuOpen}
+              aria-haspopup="true"
+              title="Drawing tools"
+              className={cn(
+                "flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-medium transition-all duration-200",
+                drawTool
+                  ? "bg-primary text-primary-foreground shadow-[0_0_14px_-3px] shadow-primary/70"
+                  : "bg-white/[0.04] text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              )}
+            >
+              <PenLine className="h-3.5 w-3.5" />
+              Edit
+              <ChevronDown className={cn("h-3 w-3 transition-transform", editMenuOpen && "rotate-180")} />
+            </button>
+            {editMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Drawing tools"
+                className="search-dropdown-panel absolute left-0 top-[calc(100%+8px)] z-50 flex flex-col gap-1 rounded-2xl border border-border p-2 shadow-xl"
+              >
+                <PillToggle
+                  label="Trendline"
+                  icon={<TrendingUp className="h-3.5 w-3.5" />}
+                  active={drawTool === "trendline"}
+                  onClick={() => {
+                    setDrawTool((t) => (t === "trendline" ? null : "trendline"));
+                    setEditMenuOpen(false);
+                  }}
+                  title="Click a start point, then an end point, to draw a trendline"
+                />
+                <PillToggle
+                  label="Fibonacci"
+                  icon={<Waypoints className="h-3.5 w-3.5" />}
+                  active={drawTool === "fibonacci"}
+                  onClick={() => {
+                    setDrawTool((t) => (t === "fibonacci" ? null : "fibonacci"));
+                    setEditMenuOpen(false);
+                  }}
+                  title="Click a swing high and a swing low (either order) to draw a Fibonacci retracement"
+                />
+                <PillToggle
+                  label="H-Line"
+                  icon={<Minus className="h-3.5 w-3.5" />}
+                  active={drawTool === "horizontal"}
+                  onClick={() => {
+                    setDrawTool((t) => (t === "horizontal" ? null : "horizontal"));
+                    setEditMenuOpen(false);
+                  }}
+                  title="Click once to place a horizontal price line"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClearDrawingsToken((t) => t + 1);
+                    setEditMenuOpen(false);
+                  }}
+                  title="Clear all drawings"
+                  className="flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-white/[0.04] px-3 text-xs font-medium text-muted-foreground transition-all duration-200 hover:bg-destructive/15 hover:text-destructive"
+                >
+                  <Eraser className="h-3.5 w-3.5" />
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* "Strategy" dropdown — timeframe + every indicator toggle. Left
+              open across multiple clicks inside it (unlike Edit above),
+              since toggling on RSI, MACD, and a couple of EMAs together in
+              one visit is a normal workflow here — only closes via outside
+              click, Escape, or clicking the trigger again. The trigger
+              itself always shows the CURRENT range so that's still visible
+              at a glance even with the popover closed, plus a small count
+              badge when any indicators are active. */}
+          <div ref={strategyMenuRef} className="relative ml-auto shrink-0">
+            <button
+              type="button"
+              onClick={() => openOnly("strategy")}
+              aria-expanded={strategyMenuOpen}
+              aria-haspopup="true"
+              title="Timeframe and indicators"
+              className={cn(
+                "flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-medium transition-all duration-200",
+                strategyMenuOpen || activeIndicatorCount > 0
+                  ? "bg-primary text-primary-foreground shadow-[0_0_14px_-3px] shadow-primary/70"
+                  : "bg-white/[0.04] text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              )}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Strategy · {range}
+              {activeIndicatorCount > 0 && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-black/20 px-1 text-[10px] font-semibold">
+                  {activeIndicatorCount}
+                </span>
+              )}
+              <ChevronDown className={cn("h-3 w-3 transition-transform", strategyMenuOpen && "rotate-180")} />
+            </button>
+            {strategyMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Timeframe and indicators"
+                className="search-dropdown-panel absolute right-0 top-[calc(100%+8px)] z-50 w-[19rem] space-y-3 rounded-2xl border border-border p-3 shadow-xl"
+              >
+                <div>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Timeframe
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TIME_RANGES.map((r) => (
+                      <PillToggle key={r} label={r} active={range === r} onClick={() => setRange(r)} />
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Indicators
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <PillToggle label="SMA 20" active={showSma} onClick={() => setShowSma((v) => !v)} />
+                    {EMA_PERIODS.map((period) => (
+                      <PillToggle
+                        key={period}
+                        label={`EMA ${period}`}
+                        active={emaPeriods.includes(period)}
+                        onClick={() => toggleEma(period)}
+                      />
+                    ))}
+                    <PillToggle
+                      label="Bollinger Bands"
+                      active={showBollinger}
+                      onClick={() => setShowBollinger((v) => !v)}
+                    />
+                    <PillToggle label="RSI" active={showRsi} onClick={() => setShowRsi((v) => !v)} />
+                    <PillToggle label="MACD" active={showMacd} onClick={() => setShowMacd((v) => !v)} />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className={cn("mt-4", fullscreen && "min-h-0 flex-1")}>
           <PriceChart
             data={slicedData}
+            fullHistory={convertedHistory}
             mode={mode}
             showSma={showSma}
             emaPeriods={emaPeriods}
