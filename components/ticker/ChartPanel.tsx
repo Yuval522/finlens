@@ -1,8 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AreaChart, CandlestickChart, Grid3x3, Palette } from "lucide-react";
-import { PriceChart, type ChartMode } from "./PriceChart";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  AreaChart,
+  CandlestickChart,
+  Eraser,
+  Grid3x3,
+  Maximize2,
+  Minimize2,
+  Minus,
+  Palette,
+  SlidersHorizontal,
+  TrendingUp,
+  Waypoints,
+} from "lucide-react";
+import { PriceChart, type ChartMode, type DrawTool } from "./PriceChart";
 import { TimeRangeSelector, type TimeRange } from "./TimeRangeSelector";
 import { currencySymbol, formatPercent, formatPrice, toDisplayUnit } from "@/lib/format/currency";
 import { isTaseListing } from "@/lib/finance/exchange";
@@ -57,6 +69,47 @@ function sliceByRange(history: PricePoint[], range: TimeRange): PricePoint[] {
   return history.slice(-days);
 }
 
+/**
+ * Apple-style pill toggle — shared by the indicator toggles (SMA/EMA/
+ * Bollinger/RSI/MACD) and the drawing-tool chips (trendline/fibonacci/
+ * h-line) in the Tools drawer. Solid glowing primary-color fill when
+ * active/armed, translucent glass otherwise — same active-state language
+ * (bg-primary + soft primary shadow) already used for the sidebar's active
+ * nav item and the mode segmented control below, so this reads as one
+ * consistent "on" state across the whole app rather than a one-off style.
+ */
+function PillToggle({
+  label,
+  icon,
+  active,
+  onClick,
+  title,
+}: {
+  label: string;
+  icon?: ReactNode;
+  active: boolean;
+  onClick: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      title={title ?? label}
+      className={cn(
+        "flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all duration-200",
+        active
+          ? "bg-primary text-primary-foreground shadow-[0_0_14px_-3px] shadow-primary/70"
+          : "bg-white/[0.04] text-muted-foreground hover:bg-white/10 hover:text-foreground"
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 export function ChartPanel({ history, currency, symbol, exchange, currentPrice = null }: ChartPanelProps) {
   const [range, setRange] = useState<TimeRange>("1Y");
   const [mode, setMode] = useState<ChartMode>("area");
@@ -65,6 +118,48 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
   const [chartColor, setChartColor] = useState<string | null>(null);
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
   const colorPickerRef = useRef<HTMLDivElement>(null);
+
+  // Apple-style Tools/Edit drawer: indicator overlays + drawing tools, all
+  // collapsed behind one toggle so the always-visible toolbar stays clean
+  // (live report: the reference redesign wanted a minimal default toolbar
+  // with richer analysis tools tucked away, not permanently on-screen).
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [showEma50, setShowEma50] = useState(false);
+  const [showBollinger, setShowBollinger] = useState(false);
+  const [showRsi, setShowRsi] = useState(false);
+  const [showMacd, setShowMacd] = useState(false);
+  const [drawTool, setDrawTool] = useState<DrawTool | null>(null);
+  const [clearDrawingsToken, setClearDrawingsToken] = useState(0);
+
+  // Fullscreen expand: toggles the SAME card between its normal inline
+  // position and a `fixed inset-*` overlay, rather than portaling/
+  // remounting a second copy — the chart element itself never unmounts, so
+  // zoom/pan position, drawn trendlines, and every toggle above survive the
+  // transition in both directions with zero extra state-syncing code.
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [fullscreen]);
+
+  // Escape cancels whichever "modal-ish" state is active — an armed
+  // drawing tool first (so a stray Escape while sketching a trendline
+  // doesn't also blow away fullscreen), otherwise fullscreen itself.
+  useEffect(() => {
+    if (!drawTool && !fullscreen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (drawTool) setDrawTool(null);
+      else if (fullscreen) setFullscreen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [drawTool, fullscreen]);
 
   // Mobile UX audit fix: the color picker used to be a permanently-open
   // row of five 14px swatch buttons crammed next to the SMA/grid toggles
@@ -116,223 +211,335 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
   }, [history, range, currency]);
 
   return (
-    <div className="hig-card p-4 sm:p-5">
-      {/* Top-left ticker + live price header, matching institutional
-          terminal charts (e.g. "T 400.04") — sits above the toolbar, its
-          own line, per the reference layout. currentPrice is the raw
-          (un-divided) live quote price, same convention PriceHeaderBlock
-          already uses, so formatPrice's own currency divisor applies once
-          here rather than double-converting. */}
-      <div className="mb-3 flex items-baseline gap-2">
-        <span className="font-display text-sm font-bold uppercase tracking-wide text-foreground">{symbol}</span>
-        {currentPrice != null && (
-          <span className="font-mono text-lg font-bold text-foreground">{formatPrice(currentPrice, currency)}</span>
+    <>
+      {fullscreen && (
+        <div
+          className="fixed inset-0 z-[90] bg-black/80 backdrop-blur-sm"
+          onClick={() => setFullscreen(false)}
+          aria-hidden="true"
+        />
+      )}
+      <div
+        className={cn(
+          "hig-card p-4 transition-[inset] duration-300 ease-out sm:p-5",
+          fullscreen
+            ? "fixed inset-3 z-[91] flex flex-col overflow-y-auto sm:inset-6 lg:inset-10"
+            : "relative"
         )}
-      </div>
-
-      {/* Row 1: Select Range + the selected timeframe's performance
-          comparison, right-aligned on the same row (per the reference
-          layout: "aligned with the timeframe selector row", where a real
-          terminal's drawing/compare tools would sit). Recomputed
-          automatically on every range change since periodChange is
-          derived alongside slicedData in the same useMemo above. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <TimeRangeSelector value={range} onChange={setRange} />
-        {periodChange && (
-          <span
-            className={cn(
-              "shrink-0 font-mono text-sm font-semibold",
-              periodChange.abs >= 0 ? "text-success" : "text-destructive"
+      >
+        {/* Top-left ticker + live price header, matching institutional
+            terminal charts (e.g. "T 400.04") — sits above the toolbar, its
+            own line, per the reference layout. currentPrice is the raw
+            (un-divided) live quote price, same convention PriceHeaderBlock
+            already uses, so formatPrice's own currency divisor applies once
+            here rather than double-converting. */}
+        <div className="mb-3 flex items-baseline justify-between gap-2">
+          <div className="flex items-baseline gap-2">
+            <span className="font-display text-sm font-bold uppercase tracking-wide text-foreground">{symbol}</span>
+            {currentPrice != null && (
+              <span className="font-mono text-lg font-bold text-foreground">{formatPrice(currentPrice, currency)}</span>
             )}
-          >
-            {/* periodChange.abs is already display-unit-converted (see the
-                useMemo above) — currencySymbol() only, no formatPrice/
-                toDisplayUnit here, or the divisor would apply twice. */}
-            ({periodChange.abs >= 0 ? "+" : "-"}
-            {currencySymbol(currency)}
-            {Math.abs(periodChange.abs).toFixed(2)} {formatPercent(periodChange.pct)})
-          </span>
-        )}
-      </div>
-
-      {/* QA fix (toolbar-squeeze audit), still relevant in spirit: this row
-          previously had to share space with the TimeRangeSelector
-          (1D/5D/.../Max), which forced a wrap/squeeze tradeoff at
-          intermediate desktop widths. Select Range now has its own
-          dedicated row above (paired only with the period performance
-          readout, not this controls group), so this row is simply the
-          SMA/grid/color/mode controls on their own line — matching the
-          reference layout's two-row toolbar and no longer needing the
-          squeeze workaround. */}
-      {/* Mobile UX audit fix: every control below used to have a real
-          tappable area well under the ~44px minimum recommended touch
-          target (the SMA/grid switches were 20px tall with an
-          unclickable text label next to them — a <label> wrapping a
-          plain <button> does NOT forward clicks per the HTML spec, only
-          real form controls get that; the five color swatches were 14px
-          circles; the mode buttons were ~28px). Every control is now
-          either a full min-h-11 (44px) button in its own right (SMA/grid
-          toggles — the whole row including the text label is now
-          clickable) or 44x44px (color trigger, popover swatches, mode
-          buttons). flex-wrap on both this row and the group below it was
-          already present, so nothing needed to change there — the actual
-          audit finding was tap-target size, not wrapping. */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap items-center gap-2">
+          </div>
+          {/* Fullscreen expand/collapse — always reachable regardless of
+              which row the rest of the toolbar wraps onto, since this is
+              the one control users will look for first (top-right, same
+              corner every OS/photo-viewer convention puts it in). */}
           <button
             type="button"
-            role="switch"
-            aria-checked={showSma}
-            onClick={() => setShowSma((v) => !v)}
-            className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            onClick={() => setFullscreen((v) => !v)}
+            aria-pressed={fullscreen}
+            title={fullscreen ? "Exit fullscreen" : "Expand chart to fullscreen"}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.04] text-muted-foreground transition-all duration-200 hover:bg-white/10 hover:text-foreground"
           >
-            <span>SMA 20</span>
-            <span
-              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                showSma ? "bg-primary" : "bg-accent"
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                  showSma ? "translate-x-4" : "translate-x-0.5"
-                }`}
-              />
-            </span>
+            {fullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
+        </div>
 
-          <button
-            type="button"
-            role="switch"
-            aria-checked={showGrid}
-            aria-label="Toggle grid lines"
-            title="הצג/הסתר רשת — toggle chart grid lines"
-            onClick={() => setShowGrid((v) => !v)}
-            className="flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <Grid3x3 className="h-3.5 w-3.5" />
+        {/* Row 1: Select Range + the selected timeframe's performance
+            comparison, right-aligned on the same row (per the reference
+            layout: "aligned with the timeframe selector row", where a real
+            terminal's drawing/compare tools would sit). Recomputed
+            automatically on every range change since periodChange is
+            derived alongside slicedData in the same useMemo above. */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TimeRangeSelector value={range} onChange={setRange} />
+          {periodChange && (
             <span
-              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-                showGrid ? "bg-primary" : "bg-accent"
-              }`}
+              className={cn(
+                "shrink-0 font-mono text-sm font-semibold",
+                periodChange.abs >= 0 ? "text-success" : "text-destructive"
+              )}
             >
-              <span
-                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
-                  showGrid ? "translate-x-4" : "translate-x-0.5"
-                }`}
-              />
+              {/* periodChange.abs is already display-unit-converted (see the
+                  useMemo above) — currencySymbol() only, no formatPrice/
+                  toDisplayUnit here, or the divisor would apply twice. */}
+              ({periodChange.abs >= 0 ? "+" : "-"}
+              {currencySymbol(currency)}
+              {Math.abs(periodChange.abs).toFixed(2)} {formatPercent(periodChange.pct)})
             </span>
-          </button>
+          )}
+        </div>
 
-          {/* Color picker: was a permanently-open row of 14px swatches —
-              now a single 44px trigger that opens a small popover with
-              44px swatch buttons, both fixing the touch-target size and
-              decluttering this row on narrow phone widths. */}
-          <div ref={colorPickerRef} className="relative">
+        {/*
+          Apple-inspired toolbar redesign (live report): the SMA/grid/color/
+          mode controls now sit inside one glass pill bar (translucent
+          fill, blurred backdrop, rounded-full segments) instead of loose
+          buttons directly on the card background — plus a "Tools" pill on
+          the right that expands the drawer below. Every control keeps its
+          existing ~44px (min-h-11 / h-11) touch target from the prior
+          mobile-UX audit fix; only the visual chrome changed.
+        */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-1.5 backdrop-blur-md">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setColorPickerOpen((v) => !v)}
-              aria-expanded={colorPickerOpen}
-              aria-haspopup="true"
-              aria-label="Chart color"
-              title="Chart color"
-              className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg border border-foreground/10 px-3 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              role="switch"
+              aria-checked={showSma}
+              onClick={() => setShowSma((v) => !v)}
+              className="flex min-h-9 items-center gap-2 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
             >
+              <span>SMA 20</span>
               <span
-                className="h-3.5 w-3.5 shrink-0 rounded-full"
-                style={
-                  chartColor
-                    ? { backgroundColor: chartColor }
-                    : { background: "linear-gradient(135deg, #10B981 50%, #EF4444 50%)" }
-                }
-              />
-              <Palette className="h-3.5 w-3.5" />
-            </button>
-            {colorPickerOpen && (
-              <div
-                role="group"
-                aria-label="Chart color options"
-                className="search-dropdown-panel absolute left-0 top-[calc(100%+4px)] z-50 flex items-center gap-1 rounded-lg border border-border p-1 shadow-xl"
+                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                  showSma ? "bg-primary" : "bg-accent"
+                }`}
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setChartColor(null);
-                    setColorPickerOpen(false);
-                  }}
-                  aria-pressed={chartColor === null}
-                  title="Auto (trend color)"
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-md transition-colors ${
-                    chartColor === null ? "bg-accent ring-2 ring-primary" : "hover:bg-accent"
+                <span
+                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                    showSma ? "translate-x-4" : "translate-x-0.5"
                   }`}
+                />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showGrid}
+              aria-label="Toggle grid lines"
+              title="הצג/הסתר רשת — toggle chart grid lines"
+              onClick={() => setShowGrid((v) => !v)}
+              className="flex min-h-9 items-center gap-2 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+            >
+              <Grid3x3 className="h-3.5 w-3.5" />
+              <span
+                className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                  showGrid ? "bg-primary" : "bg-accent"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+                    showGrid ? "translate-x-4" : "translate-x-0.5"
+                  }`}
+                />
+              </span>
+            </button>
+
+            {/* Color picker: was a permanently-open row of 14px swatches —
+                now a single 44px trigger that opens a small popover with
+                44px swatch buttons, both fixing the touch-target size and
+                decluttering this row on narrow phone widths. */}
+            <div ref={colorPickerRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setColorPickerOpen((v) => !v)}
+                aria-expanded={colorPickerOpen}
+                aria-haspopup="true"
+                aria-label="Chart color"
+                title="Chart color"
+                className="flex min-h-9 min-w-9 items-center justify-center gap-1.5 rounded-full px-3 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+              >
+                <span
+                  className="h-3.5 w-3.5 shrink-0 rounded-full"
+                  style={
+                    chartColor
+                      ? { backgroundColor: chartColor }
+                      : { background: "linear-gradient(135deg, #10B981 50%, #EF4444 50%)" }
+                  }
+                />
+                <Palette className="h-3.5 w-3.5" />
+              </button>
+              {colorPickerOpen && (
+                <div
+                  role="group"
+                  aria-label="Chart color options"
+                  className="search-dropdown-panel absolute left-0 top-[calc(100%+4px)] z-50 flex items-center gap-1 rounded-lg border border-border p-1 shadow-xl"
                 >
-                  <span
-                    className="h-3.5 w-3.5 rounded-full"
-                    style={{ background: "linear-gradient(135deg, #10B981 50%, #EF4444 50%)" }}
-                  />
-                </button>
-                {COLOR_PRESETS.map((preset) => (
                   <button
-                    key={preset.hex}
                     type="button"
                     onClick={() => {
-                      setChartColor(preset.hex);
+                      setChartColor(null);
                       setColorPickerOpen(false);
                     }}
-                    aria-pressed={chartColor === preset.hex}
-                    title={preset.name}
+                    aria-pressed={chartColor === null}
+                    title="Auto (trend color)"
                     className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-md transition-colors ${
-                      chartColor === preset.hex ? "bg-accent ring-2 ring-primary" : "hover:bg-accent"
+                      chartColor === null ? "bg-accent ring-2 ring-primary" : "hover:bg-accent"
                     }`}
                   >
-                    <span className="h-3.5 w-3.5 rounded-full" style={{ backgroundColor: preset.hex }} />
+                    <span
+                      className="h-3.5 w-3.5 rounded-full"
+                      style={{ background: "linear-gradient(135deg, #10B981 50%, #EF4444 50%)" }}
+                    />
                   </button>
-                ))}
-              </div>
-            )}
+                  {COLOR_PRESETS.map((preset) => (
+                    <button
+                      key={preset.hex}
+                      type="button"
+                      onClick={() => {
+                        setChartColor(preset.hex);
+                        setColorPickerOpen(false);
+                      }}
+                      aria-pressed={chartColor === preset.hex}
+                      title={preset.name}
+                      className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-md transition-colors ${
+                        chartColor === preset.hex ? "bg-accent ring-2 ring-primary" : "hover:bg-accent"
+                      }`}
+                    >
+                      <span className="h-3.5 w-3.5 rounded-full" style={{ backgroundColor: preset.hex }} />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center rounded-full border border-foreground/10 p-0.5">
+              <button
+                type="button"
+                aria-pressed={mode === "area"}
+                onClick={() => setMode("area")}
+                title="Area mode"
+                className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+                  mode === "area"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <AreaChart className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                aria-pressed={mode === "candlestick"}
+                onClick={() => setMode("candlestick")}
+                title="Candlestick mode"
+                className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+                  mode === "candlestick"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <CandlestickChart className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center rounded-lg border border-foreground/10 p-0.5">
-            <button
-              type="button"
-              aria-pressed={mode === "area"}
-              onClick={() => setMode("area")}
-              title="Area mode"
-              className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                mode === "area"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <AreaChart className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              aria-pressed={mode === "candlestick"}
-              onClick={() => setMode("candlestick")}
-              title="Candlestick mode"
-              className={`flex h-11 w-11 items-center justify-center rounded-md transition-colors ${
-                mode === "candlestick"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <CandlestickChart className="h-4 w-4" />
-            </button>
+          {/* "Edit"/Tools drawer trigger — expands the indicators + drawing
+              tools panel below. Kept visually distinct (its own pill, right-
+              aligned via ml-auto) from the always-on toggles to its left,
+              since everything in the drawer is opt-in analysis tooling
+              rather than a basic display preference. */}
+          <button
+            type="button"
+            onClick={() => setToolsOpen((v) => !v)}
+            aria-expanded={toolsOpen}
+            title="Technical analysis tools"
+            className={cn(
+              "ml-auto flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-all duration-200",
+              toolsOpen
+                ? "bg-primary text-primary-foreground shadow-[0_0_14px_-3px] shadow-primary/70"
+                : "bg-white/[0.04] text-muted-foreground hover:bg-white/10 hover:text-foreground"
+            )}
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Edit
+          </button>
+        </div>
+
+        {/* Tools drawer — CSS grid-rows[0fr -> 1fr] expand/collapse (no JS
+            height measurement needed, works with dynamically-sized
+            content). Indicators are plain on/off toggles; drawing tools are
+            a single-select "arm one tool, draw once, auto-disarm" group —
+            see PriceChart.tsx's click handler for what each tool does. */}
+        <div
+          className={cn(
+            "grid overflow-hidden transition-all duration-300 ease-out",
+            toolsOpen ? "mt-2 grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+          )}
+        >
+          <div className="overflow-hidden">
+            <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-3 backdrop-blur-md">
+              <div>
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Indicators
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  <PillToggle label="EMA 50" active={showEma50} onClick={() => setShowEma50((v) => !v)} />
+                  <PillToggle label="Bollinger Bands" active={showBollinger} onClick={() => setShowBollinger((v) => !v)} />
+                  <PillToggle label="RSI" active={showRsi} onClick={() => setShowRsi((v) => !v)} />
+                  <PillToggle label="MACD" active={showMacd} onClick={() => setShowMacd((v) => !v)} />
+                </div>
+              </div>
+              <div>
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Draw
+                </p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <PillToggle
+                    label="Trendline"
+                    icon={<TrendingUp className="h-3.5 w-3.5" />}
+                    active={drawTool === "trendline"}
+                    onClick={() => setDrawTool((t) => (t === "trendline" ? null : "trendline"))}
+                    title="Click two points on the chart to draw a trendline"
+                  />
+                  <PillToggle
+                    label="Fibonacci"
+                    icon={<Waypoints className="h-3.5 w-3.5" />}
+                    active={drawTool === "fibonacci"}
+                    onClick={() => setDrawTool((t) => (t === "fibonacci" ? null : "fibonacci"))}
+                    title="Click a high and a low to draw a Fibonacci retracement"
+                  />
+                  <PillToggle
+                    label="H-Line"
+                    icon={<Minus className="h-3.5 w-3.5" />}
+                    active={drawTool === "horizontal"}
+                    onClick={() => setDrawTool((t) => (t === "horizontal" ? null : "horizontal"))}
+                    title="Click once to draw a horizontal price line"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setClearDrawingsToken((t) => t + 1)}
+                    title="Clear all drawings"
+                    className="flex min-h-9 items-center gap-1.5 rounded-full bg-white/[0.04] px-3 text-xs font-medium text-muted-foreground transition-all duration-200 hover:bg-destructive/15 hover:text-destructive"
+                  >
+                    <Eraser className="h-3.5 w-3.5" />
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="mt-4">
-        <PriceChart
-          data={slicedData}
-          mode={mode}
-          showSma={showSma}
-          positive={positive}
-          locale={locale}
-          showGrid={showGrid}
-          overrideColor={chartColor}
-        />
+        <div className={cn("mt-4", fullscreen && "min-h-0 flex-1")}>
+          <PriceChart
+            data={slicedData}
+            mode={mode}
+            showSma={showSma}
+            showEma50={showEma50}
+            showBollinger={showBollinger}
+            showRsi={showRsi}
+            showMacd={showMacd}
+            drawTool={drawTool}
+            onDrawComplete={() => setDrawTool(null)}
+            clearDrawingsToken={clearDrawingsToken}
+            positive={positive}
+            locale={locale}
+            showGrid={showGrid}
+            overrideColor={chartColor}
+            fullHeight={fullscreen}
+          />
+        </div>
       </div>
-    </div>
+    </>
   );
 }

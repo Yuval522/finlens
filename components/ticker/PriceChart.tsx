@@ -6,17 +6,28 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
+  HistogramSeries,
   LineSeries,
+  LineStyle,
   TickMarkType,
   createChart,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type MouseEventParams,
   type Time,
 } from "lightweight-charts";
 import type { PricePoint } from "@/lib/finance/types";
+import { computeBollingerBands, computeEmaSeries, computeMacd, computeRsiSeries } from "@/lib/finance/chartIndicators";
 
 export type ChartMode = "area" | "candlestick";
+
+/**
+ * Chart drawing tools (toolbar "Edit"/Tools drawer, see ChartPanel.tsx).
+ * "horizontal" completes on a single click; "trendline"/"fibonacci" wait
+ * for a second click before drawing anything, see the click handler below.
+ */
+export type DrawTool = "trendline" | "fibonacci" | "horizontal";
 
 interface PriceChartProps {
   /** Already converted to display units (e.g. agorot -> shekels) and sliced to the selected range. */
@@ -24,6 +35,20 @@ interface PriceChartProps {
   mode: ChartMode;
   showSma?: boolean;
   smaPeriod?: number;
+  /** EMA-50 overlay, same pane as the main series. */
+  showEma50?: boolean;
+  /** Bollinger Bands (20, 2σ) overlay, same pane as the main series. */
+  showBollinger?: boolean;
+  /** RSI-14 in its own sub-pane below the main chart. */
+  showRsi?: boolean;
+  /** MACD (12, 26, 9) — line + signal + histogram — in its own sub-pane. */
+  showMacd?: boolean;
+  /** Currently-armed drawing tool, or null when the chart should behave normally (pan/zoom, no click-to-draw). Reset to null by the parent via onDrawComplete after one shape is placed. */
+  drawTool?: DrawTool | null;
+  /** Fires once a drawing tool has placed its shape (or been cancelled by Escape) — the parent uses this to un-arm the tool button. */
+  onDrawComplete?: () => void;
+  /** Bump this (e.g. a counter) to wipe every user-drawn trendline/fibonacci/horizontal-line from the chart. */
+  clearDrawingsToken?: number;
   /** Drives area-chart gradient/line color — true = period gained, false = lost. Ignored when overrideColor is set. */
   positive: boolean;
   /**
@@ -43,11 +68,20 @@ interface PriceChartProps {
    * default trend-based coloring.
    */
   overrideColor?: string | null;
+  /** Fullscreen expand mode (ChartPanel.tsx) — swaps the fixed 320/400px height for a flex `h-full` that fills whatever taller container the fullscreen card provides. */
+  fullHeight?: boolean;
 }
 
 const SUCCESS = "#10B981";
 const DESTRUCTIVE = "#EF4444";
 const SMA_COLOR = "#F59E0B";
+const EMA_COLOR = "#38BDF8";
+const BOLLINGER_COLOR = "#A78BFA";
+const RSI_COLOR = "#38BDF8";
+const MACD_COLOR = "#38BDF8";
+const MACD_SIGNAL_COLOR = "#F59E0B";
+const DRAW_COLOR = "#F59E0B";
+const FIB_COLOR = "#A78BFA";
 
 /** Converts a "#RRGGBB" hex color to an "rgba(r, g, b, alpha)" string for area-chart fills. */
 function hexToRgba(hex: string, alpha: number): string {
@@ -148,15 +182,26 @@ function computeSma(data: PricePoint[], period: number) {
   return result;
 }
 
+/** Standard Fibonacci retracement ratios, drawn from the higher clicked price down to the lower one. */
+const FIB_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+
 export function PriceChart({
   data,
   mode,
   showSma = false,
   smaPeriod = 20,
+  showEma50 = false,
+  showBollinger = false,
+  showRsi = false,
+  showMacd = false,
+  drawTool = null,
+  onDrawComplete,
+  clearDrawingsToken = 0,
   positive,
   locale = "en-US",
   showGrid = true,
   overrideColor = null,
+  fullHeight = false,
 }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -164,11 +209,64 @@ export function PriceChart({
     ISeriesApi<"Area"> | ISeriesApi<"Candlestick"> | null
   >(null);
   const smaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const emaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const bollingerSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+  const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const macdSeriesRef = useRef<ISeriesApi<"Line" | "Histogram">[]>([]);
+  // User-drawn trendlines (2-point Line series, one per drawing) and
+  // fibonacci/horizontal price lines (attached to the main series) — kept
+  // in refs so the click handler (registered once, in the creation effect)
+  // and the "Clear Drawings" effect can both reach them without either one
+  // needing to be in the other's dependency array.
+  const drawnSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+  const drawnPriceLinesRef = useRef<IPriceLine[]>([]);
+  const drawStartRef = useRef<{ time: Time; price: number } | null>(null);
+  // Mirrors of the latest drawTool/onDrawComplete props — the click handler
+  // is registered once (creation effect depends only on `locale`) but must
+  // always see the CURRENT armed tool, not the one active when the chart
+  // was first created, hence refs updated by a separate effect below.
+  const drawToolRef = useRef<DrawTool | null>(drawTool);
+  const onDrawCompleteRef = useRef(onDrawComplete);
   // Tracks the main series' current display color so the floating tooltip's
   // legend swatch always matches the line/candles on screen, including when
   // the color-preset picker (ChartPanel.tsx) overrides it.
   const seriesColorRef = useRef<string>(SUCCESS);
   const [tooltip, setTooltip] = useState<ChartTooltipState | null>(null);
+
+  useEffect(() => {
+    drawToolRef.current = drawTool;
+  }, [drawTool]);
+
+  useEffect(() => {
+    onDrawCompleteRef.current = onDrawComplete;
+  }, [onDrawComplete]);
+
+  /** Removes every user-drawn trendline series + fib/horizontal price lines from the chart and empties the tracking refs. Used by both the "Clear Drawings" toolbar action and internally whenever the underlying data set changes (a drawing anchored to old range's dates/prices stops making sense once the range/mode changes). */
+  function clearAllDrawings() {
+    const chart = chartRef.current;
+    if (chart) {
+      for (const series of drawnSeriesRef.current) {
+        try {
+          chart.removeSeries(series);
+        } catch {
+          // series may already be gone if the whole chart was torn down first — safe to ignore.
+        }
+      }
+    }
+    const main = mainSeriesRef.current;
+    if (main) {
+      for (const line of drawnPriceLinesRef.current) {
+        try {
+          main.removePriceLine(line);
+        } catch {
+          // same as above.
+        }
+      }
+    }
+    drawnSeriesRef.current = [];
+    drawnPriceLinesRef.current = [];
+    drawStartRef.current = null;
+  }
 
   // Create the chart instance once, tear it down on unmount.
   useEffect(() => {
@@ -228,6 +326,88 @@ export function PriceChart({
     }
     chart.subscribeCrosshairMove(handleCrosshairMove);
 
+    /**
+     * Chart Tools drawer, drawing tools (ChartPanel.tsx): click-to-draw for
+     * trendline/fibonacci (2 clicks: anchor, then target) and horizontal
+     * line (1 click). Reads drawToolRef/onDrawCompleteRef rather than the
+     * `drawTool`/`onDrawComplete` props directly since this handler is
+     * registered once here (effect depends only on `locale`, matching the
+     * crosshair handler above) and must still see whichever tool is
+     * CURRENTLY armed, not whichever was armed at chart-creation time.
+     */
+    function handleClick(param: MouseEventParams<Time>) {
+      const tool = drawToolRef.current;
+      const main = mainSeriesRef.current;
+      if (!tool || !main || !param.point || param.time == null) return;
+
+      const price = main.coordinateToPrice(param.point.y);
+      if (price == null) return;
+      const time = param.time;
+
+      if (tool === "horizontal") {
+        const line = main.createPriceLine({
+          price,
+          color: DRAW_COLOR,
+          lineWidth: 2,
+          lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true,
+          title: "H-Line",
+        });
+        drawnPriceLinesRef.current.push(line);
+        onDrawCompleteRef.current?.();
+        return;
+      }
+
+      const start = drawStartRef.current;
+      if (!start) {
+        drawStartRef.current = { time, price };
+        return;
+      }
+      drawStartRef.current = null;
+
+      if (tool === "trendline") {
+        const points = [
+          { time: start.time, value: start.price },
+          { time, value: price },
+        ].sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+        // Two identical-time clicks would violate lightweight-charts'
+        // strictly-ascending-time requirement for a 2-point series — bail
+        // rather than crash the chart.
+        if (points[0].time === points[1].time) {
+          onDrawCompleteRef.current?.();
+          return;
+        }
+        const chartInstance = chartRef.current;
+        if (!chartInstance) return;
+        const series = chartInstance.addSeries(LineSeries, {
+          color: DRAW_COLOR,
+          lineWidth: 2,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+        series.setData(points);
+        drawnSeriesRef.current.push(series);
+      } else if (tool === "fibonacci") {
+        const high = Math.max(start.price, price);
+        const low = Math.min(start.price, price);
+        for (const ratio of FIB_RATIOS) {
+          const level = high - ratio * (high - low);
+          const line = main.createPriceLine({
+            price: level,
+            color: FIB_COLOR,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: `${(ratio * 100).toFixed(1)}%`,
+          });
+          drawnPriceLinesRef.current.push(line);
+        }
+      }
+      onDrawCompleteRef.current?.();
+    }
+    chart.subscribeClick(handleClick);
+
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
@@ -238,11 +418,19 @@ export function PriceChart({
 
     return () => {
       chart.unsubscribeCrosshairMove(handleCrosshairMove);
+      chart.unsubscribeClick(handleClick);
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
       mainSeriesRef.current = null;
       smaSeriesRef.current = null;
+      emaSeriesRef.current = null;
+      bollingerSeriesRef.current = [];
+      rsiSeriesRef.current = null;
+      macdSeriesRef.current = [];
+      drawnSeriesRef.current = [];
+      drawnPriceLinesRef.current = [];
+      drawStartRef.current = null;
       setTooltip(null);
     };
     // showGrid is intentionally read only as this effect's *initial* value —
@@ -274,6 +462,11 @@ export function PriceChart({
       chart.removeSeries(mainSeriesRef.current);
       mainSeriesRef.current = null;
     }
+    // A previous range/mode's drawings (trendlines anchored to now-gone
+    // dates, fib/h-lines on the series about to be removed) don't carry
+    // forward meaningfully to a new data set — clear them here rather than
+    // leave orphaned lines pointing at prices from a different timeframe.
+    clearAllDrawings();
     // The old series (and any hovered point on it) is gone — clear any
     // stale floating tooltip rather than leaving it pinned to a price
     // that no longer belongs to the chart underneath it.
@@ -314,6 +507,7 @@ export function PriceChart({
     }
 
     chart.timeScale().fitContent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, data, positive, overrideColor]);
 
   // SMA overlay toggle.
@@ -337,10 +531,150 @@ export function PriceChart({
     }
   }, [showSma, smaPeriod, data]);
 
+  // EMA-50 overlay toggle — same pane as the main series, alongside SMA.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (emaSeriesRef.current) {
+      chart.removeSeries(emaSeriesRef.current);
+      emaSeriesRef.current = null;
+    }
+
+    if (showEma50) {
+      const points = computeEmaSeries(data, 50);
+      if (points.length > 0) {
+        const series = chart.addSeries(LineSeries, {
+          color: EMA_COLOR,
+          lineWidth: 2,
+          crosshairMarkerVisible: false,
+        });
+        series.setData(points);
+        emaSeriesRef.current = series;
+      }
+    }
+  }, [showEma50, data]);
+
+  // Bollinger Bands overlay toggle — three lines (upper/middle/lower), same pane as the main series.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    for (const series of bollingerSeriesRef.current) chart.removeSeries(series);
+    bollingerSeriesRef.current = [];
+
+    if (showBollinger) {
+      const bands = computeBollingerBands(data, 20, 2);
+      if (bands.length > 0) {
+        const upper = chart.addSeries(LineSeries, {
+          color: BOLLINGER_COLOR,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+        });
+        upper.setData(bands.map((b) => ({ time: b.time, value: b.upper })));
+        const middle = chart.addSeries(LineSeries, {
+          color: BOLLINGER_COLOR,
+          lineWidth: 1,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+        });
+        middle.setData(bands.map((b) => ({ time: b.time, value: b.middle })));
+        const lower = chart.addSeries(LineSeries, {
+          color: BOLLINGER_COLOR,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          crosshairMarkerVisible: false,
+          lastValueVisible: false,
+        });
+        lower.setData(bands.map((b) => ({ time: b.time, value: b.lower })));
+        bollingerSeriesRef.current = [upper, middle, lower];
+      }
+    }
+  }, [showBollinger, data]);
+
+  // RSI + MACD sub-panes, managed together so pane indices stay consistent
+  // (RSI gets pane 1 if active; MACD gets whichever of pane 1/2 is free —
+  // i.e. pane 1 if RSI is off, pane 2 if RSI is also on). lightweight-charts
+  // v5's chart.addSeries(definition, options, paneIndex) auto-creates a
+  // pane at that index the first time it's used.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    if (rsiSeriesRef.current) {
+      chart.removeSeries(rsiSeriesRef.current);
+      rsiSeriesRef.current = null;
+    }
+    for (const series of macdSeriesRef.current) chart.removeSeries(series);
+    macdSeriesRef.current = [];
+
+    let nextPane = 1;
+
+    if (showRsi) {
+      const points = computeRsiSeries(data, 14);
+      if (points.length > 0) {
+        const rsiPane = nextPane++;
+        const series = chart.addSeries(
+          LineSeries,
+          { color: RSI_COLOR, lineWidth: 2, crosshairMarkerVisible: false },
+          rsiPane
+        );
+        series.setData(points);
+        series.createPriceLine({ price: 70, color: "rgba(239, 68, 68, 0.5)", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: "" });
+        series.createPriceLine({ price: 30, color: "rgba(16, 185, 129, 0.5)", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: "" });
+        chart.panes()[rsiPane]?.setStretchFactor(0.4);
+        rsiSeriesRef.current = series;
+      }
+    }
+
+    if (showMacd) {
+      const { macd, signal, histogram } = computeMacd(data, 12, 26, 9);
+      if (macd.length > 0) {
+        const macdPane = nextPane++;
+        const histSeries = chart.addSeries(
+          HistogramSeries,
+          { priceFormat: { type: "price", precision: 3, minMove: 0.001 } },
+          macdPane
+        );
+        histSeries.setData(histogram);
+        const macdSeries = chart.addSeries(
+          LineSeries,
+          { color: MACD_COLOR, lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false },
+          macdPane
+        );
+        macdSeries.setData(macd);
+        const signalSeries = chart.addSeries(
+          LineSeries,
+          { color: MACD_SIGNAL_COLOR, lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false },
+          macdPane
+        );
+        signalSeries.setData(signal);
+        chart.panes()[macdPane]?.setStretchFactor(0.4);
+        macdSeriesRef.current = [histSeries, macdSeries, signalSeries];
+      }
+    }
+  }, [showRsi, showMacd, data]);
+
+  // "Clear Drawings" toolbar action — bump clearDrawingsToken to trigger.
+  useEffect(() => {
+    if (clearDrawingsToken > 0) clearAllDrawings();
+    // clearAllDrawings intentionally excluded from deps: it's a stable
+    // function of refs only (no props/state it needs to stay fresh
+    // against), redeclaring it every render would just churn the effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearDrawingsToken]);
+
   return (
     <div
       ref={containerRef}
-      className="relative h-[320px] w-full min-w-0 overflow-hidden sm:h-[400px]"
+      className={
+        fullHeight
+          ? "relative h-full min-h-[320px] w-full min-w-0 overflow-hidden"
+          : "relative h-[320px] w-full min-w-0 overflow-hidden sm:h-[400px]"
+      }
+      style={drawTool ? { cursor: "crosshair" } : undefined}
       // QA fix (diagnostic: "stale hover tooltip persists after cursor
       // moves away"): lightweight-charts fires subscribeCrosshairMove with
       // an empty param (clearing the tooltip) when it detects the pointer
