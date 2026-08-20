@@ -75,9 +75,10 @@ function sliceByRange(history: PricePoint[], range: TimeRange): PricePoint[] {
 }
 
 /**
- * Apple-style pill toggle — shared by the range buttons and indicator
- * toggles (SMA/EMA/Bollinger/RSI/MACD) inside the Strategy popover, and the
- * drawing-tool chips (trendline/fibonacci/h-line) inside the Edit popover.
+ * Apple-style pill toggle — shared by the range buttons inside the
+ * Timeframe popover, the indicator toggles (SMA/EMA/Bollinger/RSI/MACD)
+ * inside the Indicators popover, and the drawing-tool chips
+ * (trendline/fibonacci/h-line) inside the Edit popover.
  * Solid glowing primary-color fill when active/armed, translucent glass
  * otherwise — same active-state language (bg-primary + soft primary
  * shadow) already used for the sidebar's active nav item, so this reads as
@@ -139,19 +140,27 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
   // Ultra-clean toolbar redesign (live report): the timeframe selector,
   // every indicator toggle, and every drawing tool used to sit directly on
   // the toolbar (first as a two-row drawer, then as one long scrolling
-  // row) — both crowded the chart. Now only two dropdown triggers live on
-  // the toolbar itself; everything else is tucked into a floating popover
-  // underneath. `editMenuOpen`/`strategyMenuOpen` + refs follow the exact
-  // same click-outside pattern the color picker already established below.
+  // row) — both crowded the chart. Now three dedicated dropdown triggers
+  // live on the toolbar itself — Timeframe, Indicators, Edit — each opening
+  // its own small popover underneath. (Timeframe and Indicators used to be
+  // bundled into one combined "Strategy" popover; a live report found that
+  // confusing and also uncovered a real clickability bug — see the z-index
+  // fix on the popover panels below — so they're now split into two
+  // separate, single-purpose triggers.) `*MenuOpen` + refs all follow the
+  // exact same click-outside pattern the color picker already established
+  // below.
   const [editMenuOpen, setEditMenuOpen] = useState(false);
-  const [strategyMenuOpen, setStrategyMenuOpen] = useState(false);
+  const [timeframeMenuOpen, setTimeframeMenuOpen] = useState(false);
+  const [indicatorsMenuOpen, setIndicatorsMenuOpen] = useState(false);
   const editMenuRef = useRef<HTMLDivElement>(null);
-  const strategyMenuRef = useRef<HTMLDivElement>(null);
+  const timeframeMenuRef = useRef<HTMLDivElement>(null);
+  const indicatorsMenuRef = useRef<HTMLDivElement>(null);
 
-  /** Opens one popover and closes the other two — only one floating menu should ever be open at a time. */
-  function openOnly(which: "edit" | "strategy" | "color") {
+  /** Opens one popover and closes the other three — only one floating menu should ever be open at a time. */
+  function openOnly(which: "edit" | "timeframe" | "indicators" | "color") {
     setEditMenuOpen(which === "edit" ? (v) => !v : false);
-    setStrategyMenuOpen(which === "strategy" ? (v) => !v : false);
+    setTimeframeMenuOpen(which === "timeframe" ? (v) => !v : false);
+    setIndicatorsMenuOpen(which === "indicators" ? (v) => !v : false);
     setColorPickerOpen(which === "color" ? (v) => !v : false);
   }
 
@@ -180,20 +189,21 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
   // while sketching a trendline doesn't also blow away fullscreen),
   // otherwise fullscreen itself.
   useEffect(() => {
-    const anyMenuOpen = editMenuOpen || strategyMenuOpen || colorPickerOpen;
+    const anyMenuOpen = editMenuOpen || timeframeMenuOpen || indicatorsMenuOpen || colorPickerOpen;
     if (!anyMenuOpen && !drawTool && !fullscreen) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
       if (anyMenuOpen) {
         setEditMenuOpen(false);
-        setStrategyMenuOpen(false);
+        setTimeframeMenuOpen(false);
+        setIndicatorsMenuOpen(false);
         setColorPickerOpen(false);
       } else if (drawTool) setDrawTool(null);
       else if (fullscreen) setFullscreen(false);
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [editMenuOpen, strategyMenuOpen, colorPickerOpen, drawTool, fullscreen]);
+  }, [editMenuOpen, timeframeMenuOpen, indicatorsMenuOpen, colorPickerOpen, drawTool, fullscreen]);
 
   // Mobile UX audit fix: the color picker used to be a permanently-open
   // row of five 14px swatch buttons crammed next to the SMA/grid toggles
@@ -214,8 +224,8 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [colorPickerOpen]);
 
-  // Same click-outside pattern as the color picker above, for the two new
-  // dropdown popovers.
+  // Same click-outside pattern as the color picker above, for the three
+  // other dropdown popovers.
   useEffect(() => {
     if (!editMenuOpen) return;
     function onClickOutside(event: MouseEvent) {
@@ -228,15 +238,26 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
   }, [editMenuOpen]);
 
   useEffect(() => {
-    if (!strategyMenuOpen) return;
+    if (!timeframeMenuOpen) return;
     function onClickOutside(event: MouseEvent) {
-      if (strategyMenuRef.current && !strategyMenuRef.current.contains(event.target as Node)) {
-        setStrategyMenuOpen(false);
+      if (timeframeMenuRef.current && !timeframeMenuRef.current.contains(event.target as Node)) {
+        setTimeframeMenuOpen(false);
       }
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
-  }, [strategyMenuOpen]);
+  }, [timeframeMenuOpen]);
+
+  useEffect(() => {
+    if (!indicatorsMenuOpen) return;
+    function onClickOutside(event: MouseEvent) {
+      if (indicatorsMenuRef.current && !indicatorsMenuRef.current.contains(event.target as Node)) {
+        setIndicatorsMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [indicatorsMenuOpen]);
 
   // QA hotfix (Phase 4): date-axis locale is market-aware now — Hebrew only
   // for TASE listings, English everywhere else (was previously left unset,
@@ -340,14 +361,27 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
 
         {/*
           Ultra-clean minimalist toolbar (live report): only the core
-          always-visible controls (Grid, color, view mode) plus two dropdown
-          triggers — "Strategy" (timeframe + every indicator toggle) and
-          "Edit" (every drawing tool) — stay on the toolbar itself.
-          Everything else lives in a floating popover underneath its
-          trigger, closed by default, so the bar directly above the chart
-          canvas stays short and the canvas gets the vertical space.
+          always-visible controls (Grid, color, view mode) plus three
+          single-purpose dropdown triggers — "Timeframe", "Indicators", and
+          "Edit" (drawing tools) — stay on the toolbar itself. Everything
+          else lives in a floating popover underneath its own trigger,
+          closed by default, so the bar directly above the chart canvas
+          stays short and the canvas gets the vertical space.
         */}
-        <div className="mt-3 flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-1.5 backdrop-blur-md">
+        {/* `relative z-20` here matters, not just cosmetically: `backdrop-blur-md`
+            below creates its own CSS stacking context, and this bar sits
+            earlier in the DOM than the chart canvas div right under it. Without
+            an explicit z-index on THIS element, that whole stacking context
+            (popovers and all, regardless of their own z-index) paints behind
+            the later chart sibling once both overlap — which is exactly what
+            made every popover button unclickable (a live report/screenshot
+            showed the chart's own crosshair tooltip rendering on top of an
+            open popover, swallowing clicks meant for it). Bumping this
+            wrapper above the chart's stacking level is what actually fixes
+            it; z-[999] on the popover panels alone would not have, since a
+            child's z-index can never escape a parent stacking context that
+            itself paints behind a sibling. */}
+        <div className="relative z-20 mt-3 flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.03] p-1.5 backdrop-blur-md">
           <PillToggle
             label="Grid"
             icon={<Grid3x3 className="h-3.5 w-3.5" />}
@@ -383,7 +417,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
               <div
                 role="group"
                 aria-label="Chart color options"
-                className="search-dropdown-panel absolute left-0 top-[calc(100%+8px)] z-50 flex items-center gap-1 rounded-lg border border-border p-1 shadow-xl"
+                className="search-dropdown-panel pointer-events-auto absolute left-0 top-[calc(100%+8px)] z-[999] flex items-center gap-1 rounded-lg border border-border p-1 shadow-xl"
               >
                 <button
                   type="button"
@@ -454,6 +488,109 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
 
           <ToolbarDivider />
 
+          {/* "Timeframe" dropdown — its own dedicated trigger/popover, split
+              out from the old combined "Strategy" menu per live report (that
+              menu bundled range + every indicator together, which read as
+              cluttered). Trigger always shows the current range so it's
+              legible at a glance even with the popover closed. */}
+          <div ref={timeframeMenuRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => openOnly("timeframe")}
+              aria-expanded={timeframeMenuOpen}
+              aria-haspopup="true"
+              title="Timeframe"
+              className={cn(
+                "flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-medium transition-all duration-200",
+                timeframeMenuOpen
+                  ? "bg-primary text-primary-foreground shadow-[0_0_14px_-3px] shadow-primary/70"
+                  : "bg-white/[0.04] text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              )}
+            >
+              Timeframe · {range}
+              <ChevronDown className={cn("h-3 w-3 transition-transform", timeframeMenuOpen && "rotate-180")} />
+            </button>
+            {timeframeMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Timeframe"
+                className="search-dropdown-panel pointer-events-auto absolute left-0 top-[calc(100%+8px)] z-[999] w-[15rem] rounded-2xl border border-border p-3 shadow-xl"
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  {TIME_RANGES.map((r) => (
+                    <PillToggle
+                      key={r}
+                      label={r}
+                      active={range === r}
+                      onClick={() => {
+                        setRange(r);
+                        setTimeframeMenuOpen(false);
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* "Indicators" dropdown — its own dedicated trigger/popover, the
+              other half of the old combined "Strategy" menu. Left open
+              across multiple clicks inside it (unlike Timeframe/Edit above),
+              since toggling on RSI, MACD, and a couple of EMAs together in
+              one visit is a normal workflow here — only closes via outside
+              click, Escape, or clicking the trigger again. Trigger shows a
+              small count badge whenever any indicators are active. */}
+          <div ref={indicatorsMenuRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => openOnly("indicators")}
+              aria-expanded={indicatorsMenuOpen}
+              aria-haspopup="true"
+              title="Indicators"
+              className={cn(
+                "flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-medium transition-all duration-200",
+                indicatorsMenuOpen || activeIndicatorCount > 0
+                  ? "bg-primary text-primary-foreground shadow-[0_0_14px_-3px] shadow-primary/70"
+                  : "bg-white/[0.04] text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              )}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Indicators
+              {activeIndicatorCount > 0 && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-black/20 px-1 text-[10px] font-semibold">
+                  {activeIndicatorCount}
+                </span>
+              )}
+              <ChevronDown className={cn("h-3 w-3 transition-transform", indicatorsMenuOpen && "rotate-180")} />
+            </button>
+            {indicatorsMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Indicators"
+                className="search-dropdown-panel pointer-events-auto absolute left-0 top-[calc(100%+8px)] z-[999] w-[19rem] rounded-2xl border border-border p-3 shadow-xl"
+              >
+                <div className="flex flex-wrap gap-1.5">
+                  <PillToggle label="SMA 20" active={showSma} onClick={() => setShowSma((v) => !v)} />
+                  {EMA_PERIODS.map((period) => (
+                    <PillToggle
+                      key={period}
+                      label={`EMA ${period}`}
+                      active={emaPeriods.includes(period)}
+                      onClick={() => toggleEma(period)}
+                    />
+                  ))}
+                  <PillToggle
+                    label="Bollinger Bands"
+                    active={showBollinger}
+                    onClick={() => setShowBollinger((v) => !v)}
+                  />
+                  <PillToggle label="RSI" active={showRsi} onClick={() => setShowRsi((v) => !v)} />
+                  <PillToggle label="MACD" active={showMacd} onClick={() => setShowMacd((v) => !v)} />
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* "Edit" dropdown — draw tools popover (Trendline/Fibonacci/
               H-Line/Clear). Selecting a tool arms it AND closes the menu
               (the user's next move is on the canvas, not this popover);
@@ -483,7 +620,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
               <div
                 role="menu"
                 aria-label="Drawing tools"
-                className="search-dropdown-panel absolute left-0 top-[calc(100%+8px)] z-50 flex flex-col gap-1 rounded-2xl border border-border p-2 shadow-xl"
+                className="search-dropdown-panel pointer-events-auto absolute left-0 top-[calc(100%+8px)] z-[999] flex flex-col gap-1 rounded-2xl border border-border p-2 shadow-xl"
               >
                 <PillToggle
                   label="Trendline"
@@ -531,79 +668,6 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
             )}
           </div>
 
-          {/* "Strategy" dropdown — timeframe + every indicator toggle. Left
-              open across multiple clicks inside it (unlike Edit above),
-              since toggling on RSI, MACD, and a couple of EMAs together in
-              one visit is a normal workflow here — only closes via outside
-              click, Escape, or clicking the trigger again. The trigger
-              itself always shows the CURRENT range so that's still visible
-              at a glance even with the popover closed, plus a small count
-              badge when any indicators are active. */}
-          <div ref={strategyMenuRef} className="relative ml-auto shrink-0">
-            <button
-              type="button"
-              onClick={() => openOnly("strategy")}
-              aria-expanded={strategyMenuOpen}
-              aria-haspopup="true"
-              title="Timeframe and indicators"
-              className={cn(
-                "flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-medium transition-all duration-200",
-                strategyMenuOpen || activeIndicatorCount > 0
-                  ? "bg-primary text-primary-foreground shadow-[0_0_14px_-3px] shadow-primary/70"
-                  : "bg-white/[0.04] text-muted-foreground hover:bg-white/10 hover:text-foreground"
-              )}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              Strategy · {range}
-              {activeIndicatorCount > 0 && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-black/20 px-1 text-[10px] font-semibold">
-                  {activeIndicatorCount}
-                </span>
-              )}
-              <ChevronDown className={cn("h-3 w-3 transition-transform", strategyMenuOpen && "rotate-180")} />
-            </button>
-            {strategyMenuOpen && (
-              <div
-                role="menu"
-                aria-label="Timeframe and indicators"
-                className="search-dropdown-panel absolute right-0 top-[calc(100%+8px)] z-50 w-[19rem] space-y-3 rounded-2xl border border-border p-3 shadow-xl"
-              >
-                <div>
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Timeframe
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {TIME_RANGES.map((r) => (
-                      <PillToggle key={r} label={r} active={range === r} onClick={() => setRange(r)} />
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Indicators
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    <PillToggle label="SMA 20" active={showSma} onClick={() => setShowSma((v) => !v)} />
-                    {EMA_PERIODS.map((period) => (
-                      <PillToggle
-                        key={period}
-                        label={`EMA ${period}`}
-                        active={emaPeriods.includes(period)}
-                        onClick={() => toggleEma(period)}
-                      />
-                    ))}
-                    <PillToggle
-                      label="Bollinger Bands"
-                      active={showBollinger}
-                      onClick={() => setShowBollinger((v) => !v)}
-                    />
-                    <PillToggle label="RSI" active={showRsi} onClick={() => setShowRsi((v) => !v)} />
-                    <PillToggle label="MACD" active={showMacd} onClick={() => setShowMacd((v) => !v)} />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
 
         <div className={cn("mt-4", fullscreen && "min-h-0 flex-1")}>
