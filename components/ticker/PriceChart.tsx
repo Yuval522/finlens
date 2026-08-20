@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AreaSeries,
+  BaselineSeries,
   CandlestickSeries,
   ColorType,
   CrosshairMode,
@@ -15,6 +16,7 @@ import {
   type IPriceLine,
   type ISeriesApi,
   type MouseEventParams,
+  type SeriesType,
   type Time,
 } from "lightweight-charts";
 import type { PricePoint } from "@/lib/finance/types";
@@ -35,8 +37,8 @@ interface PriceChartProps {
   mode: ChartMode;
   showSma?: boolean;
   smaPeriod?: number;
-  /** EMA-50 overlay, same pane as the main series. */
-  showEma50?: boolean;
+  /** Which EMA periods to overlay (e.g. [50, 200]) — same pane as the main series. Empty/omitted shows none. */
+  emaPeriods?: number[];
   /** Bollinger Bands (20, 2σ) overlay, same pane as the main series. */
   showBollinger?: boolean;
   /** RSI-14 in its own sub-pane below the main chart. */
@@ -75,7 +77,13 @@ interface PriceChartProps {
 const SUCCESS = "#10B981";
 const DESTRUCTIVE = "#EF4444";
 const SMA_COLOR = "#F59E0B";
-const EMA_COLOR = "#38BDF8";
+/** One distinct color per selectable EMA period so overlapping EMAs stay visually distinguishable. */
+const EMA_COLORS: Record<number, string> = {
+  50: "#38BDF8",
+  100: "#C084FC",
+  150: "#FB923C",
+  200: "#F472B6",
+};
 const BOLLINGER_COLOR = "#A78BFA";
 const RSI_COLOR = "#38BDF8";
 const MACD_COLOR = "#38BDF8";
@@ -190,7 +198,7 @@ export function PriceChart({
   mode,
   showSma = false,
   smaPeriod = 20,
-  showEma50 = false,
+  emaPeriods = [],
   showBollinger = false,
   showRsi = false,
   showMacd = false,
@@ -209,7 +217,7 @@ export function PriceChart({
     ISeriesApi<"Area"> | ISeriesApi<"Candlestick"> | null
   >(null);
   const smaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const emaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const emaSeriesRef = useRef<Map<number, ISeriesApi<"Line">>>(new Map());
   const bollingerSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
   const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdSeriesRef = useRef<ISeriesApi<"Line" | "Histogram">[]>([]);
@@ -218,7 +226,7 @@ export function PriceChart({
   // in refs so the click handler (registered once, in the creation effect)
   // and the "Clear Drawings" effect can both reach them without either one
   // needing to be in the other's dependency array.
-  const drawnSeriesRef = useRef<ISeriesApi<"Line">[]>([]);
+  const drawnSeriesRef = useRef<ISeriesApi<SeriesType>[]>([]);
   const drawnPriceLinesRef = useRef<IPriceLine[]>([]);
   const drawStartRef = useRef<{ time: Time; price: number } | null>(null);
   // Mirrors of the latest drawTool/onDrawComplete props — the click handler
@@ -339,6 +347,17 @@ export function PriceChart({
       const tool = drawToolRef.current;
       const main = mainSeriesRef.current;
       if (!tool || !main || !param.point || param.time == null) return;
+      // Bug fix (live report/screenshot): drawing tools only make sense on
+      // the main price pane (index 0). RSI's pane is a 0-100 scale and
+      // MACD's is a small oscillator range — both totally unrelated to the
+      // main series' price scale, so a click in either used to still run
+      // through `main.coordinateToPrice(param.point.y)` (pane-relative y,
+      // interpreted against the WRONG pane's scale) and produced wildly
+      // wrong prices, e.g. an "H-Line" landing near the top of the main
+      // scale no matter where in the RSI pane was actually clicked. Ignore
+      // clicks outside pane 0 entirely rather than try to guess a mapping
+      // that doesn't exist.
+      if (param.paneIndex !== 0) return;
 
       const price = main.coordinateToPrice(param.point.y);
       if (price == null) return;
@@ -391,17 +410,53 @@ export function PriceChart({
       } else if (tool === "fibonacci") {
         const high = Math.max(start.price, price);
         const low = Math.min(start.price, price);
-        for (const ratio of FIB_RATIOS) {
-          const level = high - ratio * (high - low);
+        const span = high - low;
+        const levels = FIB_RATIOS.map((ratio) => ({ ratio, price: high - ratio * span }));
+
+        for (const level of levels) {
           const line = main.createPriceLine({
-            price: level,
+            price: level.price,
             color: FIB_COLOR,
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `${(ratio * 100).toFixed(1)}%`,
+            title: `${(level.ratio * 100).toFixed(1)}% · ${level.price.toFixed(2)}`,
           });
           drawnPriceLinesRef.current.push(line);
+        }
+
+        // Shaded bands between each pair of adjacent levels, confined to
+        // the clicked swing's time span (matches the classic fib-box look —
+        // the price LINES above still span the full chart width). A
+        // translucent BaselineSeries (fills between its line value and a
+        // base price) is the simplest way to render a flat horizontal band
+        // with the public API, without a custom drawing primitive.
+        const timesSorted = [start.time, time].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+        const [t0, t1] = timesSorted;
+        const chartInstance = chartRef.current;
+        if (chartInstance && t0 !== t1) {
+          for (let i = 0; i < levels.length - 1; i++) {
+            const bandTop = levels[i].price;
+            const bandBottom = levels[i + 1].price;
+            const band = chartInstance.addSeries(BaselineSeries, {
+              baseValue: { type: "price", price: bandBottom },
+              topFillColor1: hexToRgba(FIB_COLOR, 0.12),
+              topFillColor2: hexToRgba(FIB_COLOR, 0.12),
+              topLineColor: "rgba(0, 0, 0, 0)",
+              bottomFillColor1: "rgba(0, 0, 0, 0)",
+              bottomFillColor2: "rgba(0, 0, 0, 0)",
+              bottomLineColor: "rgba(0, 0, 0, 0)",
+              lineWidth: 1,
+              lastValueVisible: false,
+              priceLineVisible: false,
+              crosshairMarkerVisible: false,
+            });
+            band.setData([
+              { time: t0, value: bandTop },
+              { time: t1, value: bandTop },
+            ]);
+            drawnSeriesRef.current.push(band);
+          }
         }
       }
       onDrawCompleteRef.current?.();
@@ -424,7 +479,7 @@ export function PriceChart({
       chartRef.current = null;
       mainSeriesRef.current = null;
       smaSeriesRef.current = null;
-      emaSeriesRef.current = null;
+      emaSeriesRef.current = new Map();
       bollingerSeriesRef.current = [];
       rsiSeriesRef.current = null;
       macdSeriesRef.current = [];
@@ -531,29 +586,35 @@ export function PriceChart({
     }
   }, [showSma, smaPeriod, data]);
 
-  // EMA-50 overlay toggle — same pane as the main series, alongside SMA.
+  // EMA overlay toggles (50/100/150/200, any subset) — same pane as the
+  // main series, alongside SMA. Rebuilt from scratch on every toggle/data
+  // change (remove-then-recreate), same pattern as every other overlay in
+  // this file, keyed by period in a Map so periods can be added/removed
+  // independently without disturbing the others.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
 
-    if (emaSeriesRef.current) {
-      chart.removeSeries(emaSeriesRef.current);
-      emaSeriesRef.current = null;
-    }
+    for (const series of emaSeriesRef.current.values()) chart.removeSeries(series);
+    emaSeriesRef.current = new Map();
 
-    if (showEma50) {
-      const points = computeEmaSeries(data, 50);
-      if (points.length > 0) {
-        const series = chart.addSeries(LineSeries, {
-          color: EMA_COLOR,
-          lineWidth: 2,
-          crosshairMarkerVisible: false,
-        });
-        series.setData(points);
-        emaSeriesRef.current = series;
-      }
+    for (const period of emaPeriods) {
+      const points = computeEmaSeries(data, period);
+      if (points.length === 0) continue;
+      const series = chart.addSeries(LineSeries, {
+        color: EMA_COLORS[period] ?? EMA_COLORS[50],
+        lineWidth: 2,
+        crosshairMarkerVisible: false,
+      });
+      series.setData(points);
+      emaSeriesRef.current.set(period, series);
     }
-  }, [showEma50, data]);
+    // emaPeriods is an array prop that may get a fresh identity each render
+    // — depending on its sorted/joined contents (not the array reference)
+    // avoids tearing down and rebuilding every EMA series on every
+    // unrelated re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emaPeriods.slice().sort().join(","), data]);
 
   // Bollinger Bands overlay toggle — three lines (upper/middle/lower), same pane as the main series.
   useEffect(() => {
