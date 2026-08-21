@@ -32,6 +32,13 @@ export type ChartMode = "area" | "candlestick";
 export type DrawTool = "trendline" | "fibonacci" | "horizontal";
 
 interface PriceChartProps {
+  /**
+   * The ticker this chart is showing — used ONLY as the localStorage key for
+   * persisted drawings (`chart_drawings_<symbol>`; see the persistence
+   * section below), not for fetching or formatting. Required so drawings
+   * always save/load against the right instrument.
+   */
+  symbol: string;
   /** Already converted to display units (e.g. agorot -> shekels) and sliced to the selected range. */
   data: PricePoint[];
   /**
@@ -211,6 +218,84 @@ function computeSma(data: PricePoint[], period: number) {
 /** Standard Fibonacci retracement ratios, drawn from the higher clicked price down to the lower one. */
 const FIB_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
+type MainSeriesApi = ISeriesApi<"Area"> | ISeriesApi<"Candlestick">;
+
+/**
+ * Persistence layer for user-drawn trendlines/fibonacci/h-lines (live
+ * report: "drawings disappear on refresh"). Keyed by ticker in localStorage
+ * (`chart_drawings_<symbol>`) — a plain JSON array of serializable shapes,
+ * NOT the lightweight-charts series/price-line objects themselves (those
+ * can't survive a reload and are re-created fresh from this data every time
+ * the main series is (re)built — see `renderStoredDrawing` and its call
+ * site in the mode/data effect below). `points[].time` is stored as a plain
+ * string: every Time value that ever reaches this file is already a
+ * "YYYY-MM-DD" string (see how `data`/`fullHistory` feed every series with
+ * `time: d.date`), so this intentionally doesn't need to handle the
+ * BusinessDay/number variants of lightweight-charts' Time union.
+ */
+type StoredDrawing =
+  | { type: "horizontal"; price: number }
+  | { type: "trendline"; points: [{ time: string; price: number }, { time: string; price: number }] }
+  | { type: "fibonacci"; points: [{ time: string; price: number }, { time: string; price: number }] };
+
+function drawingsStorageKey(symbol: string): string {
+  return `chart_drawings_${symbol}`;
+}
+
+/** Narrow runtime check before trusting anything pulled out of localStorage — a hand-edited or stale-schema value should be dropped, not crash the chart. */
+function isValidStoredDrawing(value: unknown): value is StoredDrawing {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  if (v.type === "horizontal") return typeof v.price === "number" && Number.isFinite(v.price);
+  if (v.type === "trendline" || v.type === "fibonacci") {
+    if (!Array.isArray(v.points) || v.points.length !== 2) return false;
+    return v.points.every(
+      (p) =>
+        p &&
+        typeof p === "object" &&
+        typeof (p as { time: unknown }).time === "string" &&
+        typeof (p as { price: unknown }).price === "number" &&
+        Number.isFinite((p as { price: number }).price)
+    );
+  }
+  return false;
+}
+
+function loadDrawings(symbol: string): StoredDrawing[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(drawingsStorageKey(symbol));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isValidStoredDrawing);
+  } catch {
+    // Corrupted JSON or localStorage unavailable (private browsing, quota,
+    // etc.) — fail open to an empty chart rather than crash it.
+    return [];
+  }
+}
+
+function persistDrawings(symbol: string, drawings: StoredDrawing[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(drawingsStorageKey(symbol), JSON.stringify(drawings));
+  } catch {
+    // Same as above — drawings still work for the rest of this session via
+    // savedDrawingsRef, they just won't survive a refresh. Not worth
+    // surfacing an error over.
+  }
+}
+
+function clearPersistedDrawings(symbol: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(drawingsStorageKey(symbol));
+  } catch {
+    // ignore — see loadDrawings/persistDrawings.
+  }
+}
+
 /** Trims an indicator series (computed from the full history) down to just the dates visible in the currently-selected range, so a long-lookback indicator like EMA-200 can use real prior history for its MATH without also being plotted before the chart's actual visible window. */
 function visibleSlice<T extends { time: string }>(points: T[], visibleStartDate: string | undefined): T[] {
   if (!visibleStartDate) return points;
@@ -218,6 +303,7 @@ function visibleSlice<T extends { time: string }>(points: T[], visibleStartDate:
 }
 
 export function PriceChart({
+  symbol,
   data,
   fullHistory,
   mode,
@@ -260,6 +346,19 @@ export function PriceChart({
   const drawnSeriesRef = useRef<ISeriesApi<SeriesType>[]>([]);
   const drawnPriceLinesRef = useRef<IPriceLine[]>([]);
   const drawStartRef = useRef<{ time: Time; price: number } | null>(null);
+  // Persistence (live report: "drawings disappear on refresh"): the
+  // in-memory source of truth for what's currently saved for THIS symbol,
+  // reloaded from localStorage and re-rendered onto the chart every time
+  // the main series is (re)built — see the mode/data effect below. Kept
+  // separate from drawnSeriesRef/drawnPriceLinesRef (which are purely
+  // "what's currently drawn on screen" and get wiped/rebuilt on every mode/
+  // range switch) since this one must survive those rebuilds.
+  const savedDrawingsRef = useRef<StoredDrawing[]>([]);
+  // Mirrors the `symbol` prop for the click handler and the "Clear
+  // Drawings" effect, both of which need the CURRENT symbol but the click
+  // handler is registered once (creation effect depends only on `locale`) —
+  // same ref-mirroring pattern as drawToolRef/onDrawCompleteRef below.
+  const symbolRef = useRef(symbol);
   // Rubber-band preview: a dashed, ghost-colored 2-point line that tracks
   // the cursor between the first and second click of a trendline/
   // fibonacci drawing, so the user can see what they're about to draw
@@ -285,6 +384,125 @@ export function PriceChart({
   useEffect(() => {
     onDrawCompleteRef.current = onDrawComplete;
   }, [onDrawComplete]);
+
+  useEffect(() => {
+    symbolRef.current = symbol;
+  }, [symbol]);
+
+  /** Draws a single horizontal price line and tracks it for later removal. Shared by the live click-handler finalize path and the load-from-storage replay path below. */
+  function drawHorizontalLine(main: MainSeriesApi, price: number) {
+    const line = main.createPriceLine({
+      price,
+      color: DRAW_COLOR,
+      lineWidth: 2,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: "H-Line",
+    });
+    drawnPriceLinesRef.current.push(line);
+  }
+
+  /** Draws a 2-point trendline. Returns false (drawing nothing) if both points land on the same time — lightweight-charts requires strictly ascending time per series and a same-bar trendline has no sensible slope anyway. Shared by the live and storage-replay paths. */
+  function drawTrendlineShape(chart: IChartApi, aTime: Time, aPrice: number, bTime: Time, bPrice: number): boolean {
+    const points = [
+      { time: aTime, value: aPrice },
+      { time: bTime, value: bPrice },
+    ].sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+    if (points[0].time === points[1].time) return false;
+    const series = chart.addSeries(LineSeries, {
+      color: DRAW_COLOR,
+      lineWidth: 2,
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    series.setData(points);
+    drawnSeriesRef.current.push(series);
+    return true;
+  }
+
+  /** Draws the 7 Fibonacci retracement price lines plus shaded bands between adjacent levels. Shared by the live and storage-replay paths. */
+  function drawFibonacciShape(main: MainSeriesApi, chart: IChartApi, aTime: Time, aPrice: number, bTime: Time, bPrice: number) {
+    const high = Math.max(aPrice, bPrice);
+    const low = Math.min(aPrice, bPrice);
+    const span = high - low;
+    const levels = FIB_RATIOS.map((ratio) => ({ ratio, price: high - ratio * span }));
+
+    for (const level of levels) {
+      const line = main.createPriceLine({
+        price: level.price,
+        color: FIB_COLOR,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: `${(level.ratio * 100).toFixed(1)}% · ${level.price.toFixed(2)}`,
+      });
+      drawnPriceLinesRef.current.push(line);
+    }
+
+    // Shaded bands between each pair of adjacent levels, confined to the
+    // clicked swing's time span (matches the classic fib-box look — the
+    // price LINES above still span the full chart width).
+    const timesSorted = [aTime, bTime].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    const [t0, t1] = timesSorted;
+    if (t0 !== t1) {
+      for (let i = 0; i < levels.length - 1; i++) {
+        const bandTop = levels[i].price;
+        const bandBottom = levels[i + 1].price;
+        const band = chart.addSeries(BaselineSeries, {
+          baseValue: { type: "price", price: bandBottom },
+          topFillColor1: hexToRgba(FIB_COLOR, 0.12),
+          topFillColor2: hexToRgba(FIB_COLOR, 0.12),
+          topLineColor: "rgba(0, 0, 0, 0)",
+          bottomFillColor1: "rgba(0, 0, 0, 0)",
+          bottomFillColor2: "rgba(0, 0, 0, 0)",
+          bottomLineColor: "rgba(0, 0, 0, 0)",
+          lineWidth: 1,
+          lastValueVisible: false,
+          priceLineVisible: false,
+          crosshairMarkerVisible: false,
+        });
+        band.setData([
+          { time: t0, value: bandTop },
+          { time: t1, value: bandTop },
+        ]);
+        drawnSeriesRef.current.push(band);
+      }
+    }
+  }
+
+  /** Re-renders one persisted drawing onto the current main series/chart — the storage-replay counterpart to the click-handler's live drawing logic above. */
+  function renderStoredDrawing(main: MainSeriesApi, chart: IChartApi, drawing: StoredDrawing) {
+    if (drawing.type === "horizontal") {
+      drawHorizontalLine(main, drawing.price);
+    } else if (drawing.type === "trendline") {
+      const [a, b] = drawing.points;
+      drawTrendlineShape(chart, a.time, a.price, b.time, b.price);
+    } else if (drawing.type === "fibonacci") {
+      const [a, b] = drawing.points;
+      drawFibonacciShape(main, chart, a.time, a.price, b.time, b.price);
+    }
+  }
+
+  /** Loads this symbol's saved drawings from localStorage and renders every one onto the freshly-(re)built main series. Called whenever the main series is (re)created (mount, symbol change, range/mode switch) — see the mode/data effect below. */
+  function loadAndRenderDrawings(main: MainSeriesApi, chart: IChartApi) {
+    const drawings = loadDrawings(symbolRef.current);
+    savedDrawingsRef.current = drawings;
+    for (const drawing of drawings) {
+      try {
+        renderStoredDrawing(main, chart, drawing);
+      } catch {
+        // A single corrupted/out-of-range saved drawing shouldn't block the
+        // rest of the chart from rendering — skip it and keep going.
+      }
+    }
+  }
+
+  /** Appends one freshly-finalized drawing to the persisted set and saves immediately — called right after a trendline/fibonacci/h-line is placed on the chart (see handleClick below), so a mid-session refresh never loses a drawing. */
+  function persistNewDrawing(drawing: StoredDrawing) {
+    savedDrawingsRef.current = [...savedDrawingsRef.current, drawing];
+    persistDrawings(symbolRef.current, savedDrawingsRef.current);
+  }
 
   /** Removes the live rubber-band preview line (if one exists) and clears its ref. Safe to call even when there's nothing to remove. */
   function removePreviewSeries() {
@@ -476,101 +694,49 @@ export function PriceChart({
       const time = param.time;
 
       if (tool === "horizontal") {
-        const line = main.createPriceLine({
-          price,
-          color: DRAW_COLOR,
-          lineWidth: 2,
-          lineStyle: LineStyle.Dashed,
-          axisLabelVisible: true,
-          title: "H-Line",
-        });
-        drawnPriceLinesRef.current.push(line);
+        drawHorizontalLine(main, price);
+        persistNewDrawing({ type: "horizontal", price });
         onDrawCompleteRef.current?.();
         return;
       }
 
       const start = drawStartRef.current;
       if (!start) {
+        // First click: set the anchor. The rubber-band preview (a separate
+        // subscribeCrosshairMove handler above) picks this up on the very
+        // next mouse move — no second click required to see it.
         drawStartRef.current = { time, price };
         return;
       }
+      // Second click: finalize immediately — everything below is
+      // synchronous, so there's no intermediate "stuck" state between
+      // clearing drawStartRef and the shape appearing on screen.
       drawStartRef.current = null;
       removePreviewSeries();
 
+      const chartInstance = chartRef.current;
+      if (!chartInstance) return;
+
       if (tool === "trendline") {
-        const points = [
-          { time: start.time, value: start.price },
-          { time, value: price },
-        ].sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
-        // Two identical-time clicks would violate lightweight-charts'
-        // strictly-ascending-time requirement for a 2-point series — bail
-        // rather than crash the chart.
-        if (points[0].time === points[1].time) {
-          onDrawCompleteRef.current?.();
-          return;
-        }
-        const chartInstance = chartRef.current;
-        if (!chartInstance) return;
-        const series = chartInstance.addSeries(LineSeries, {
-          color: DRAW_COLOR,
-          lineWidth: 2,
-          crosshairMarkerVisible: false,
-          lastValueVisible: false,
-          priceLineVisible: false,
-        });
-        series.setData(points);
-        drawnSeriesRef.current.push(series);
-      } else if (tool === "fibonacci") {
-        const high = Math.max(start.price, price);
-        const low = Math.min(start.price, price);
-        const span = high - low;
-        const levels = FIB_RATIOS.map((ratio) => ({ ratio, price: high - ratio * span }));
-
-        for (const level of levels) {
-          const line = main.createPriceLine({
-            price: level.price,
-            color: FIB_COLOR,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            axisLabelVisible: true,
-            title: `${(level.ratio * 100).toFixed(1)}% · ${level.price.toFixed(2)}`,
+        const drawn = drawTrendlineShape(chartInstance, start.time, start.price, time, price);
+        if (drawn) {
+          persistNewDrawing({
+            type: "trendline",
+            points: [
+              { time: String(start.time), price: start.price },
+              { time: String(time), price },
+            ],
           });
-          drawnPriceLinesRef.current.push(line);
         }
-
-        // Shaded bands between each pair of adjacent levels, confined to
-        // the clicked swing's time span (matches the classic fib-box look —
-        // the price LINES above still span the full chart width). A
-        // translucent BaselineSeries (fills between its line value and a
-        // base price) is the simplest way to render a flat horizontal band
-        // with the public API, without a custom drawing primitive.
-        const timesSorted = [start.time, time].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-        const [t0, t1] = timesSorted;
-        const chartInstance = chartRef.current;
-        if (chartInstance && t0 !== t1) {
-          for (let i = 0; i < levels.length - 1; i++) {
-            const bandTop = levels[i].price;
-            const bandBottom = levels[i + 1].price;
-            const band = chartInstance.addSeries(BaselineSeries, {
-              baseValue: { type: "price", price: bandBottom },
-              topFillColor1: hexToRgba(FIB_COLOR, 0.12),
-              topFillColor2: hexToRgba(FIB_COLOR, 0.12),
-              topLineColor: "rgba(0, 0, 0, 0)",
-              bottomFillColor1: "rgba(0, 0, 0, 0)",
-              bottomFillColor2: "rgba(0, 0, 0, 0)",
-              bottomLineColor: "rgba(0, 0, 0, 0)",
-              lineWidth: 1,
-              lastValueVisible: false,
-              priceLineVisible: false,
-              crosshairMarkerVisible: false,
-            });
-            band.setData([
-              { time: t0, value: bandTop },
-              { time: t1, value: bandTop },
-            ]);
-            drawnSeriesRef.current.push(band);
-          }
-        }
+      } else if (tool === "fibonacci") {
+        drawFibonacciShape(main, chartInstance, start.time, start.price, time, price);
+        persistNewDrawing({
+          type: "fibonacci",
+          points: [
+            { time: String(start.time), price: start.price },
+            { time: String(time), price },
+          ],
+        });
       }
       onDrawCompleteRef.current?.();
     }
@@ -600,6 +766,7 @@ export function PriceChart({
       drawnSeriesRef.current = [];
       drawnPriceLinesRef.current = [];
       drawStartRef.current = null;
+      savedDrawingsRef.current = [];
       previewSeriesRef.current = null;
       setTooltip(null);
     };
@@ -610,6 +777,27 @@ export function PriceChart({
     // applyOptions() effect below instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locale]);
+
+  // Fix (live report: "second click doesn't reliably finalize / feels
+  // stuck"): lightweight-charts' default pan/zoom handling treats even a
+  // tiny pointer drift between mousedown and mouseup as a pan gesture
+  // rather than a click, which can silently swallow the SECOND click of a
+  // trendline/fibonacci draw (or occasionally the first) without
+  // `subscribeClick` ever firing — nothing visibly happens, so it reads as
+  // the tool being "stuck". Disabling scroll/scale entirely for as long as
+  // a draw tool is armed removes that ambiguity: every pointer interaction
+  // while drawing is unambiguously a click, not a maybe-pan. Restored the
+  // instant the tool is disarmed (finalized shape, Escape, or switching
+  // tools), so normal pan/zoom is back for everyday chart browsing.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const drawing = drawTool != null;
+    chart.applyOptions({
+      handleScroll: !drawing,
+      handleScale: !drawing,
+    });
+  }, [drawTool]);
 
   // Live grid visibility toggle — applyOptions() rather than baking it into
   // the creation effect above, so flipping the switch doesn't tear down and
@@ -632,10 +820,14 @@ export function PriceChart({
       chart.removeSeries(mainSeriesRef.current);
       mainSeriesRef.current = null;
     }
-    // A previous range/mode's drawings (trendlines anchored to now-gone
-    // dates, fib/h-lines on the series about to be removed) don't carry
-    // forward meaningfully to a new data set — clear them here rather than
-    // leave orphaned lines pointing at prices from a different timeframe.
+    // A previous range/mode's drawings are attached to the OLD main series
+    // (price lines) or were just visually stale — clear them here rather
+    // than leave orphaned lines pointing at a series that's about to be
+    // removed. This is purely a VISUAL clear: the persisted set in
+    // localStorage (savedDrawingsRef) is untouched, and gets reloaded and
+    // redrawn onto the new main series a few lines down, so switching
+    // range/mode/symbol never actually loses a drawing — only "Clear All"
+    // (the clearDrawingsToken effect below) touches the persisted set.
     clearAllDrawings();
     // The old series (and any hovered point on it) is gone — clear any
     // stale floating tooltip rather than leaving it pinned to a price
@@ -676,9 +868,21 @@ export function PriceChart({
       mainSeriesRef.current = series;
     }
 
+    // Persistence (live report: "drawings disappear on refresh"): reload
+    // this symbol's saved drawings from localStorage and redraw every one
+    // onto the just-(re)built main series. Runs on mount, on every symbol
+    // change (new `data`), and on every range/mode switch — localStorage is
+    // always the up-to-date source of truth since every finalized drawing
+    // is persisted immediately (see persistNewDrawing in the click
+    // handler), so reloading here is cheap and keeps drawings visible no
+    // matter what triggered this effect.
+    if (mainSeriesRef.current) {
+      loadAndRenderDrawings(mainSeriesRef.current, chart);
+    }
+
     chart.timeScale().fitContent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, data, positive, overrideColor]);
+  }, [mode, data, positive, overrideColor, symbol]);
 
   // SMA overlay toggle.
   useEffect(() => {
@@ -840,8 +1044,18 @@ export function PriceChart({
   }, [showRsi, showMacd, indicatorSource, visibleStartDate]);
 
   // "Clear Drawings" toolbar action — bump clearDrawingsToken to trigger.
+  // Unlike the mode/data effect's clearAllDrawings() call above (a purely
+  // visual clear, immediately followed by reloading + redrawing from
+  // localStorage), THIS is the one place that actually deletes the
+  // persisted set for the current symbol — wiping both the in-memory
+  // savedDrawingsRef and the localStorage entry itself, per the live
+  // report's "Clear All ... also clears localStorage for that ticker".
   useEffect(() => {
-    if (clearDrawingsToken > 0) clearAllDrawings();
+    if (clearDrawingsToken > 0) {
+      clearAllDrawings();
+      savedDrawingsRef.current = [];
+      clearPersistedDrawings(symbolRef.current);
+    }
     // clearAllDrawings intentionally excluded from deps: it's a stable
     // function of refs only (no props/state it needs to stay fresh
     // against), redeclaring it every render would just churn the effect.

@@ -672,6 +672,7 @@ export function ChartPanel({ history, currency, symbol, exchange, currentPrice =
 
         <div className={cn("mt-4", fullscreen && "min-h-0 flex-1")}>
           <PriceChart
+            symbol={symbol}
             data={slicedData}
             fullHistory={convertedHistory}
             mode={mode}
